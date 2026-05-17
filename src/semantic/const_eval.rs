@@ -33,6 +33,31 @@ impl<'a> ConstEvalCtx<'a> {
         self.get_resolved_type(node).or_else(|| self.infer_type_from_node(node))
     }
 
+    fn select_generic_branch(&self, gs: &crate::ast::nodes::GenericSelection) -> Option<NodeRef> {
+        let ctrl_ty = self.resolve_type(gs.control)?;
+        let decayed_ctrl = self.registry.find_decayed_type(ctrl_ty)?;
+        let unqualified_ctrl = decayed_ctrl.strip_all();
+
+        let mut selected_expr = None;
+        let mut default_expr = None;
+
+        for assoc_node in gs.assoc_start.range(gs.assoc_len) {
+            if let NodeKind::GenericAssociation(ga) = self.ast.get_kind(assoc_node) {
+                if let Some(assoc_qt) = ga.ty {
+                    let decayed_assoc = self.registry.find_decayed_type(assoc_qt).unwrap_or(assoc_qt);
+                    if self.registry.is_compatible(unqualified_ctrl, decayed_assoc) {
+                        selected_expr = Some(ga.result_expr);
+                        break;
+                    }
+                } else {
+                    default_expr = Some(ga.result_expr);
+                }
+            }
+        }
+
+        selected_expr.or(default_expr)
+    }
+
     fn truncate_to_type(&self, val: i64, qt: QualType) -> i64 {
         let ty_obj = self.registry.get(qt.ty());
         ty_obj.truncate_int(val)
@@ -107,8 +132,62 @@ impl<'a> ConstEvalCtx<'a> {
                     self.registry.get_array_element(qt.ty()).map(QualType::unqualified)
                 }
             }
-            NodeKind::Cast(target_ty, _) => Some(*target_ty),
+            NodeKind::UnaryOp(op, expr) => {
+                let qt = self.resolve_type(*expr)?;
+                match op {
+                    UnaryOp::AddrOf => {
+                        let ptr = self.registry.find_pointer_to(qt)?;
+                        Some(QualType::unqualified(ptr))
+                    }
+                    UnaryOp::LogicNot => Some(QualType::unqualified(self.registry.type_int)),
+                    UnaryOp::Plus | UnaryOp::Minus | UnaryOp::BitNot => {
+                        Some(integer_promotion(self.registry, qt, None))
+                    }
+                    _ => None,
+                }
+            }
+            NodeKind::BinaryOp(op, left, right) => self.get_result_type(*op, *left, *right),
+            NodeKind::TernaryOp(_, then_expr, else_expr) => {
+                let t = self.resolve_type(*then_expr)?;
+                let e = self.resolve_type(*else_expr)?;
+
+                if t.is_arithmetic() && e.is_arithmetic() {
+                    usual_arithmetic_conversions(self.registry, t, e)
+                } else if t.ty() == e.ty() {
+                    self.registry.find_composite_type(t, e)
+                } else if t.is_void() {
+                    Some(t)
+                } else if e.is_void() {
+                    Some(e)
+                } else if t.is_pointer() && e.is_pointer() {
+                    let p_t = self.registry.get_pointee(t.ty())?;
+                    let p_e = self.registry.get_pointee(e.ty())?;
+                    if p_t.is_void() || p_e.is_void() {
+                        let res_quals = p_t.qualifiers() | p_e.qualifiers();
+                        let void_ptr = self
+                            .registry
+                            .find_pointer_to(QualType::new(self.registry.type_void, res_quals))?;
+                        Some(QualType::unqualified(void_ptr))
+                    } else if self.registry.is_compatible(p_t.strip_all(), p_e.strip_all()) {
+                        let res_p_quals = p_t.qualifiers() | p_e.qualifiers();
+                        let p_composite = self.registry.find_composite_type(p_t.strip_all(), p_e.strip_all())?;
+                        let res_p_ty = QualType::new(p_composite.ty(), res_p_quals);
+                        let ptr = self.registry.find_pointer_to(res_p_ty)?;
+                        Some(QualType::unqualified(ptr))
+                    } else {
+                        None
+                    }
+                } else {
+                    usual_arithmetic_conversions(self.registry, t, e)
+                }
+            }
+            NodeKind::Cast(target_ty, _) => Some(target_ty.strip_all()),
             NodeKind::Literal(literal) => Some(self.get_literal_type(&literal.get_val())),
+            NodeKind::StatementExpr(_, result_expr) => self.resolve_type(*result_expr),
+            NodeKind::GenericSelection(gs) => {
+                let selected = self.select_generic_branch(gs)?;
+                self.resolve_type(selected)
+            }
             _ => None,
         }
     }
@@ -210,9 +289,14 @@ impl<'a> ConstEvalCtx<'a> {
             NodeKind::SizeOfType(qt) => self.eval_sizeof(None, Some(*qt)),
             NodeKind::AlignOfExpr(expr) => self.eval_alignof(Some(*expr), None),
             NodeKind::AlignOfType(qt) => self.eval_alignof(None, Some(*qt)),
-            NodeKind::GenericSelection(_) => {
-                let selected = self.semantic_info.generic_selections.get(&expr_node.index())?;
-                self.eval_int(*selected)
+            NodeKind::GenericSelection(gs) => {
+                let selected = self
+                    .semantic_info
+                    .generic_selections
+                    .get(&expr_node.index())
+                    .copied()
+                    .or_else(|| self.select_generic_branch(gs))?;
+                self.eval_int(selected)
             }
             NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
                 if let Some(&selected) = self.semantic_info.choose_expressions.get(&expr_node.index()) {

@@ -1192,15 +1192,16 @@ impl<'src> Preprocessor<'src> {
     /// Check if a parameter is used in the replacement list in a way that requires its expanded argument
     fn parameter_needs_expansion(&self, macro_info: &MacroInfo, param_sym: StringId) -> bool {
         for i in 0..macro_info.tokens.len() {
-            if let PPTokenKind::Identifier(sym) = macro_info.tokens[i].kind {
-                if sym == param_sym {
-                    let preceded_by_hash = i > 0 && macro_info.tokens[i - 1].kind == PPTokenKind::Hash;
-                    let preceded_by_hashhash = i > 0 && macro_info.tokens[i - 1].kind == PPTokenKind::HashHash;
-                    let followed_by_hashhash = i + 1 < macro_info.tokens.len() && macro_info.tokens[i + 1].kind == PPTokenKind::HashHash;
+            if let PPTokenKind::Identifier(sym) = macro_info.tokens[i].kind
+                && sym == param_sym
+            {
+                let preceded_by_hash = i > 0 && macro_info.tokens[i - 1].kind == PPTokenKind::Hash;
+                let preceded_by_hashhash = i > 0 && macro_info.tokens[i - 1].kind == PPTokenKind::HashHash;
+                let followed_by_hashhash =
+                    i + 1 < macro_info.tokens.len() && macro_info.tokens[i + 1].kind == PPTokenKind::HashHash;
 
-                    if !preceded_by_hash && !preceded_by_hashhash && !followed_by_hashhash {
-                        return true;
-                    }
+                if !preceded_by_hash && !preceded_by_hashhash && !followed_by_hashhash {
+                    return true;
                 }
             }
         }

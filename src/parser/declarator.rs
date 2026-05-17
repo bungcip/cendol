@@ -360,8 +360,8 @@ pub(crate) fn get_declarator_name(arena: &ParsedTypeArena, declarator: Declarato
         ParsedDeclarator::Pointer { inner, .. } => get_declarator_name(arena, *inner),
         ParsedDeclarator::Array { inner, .. } => get_declarator_name(arena, *inner),
         ParsedDeclarator::Function { inner, .. } => get_declarator_name(arena, *inner),
+        ParsedDeclarator::BitField { inner, .. } => get_declarator_name(arena, *inner),
         ParsedDeclarator::Attribute { inner, .. } => get_declarator_name(arena, *inner),
-        _ => unreachable!(),
     }
 }
 
@@ -378,6 +378,7 @@ pub(super) fn get_declarator_params(arena: &ParsedTypeArena, declarator: Declara
         }
         ParsedDeclarator::Pointer { inner, .. } => get_declarator_params(arena, *inner),
         ParsedDeclarator::Array { inner, .. } => get_declarator_params(arena, *inner),
+        ParsedDeclarator::BitField { inner, .. } => get_declarator_params(arena, *inner),
         ParsedDeclarator::Attribute { inner, .. } => get_declarator_params(arena, *inner),
         _ => None,
     }

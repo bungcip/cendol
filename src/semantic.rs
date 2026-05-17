@@ -26,6 +26,6 @@ pub use symbol_table::{BuiltinFunctionKind, DefinitionState, Namespace, ScopeId,
 
 pub use type_registry::TypeRegistry;
 pub use types::{
-    ArraySizeType, BuiltinType, EnumConstant, FieldLayout, FunctionParam, QualType, StructMember, Type, TypeKind,
+    ArraySizeType, BuiltinType, EnumConstant, FieldLayout, FunctionParam, QualType, RecordMember, Type, TypeKind,
     TypeLayout, TypeQualifiers, TypeRef,
 };

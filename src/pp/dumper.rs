@@ -142,11 +142,9 @@ impl<'a> PPDumper<'a> {
             let display_name = self.get_display_name(name);
             writeln!(writer, "# {} \"{}\" 1", line, display_name)?;
             state.at_line_start = true;
-        } else if old_line > 0 && line > old_line && is_same_file {
-            if !state.at_line_start {
-                writeln!(writer)?;
-                state.at_line_start = true;
-            }
+        } else if old_line > 0 && line > old_line && is_same_file && !state.at_line_start {
+            writeln!(writer)?;
+            state.at_line_start = true;
         }
         Ok(())
     }

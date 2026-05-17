@@ -8,7 +8,7 @@ use crate::{
     diagnostic::{DiagnosticEngine, DiagnosticLevel},
     lang_options::{CStandard, LangOptions},
     semantic::{
-        ArraySizeType, BuiltinFunctionKind, BuiltinType, FunctionParam, QualType, StructMember, SymbolKind, SymbolRef,
+        ArraySizeType, BuiltinFunctionKind, BuiltinType, FunctionParam, QualType, RecordMember, SymbolKind, SymbolRef,
         SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
@@ -43,7 +43,7 @@ struct SwitchCtx {
 
 /// Internal task used to extract information from TypeKind without cloning it.
 enum TypeAnalysisTask {
-    Record(Arc<[StructMember]>, bool),
+    Record(Arc<[RecordMember]>, bool),
     Array(TypeRef, ArraySizeType),
     Function {
         return_type: TypeRef,
@@ -1744,7 +1744,7 @@ impl<'a> SemanticAnalyzer<'a> {
         self.record_implicit_conversions(target_qt, init_qt, init, is_npc);
     }
 
-    fn find_member_index(&self, members: &[StructMember], name: NameId) -> Option<usize> {
+    fn find_member_index(&self, members: &[RecordMember], name: NameId) -> Option<usize> {
         members.iter().position(|m| {
             m.name == Some(name)
                 || (m.name.is_none()
@@ -1852,7 +1852,7 @@ impl<'a> SemanticAnalyzer<'a> {
         &mut self,
         list: &InitializerList,
         target_qt: QualType,
-        members: &[StructMember],
+        members: &[RecordMember],
         is_union: bool,
     ) {
         let mut iter = list.init_start.range(list.init_len).peekable();
@@ -3092,7 +3092,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
                 }
 
-                Some(*ty)
+                Some(ty.strip_all())
             }
             NodeKind::SizeOfExpr(_) | NodeKind::SizeOfType(_) | NodeKind::AlignOfExpr(_) | NodeKind::AlignOfType(_) => {
                 let (expr, ty, is_alignof) = match kind {
@@ -3575,10 +3575,16 @@ impl<'a> SemanticAnalyzer<'a> {
             // C11 6.5.1.1p2: The controlling expression... shall have type compatible with at most one...
             // "No two generic associations in the same generic selection shall specify compatible types."
 
+            let decayed_assoc = if assoc_qt.is_array() || assoc_qt.is_function() {
+                self.registry.decay(assoc_qt, TypeQualifiers::empty())
+            } else {
+                assoc_qt
+            };
+
             // Constraint 2: No two generic associations in the same generic selection shall specify compatible types.
             let mut duplicate = false;
             for (prev_ty, prev_span) in &seen_types {
-                if self.registry.is_compatible(assoc_qt, *prev_ty) {
+                if self.registry.is_compatible(decayed_assoc, *prev_ty) {
                     // C11 6.7.2.2p4: "Each enumerated type shall be compatible with char, a signed integer type, or an unsigned integer type."
                     // However, 6.5.1.1p2 says generic association type-name shall specify a complete object type.
                     // For _Generic specifically, if we have 'int' and an enum that is compatible with 'int',
@@ -3597,13 +3603,13 @@ impl<'a> SemanticAnalyzer<'a> {
             }
 
             if !duplicate {
-                seen_types.push((assoc_qt, span));
+                seen_types.push((decayed_assoc, span));
             }
 
             // Constraint 1: The controlling expression... shall have type compatible with at most one...
             // unqualified_ctrl_ty is the controlling expression type after lvalue conversion (which strips qualifiers).
             // It is compared against the association type (which keeps qualifiers).
-            if self.registry.is_compatible(unqualified_ctrl, assoc_qt) {
+            if self.registry.is_compatible(unqualified_ctrl, decayed_assoc) {
                 if let Some(first_match) = selected_span {
                     self.report_error(assoc_node, SemanticError::GenericMultipleMatches { first_match });
                 } else {

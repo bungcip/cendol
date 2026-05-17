@@ -258,15 +258,19 @@ fn parse_record_members(
         let node_kind = parser.ast.get_node(node).kind.clone();
         if let ParsedNodeKind::Declaration(decl) = &node_kind {
             for init_decl in &decl.init_declarators {
-                if let Some(member_name) = get_declarator_name(&parser.ast.parsed_types, init_decl.declarator) {
+                let member_name = get_declarator_name(&parser.ast.parsed_types, init_decl.declarator);
+                let is_bitfield = matches!(
+                    parser.ast.parsed_types.get_decl(init_decl.declarator),
+                    ParsedDeclarator::BitField { .. }
+                );
+                if member_name.is_some() || is_bitfield {
                     let member_parsed_type = build_type(parser, &decl.specifiers, Some(init_decl.declarator))?;
                     let alignment = extract_alignment(&decl.specifiers, parser);
                     let is_packed = extract_is_packed(&decl.specifiers);
 
                     parsed_members.push(ParsedStructMember {
-                        name: Some(member_name),
+                        name: member_name,
                         ty: member_parsed_type,
-                        bit_field_size: None,
                         alignment,
                         is_packed,
                         span: init_decl.span,

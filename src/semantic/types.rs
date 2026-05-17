@@ -61,7 +61,7 @@ impl Type {
         name: NameId,
         base_offset: u64,
         base_index: &mut usize,
-    ) -> Option<(StructMember, FieldLayout, usize)> {
+    ) -> Option<(RecordMember, FieldLayout, usize)> {
         if let TypeKind::Record { members, .. } = &self.kind
             && let Some(TypeLayout {
                 kind: LayoutKind::RecordFields { fields },
@@ -96,7 +96,7 @@ impl Type {
         registry: &super::TypeRegistry,
         name: NameId,
         base_index: &mut usize,
-    ) -> Option<(StructMember, usize)> {
+    ) -> Option<(RecordMember, usize)> {
         if let TypeKind::Record { members, .. } = &self.kind {
             for member in members.iter() {
                 if member.name == Some(name) {
@@ -116,7 +116,7 @@ impl Type {
         None
     }
 
-    pub(crate) fn find_member(&self, registry: &super::TypeRegistry, name: NameId) -> Option<StructMember> {
+    pub(crate) fn find_member(&self, registry: &super::TypeRegistry, name: NameId) -> Option<RecordMember> {
         if let TypeKind::Record { members, .. } = &self.kind {
             if let Some(member) = members.iter().find(|m| m.name == Some(name)) {
                 return Some(*member);
@@ -136,7 +136,7 @@ impl Type {
     pub(crate) fn flatten_members_with_layouts(
         &self,
         registry: &super::TypeRegistry,
-        flat_members: &mut Vec<StructMember>,
+        flat_members: &mut Vec<RecordMember>,
         flat_fields: &mut Vec<FieldLayout>,
         base_offset: u64,
     ) {
@@ -888,7 +888,7 @@ pub enum TypeKind {
     },
     Record {
         tag: Option<NameId>,
-        members: Arc<[StructMember]>,
+        members: Arc<[RecordMember]>,
         is_complete: bool,
         is_union: bool,
         packing: Option<u32>,
@@ -1047,7 +1047,7 @@ pub struct FunctionParam {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct StructMember {
+pub struct RecordMember {
     pub name: Option<NameId>,
     pub member_type: QualType,
     pub bit_field_size: Option<u16>,

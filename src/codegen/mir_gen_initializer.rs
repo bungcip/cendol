@@ -7,7 +7,7 @@ use crate::ast::{Designator, NodeKind, NodeRef};
 use crate::codegen::mir_gen::MirGen;
 use crate::mir::{ConstValueKind, MirArrayLayout, MirType, Operand, Place, Rvalue};
 use crate::semantic::literal_utils::lower_string_literal;
-use crate::semantic::{ArraySizeType, FieldLayout, QualType, StructMember, TypeKind, TypeRef};
+use crate::semantic::{ArraySizeType, FieldLayout, QualType, RecordMember, TypeKind, TypeRef};
 
 impl<'a> MirGen<'a> {
     fn visit_init_list(&mut self, list: &InitializerList, target_ty: QualType, destination: Option<Place>) -> Operand {
@@ -17,7 +17,7 @@ impl<'a> MirGen<'a> {
         self.finalize_struct_init(fields, target_ty, destination)
     }
 
-    fn get_flattened_type_info(&self, ty: TypeRef) -> (Vec<StructMember>, Vec<FieldLayout>) {
+    fn get_flattened_type_info(&self, ty: TypeRef) -> (Vec<RecordMember>, Vec<FieldLayout>) {
         let mut members = Vec::new();
         let mut offsets = Vec::new();
         let ty = self.registry.get(ty);
@@ -101,7 +101,7 @@ impl<'a> MirGen<'a> {
 
     fn resolve_init_field_target(
         &self,
-        members: &[StructMember],
+        members: &[RecordMember],
         current_pos: usize,
         designator: Option<(NodeRef, u16)>,
         pending_path: &[usize],
@@ -138,7 +138,7 @@ impl<'a> MirGen<'a> {
         initializer: NodeRef,
         designator: Option<(NodeRef, u16)>,
         active_path: Vec<usize>,
-        m: &StructMember,
+        m: &RecordMember,
     ) -> Vec<(usize, Operand)> {
         if !active_path.is_empty() || (designator.is_some() && designator.unwrap().1 > 1) {
             let (next_pending, next_path) = if !active_path.is_empty() {
@@ -701,7 +701,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn count_flattened_members(&self, m: &StructMember) -> usize {
+    fn count_flattened_members(&self, m: &RecordMember) -> usize {
         if m.name.is_some() {
             return 1;
         }
@@ -719,7 +719,7 @@ impl<'a> MirGen<'a> {
         flat_members.len()
     }
 
-    fn find_member_recursive(&self, members: &[StructMember], name: NameId) -> Option<(usize, Vec<usize>)> {
+    fn find_member_recursive(&self, members: &[RecordMember], name: NameId) -> Option<(usize, Vec<usize>)> {
         for (i, m) in members.iter().enumerate() {
             if m.name == Some(name) {
                 return Some((i, Vec::new()));

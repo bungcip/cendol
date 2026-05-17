@@ -11,7 +11,7 @@ use thiserror::Error;
 
 use crate::{
     ast::*,
-    semantic::{QualType, StructMember, TypeRef},
+    semantic::{QualType, RecordMember, TypeRef},
 };
 
 /// Defines the kind of builtin function for efficient identification in later phases.
@@ -312,7 +312,7 @@ pub enum SymbolKind {
     Label,
     Record {
         is_complete: bool,
-        members: Arc<[StructMember]>,
+        members: Arc<[RecordMember]>,
     },
     EnumTag {
         is_complete: bool,

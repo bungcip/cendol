@@ -24,7 +24,7 @@ use crate::semantic::errors::{SemanticDiag, SemanticError};
 use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
 use crate::semantic::{
-    ArraySizeType, BuiltinFunctionKind, BuiltinType, EnumConstant, Namespace, ScopeId, StructMember, SymbolKind,
+    ArraySizeType, BuiltinFunctionKind, BuiltinType, EnumConstant, Namespace, RecordMember, ScopeId, SymbolKind,
     SymbolRef, SymbolTable, Type, TypeKind, TypeQualifiers, TypeRef, TypeRegistry, Variable,
 };
 use crate::semantic::{FunctionParam, QualType};
@@ -392,7 +392,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     _ => {}
                 }
             }
-            let members = self.visit_struct_members(decls, span, is_union);
+            let members = self.visit_record_members(decls, span, is_union);
             self.complete_record_symbol(tag, ty, members, packing, alignment, span)?;
         }
 
@@ -1246,7 +1246,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         // Extract needed data from registry to avoid borrowing self.registry during node creation
         enum AggType {
-            Record(Option<NameId>, Arc<[StructMember]>),
+            Record(Option<NameId>, Arc<[RecordMember]>),
             Enum(Option<NameId>, Arc<[EnumConstant]>),
         }
 
@@ -2483,7 +2483,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     _ => None,
                 }
             }
-            NodeKind::Cast(qt, _) | NodeKind::CompoundLiteral(qt, _) => Some(qt),
+            NodeKind::Cast(qt, _) => Some(qt.strip_all()),
+            NodeKind::CompoundLiteral(qt, _) => Some(qt),
             NodeKind::MemberAccess(obj, name, is_arrow) => {
                 let obj_qt = self.try_infer_type(obj)?;
                 let ty = if is_arrow {
@@ -2764,7 +2765,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         // Brace elision logic
         enum AggTask {
-            Record(Arc<[StructMember]>),
+            Record(Arc<[RecordMember]>),
             Array(TypeRef, usize),
             Scalar,
         }
@@ -3159,7 +3160,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         &mut self,
         tag: Option<NameId>,
         ty: TypeRef,
-        members: Vec<StructMember>,
+        members: Vec<RecordMember>,
         packing: Option<u32>,
         alignment: Option<u16>,
         span: SourceSpan,
@@ -3607,12 +3608,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     /// Common logic for lowering struct members, used by both TypeSpec::Record lowering
     /// and Declarator::AnonymousRecord handling.
-    fn visit_struct_members(
+    fn visit_record_members(
         &mut self,
         member_nodes: &[ParsedNodeRef],
         span: SourceSpan,
         is_union: bool,
-    ) -> Vec<StructMember> {
+    ) -> Vec<RecordMember> {
         let mut struct_members = Vec::new();
 
         for &node in member_nodes {
@@ -3622,86 +3623,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     self.check_static_assert(*cond, *msg, node.span);
                 }
                 ParsedNodeKind::Declaration(decl) => {
-                    let mut spec_info = self.visit_decl_specs(&decl.specifiers, span);
-
-                    if let Some(base) = spec_info.base_type
-                        && self.registry.get(base.ty()).kind == TypeKind::AutoType
-                    {
-                        self.report_error(
-                            node.span,
-                            SemanticError::AutoTypeNotAllowed {
-                                context: "struct or union member",
-                            },
-                        );
-                    }
-
-                    if spec_info.storage.is_some() {
-                        self.report_error(span, SemanticError::ConflictingStorageClasses);
-                    }
-
-                    if decl.init_declarators.is_empty() {
-                        if let Some(base) = spec_info.base_type
-                            && let qt = self.merge_qualifiers_with_check(base, spec_info.qualifiers, span)
-                            && qt.is_record()
-                            && matches!(&self.registry.get(qt.ty()).kind, TypeKind::Record { tag: None, .. })
-                        {
-                            struct_members.push(StructMember {
-                                member_type: qt,
-                                alignment: spec_info.alignment,
-                                is_packed: spec_info.is_packed,
-                                span,
-                                ..Default::default()
-                            });
-                        }
-                        continue;
-                    }
-
-                    for id in &decl.init_declarators {
-                        let bit_field_size = self.extract_bit_field_width(id.declarator);
-
-                        if bit_field_size.is_some() && spec_info.has_c11_alignment {
-                            self.report_error(id.span, SemanticError::AlignmentNotAllowed { context: "bit-field" });
-                        }
-
-                        self.check_function_specs(&spec_info, id.span);
-
-                        let name = self.extract_name(id.declarator);
-                        if name.is_none() && bit_field_size.is_none() {
-                            self.report_error(id.span, SemanticError::EmptyDeclaration);
-                            continue;
-                        }
-                        let base = spec_info
-                            .base_type
-                            .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
-                        let qualified_base = self.merge_qualifiers_with_check(base, spec_info.qualifiers, id.span);
-
-                        let member_type = self.apply_declarator(
-                            qualified_base,
-                            id.declarator,
-                            id.span,
-                            Some(&mut spec_info),
-                            DeclaratorContext { in_parameter: false },
-                        );
-
-                        self.validate_member_layout(
-                            member_type,
-                            bit_field_size,
-                            spec_info.alignment,
-                            name,
-                            id.span,
-                            is_union,
-                            spec_info.is_packed,
-                        );
-
-                        struct_members.push(StructMember {
-                            name,
-                            member_type,
-                            bit_field_size,
-                            alignment: spec_info.alignment,
-                            is_packed: spec_info.is_packed,
-                            span: id.span,
-                        });
-                    }
+                    self.visit_record_member_decl(decl, node.span, span, is_union, &mut struct_members);
                 }
                 ParsedNodeKind::PragmaPack(kind) => {
                     self.handle_pragma_pack(*kind);
@@ -3710,6 +3632,108 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
         }
         struct_members
+    }
+
+    fn visit_record_member_decl(
+        &mut self,
+        decl: &ParsedDecl,
+        node_span: SourceSpan,
+        span: SourceSpan,
+        is_union: bool,
+        record_members: &mut Vec<RecordMember>,
+    ) {
+        let mut spec_info = self.visit_decl_specs(&decl.specifiers, span);
+
+        if let Some(base) = spec_info.base_type
+            && self.registry.get(base.ty()).kind == TypeKind::AutoType
+        {
+            self.report_error(
+                node_span,
+                SemanticError::AutoTypeNotAllowed {
+                    context: "struct or union member",
+                },
+            );
+        }
+
+        if spec_info.storage.is_some() {
+            self.report_error(span, SemanticError::ConflictingStorageClasses);
+        }
+
+        if decl.init_declarators.is_empty() {
+            if let Some(base) = spec_info.base_type
+                && let qt = self.merge_qualifiers_with_check(base, spec_info.qualifiers, span)
+                && qt.is_record()
+                && matches!(&self.registry.get(qt.ty()).kind, TypeKind::Record { tag: None, .. })
+            {
+                record_members.push(RecordMember {
+                    member_type: qt,
+                    alignment: spec_info.alignment,
+                    is_packed: spec_info.is_packed,
+                    span,
+                    ..Default::default()
+                });
+            }
+            return;
+        }
+
+        for id in &decl.init_declarators {
+            if let Some(member) = self.lower_single_record_member(id, &mut spec_info, is_union) {
+                record_members.push(member);
+            }
+        }
+    }
+
+    fn lower_single_record_member(
+        &mut self,
+        id: &ParsedInitDeclarator,
+        spec_info: &mut DeclSpecInfo,
+        is_union: bool,
+    ) -> Option<RecordMember> {
+        let bit_field_size = self.extract_bit_field_width(id.declarator);
+
+        if bit_field_size.is_some() && spec_info.has_c11_alignment {
+            self.report_error(id.span, SemanticError::AlignmentNotAllowed { context: "bit-field" });
+        }
+
+        self.check_function_specs(spec_info, id.span);
+
+        let name = self.extract_name(id.declarator);
+        if name.is_none() && bit_field_size.is_none() {
+            self.report_error(id.span, SemanticError::EmptyDeclaration);
+            return None;
+        }
+
+        let base = spec_info
+            .base_type
+            .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
+        let qualified_base = self.merge_qualifiers_with_check(base, spec_info.qualifiers, id.span);
+
+        let member_type = self.apply_declarator(
+            qualified_base,
+            id.declarator,
+            id.span,
+            Some(spec_info),
+            DeclaratorContext { in_parameter: false },
+        );
+
+        self.validate_member_layout(
+            member_type,
+            bit_field_size,
+            spec_info.alignment,
+            name,
+            id.span,
+            is_union,
+            spec_info.is_packed,
+        );
+
+        Some(RecordMember {
+            name,
+            member_type,
+            bit_field_size,
+            alignment: spec_info.alignment,
+            is_packed: spec_info.is_packed,
+            span: id.span,
+        })
     }
 
     fn lower_record(
@@ -3727,10 +3751,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let struct_members = parsed_members
                 .iter()
                 .map(|m| {
-                    Ok(StructMember {
+                    let member_type = self.lower_type(m.ty, span, false)?;
+                    let bit_field_size = self.extract_bit_field_width(m.ty.declarator);
+                    Ok(RecordMember {
                         name: m.name,
-                        member_type: self.lower_type(m.ty, span, false)?,
-                        bit_field_size: m.bit_field_size,
+                        member_type,
+                        bit_field_size,
                         alignment: m.alignment,
                         is_packed: m.is_packed,
                         span: m.span,
@@ -3881,7 +3907,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 // Standalone helper to avoid borrow checker issues with LowerCtx
 fn validate_record_members_helper(
     registry: &TypeRegistry,
-    members: &[StructMember],
+    members: &[RecordMember],
     seen_names: &mut HashMap<NameId, SourceSpan>,
     errors: &mut Vec<SemanticDiag>,
 ) {

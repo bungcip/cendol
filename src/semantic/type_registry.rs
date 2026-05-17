@@ -14,7 +14,7 @@ use target_lexicon::{PointerWidth, Triple};
 use super::types::TypeClass;
 use super::types::{FieldLayout, LayoutKind};
 use super::{
-    ArraySizeType, BuiltinType, EnumConstant, FunctionParam, StructMember, Type, TypeKind, TypeLayout, TypeQualifiers,
+    ArraySizeType, BuiltinType, EnumConstant, FunctionParam, RecordMember, Type, TypeKind, TypeLayout, TypeQualifiers,
     TypeRef,
 };
 use crate::semantic::BuiltinFunctionKind;
@@ -639,6 +639,133 @@ impl TypeRegistry {
     // ============================================================
     // Canonical type constructors
     // ============================================================
+    pub(crate) fn find_pointer_to(&self, base: QualType) -> Option<TypeRef> {
+        if base.qualifiers().is_empty() {
+            let base_ty = base.ty();
+            if base_ty.is_inline_pointer() {
+                let depth = base_ty.pointer_depth();
+                if depth < 3 {
+                    return TypeRef::new(base_ty.base(), TypeClass::Pointer, depth + 1, 0);
+                }
+            }
+            if base_ty.pointer_depth() == 0 && base_ty.array_len().is_none() {
+                return TypeRef::new(base_ty.base(), TypeClass::Pointer, 1, 0);
+            }
+        }
+        self.pointer_cache.get(&base).copied()
+    }
+
+    pub(crate) fn find_decayed_type(&self, qt: QualType) -> Option<QualType> {
+        if qt.is_array() {
+            let elem = self.get_array_element(qt.ty())?;
+            let ptr = self.find_pointer_to(QualType::unqualified(elem))?;
+            Some(QualType::unqualified(ptr))
+        } else if qt.is_function() {
+            let ptr = self.find_pointer_to(qt)?;
+            Some(QualType::unqualified(ptr))
+        } else {
+            Some(qt)
+        }
+    }
+
+    pub(crate) fn find_composite_type(&self, a: QualType, b: QualType) -> Option<QualType> {
+        if a == b {
+            return Some(a);
+        }
+
+        if a.qualifiers() != b.qualifiers() {
+            return None;
+        }
+
+        if a.ty() == b.ty() {
+            return Some(a);
+        }
+
+        let ty_a = a.ty();
+        let ty_b = b.ty();
+
+        if let (Some(pa), Some(pb)) = (self.get_pointee(ty_a), self.get_pointee(ty_b)) {
+            let composite_pointee = self.find_composite_type(pa, pb)?;
+            let res_ty = self.find_pointer_to(composite_pointee)?;
+            return Some(QualType::new(res_ty, a.qualifiers()));
+        }
+
+        if let (Some(ea), Some(eb)) = (self.get_array_element(ty_a), self.get_array_element(ty_b)) {
+            let composite_elem = self.find_composite_type(QualType::unqualified(ea), QualType::unqualified(eb))?;
+            let sa = if ty_a.is_inline_array() {
+                ArraySizeType::Constant(ty_a.array_len().unwrap() as usize)
+            } else {
+                match &self.types[ty_a.index()].kind {
+                    TypeKind::Array { size, .. } => *size,
+                    _ => unreachable!(),
+                }
+            };
+            let sb = if ty_b.is_inline_array() {
+                ArraySizeType::Constant(ty_b.array_len().unwrap() as usize)
+            } else {
+                match &self.types[ty_b.index()].kind {
+                    TypeKind::Array { size, .. } => *size,
+                    _ => unreachable!(),
+                }
+            };
+
+            let composite_size = match (sa, sb) {
+                (ArraySizeType::Incomplete, s) => s,
+                (s, ArraySizeType::Incomplete) => s,
+                (ArraySizeType::Constant(sa), ArraySizeType::Constant(sb)) if sa == sb => ArraySizeType::Constant(sa),
+                (ArraySizeType::Star, s) => s,
+                (s, ArraySizeType::Star) => s,
+                _ => return None,
+            };
+
+            let res_ty = self.find_array_type(composite_elem.ty(), composite_size)?;
+            return Some(QualType::new(res_ty, a.qualifiers()));
+        }
+
+        let type_a = self.get(ty_a);
+        let type_b = self.get(ty_b);
+
+        match (&type_a.kind, &type_b.kind) {
+            (
+                TypeKind::Function {
+                    return_type: ret_a,
+                    parameters: params_a,
+                    is_variadic: var_a,
+                    is_noreturn: nor_a,
+                },
+                TypeKind::Function {
+                    return_type: ret_b,
+                    parameters: params_b,
+                    is_variadic: var_b,
+                    is_noreturn: nor_b,
+                },
+            ) => {
+                if var_a != var_b || nor_a != nor_b {
+                    return None;
+                }
+                let ret_composite =
+                    self.find_composite_type(QualType::unqualified(*ret_a), QualType::unqualified(*ret_b))?;
+                if params_a.len() != params_b.len() {
+                    return None;
+                }
+                let mut composite_params = Vec::new();
+                for (p_a, p_b) in params_a.iter().zip(params_b.iter()) {
+                    let p_composite = self.find_composite_type(p_a.param_type, p_b.param_type)?;
+                    composite_params.push(p_composite);
+                }
+                let key = FnSigKey {
+                    return_type: ret_composite.ty(),
+                    params: composite_params.iter().copied().collect(),
+                    is_variadic: *var_a,
+                    is_noreturn: *nor_a,
+                };
+                let f = self.function_cache.get(&key).copied()?;
+                Some(QualType::new(f, a.qualifiers()))
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) fn pointer_to(&mut self, base: QualType) -> TypeRef {
         // Try inline if unqualified
         if base.qualifiers().is_empty() {
@@ -916,7 +1043,7 @@ impl TypeRegistry {
     pub(crate) fn complete_record(
         &mut self,
         record: TypeRef,
-        members: Arc<[StructMember]>,
+        members: Arc<[RecordMember]>,
         packing: Option<u32>,
         alignment: Option<u16>,
     ) {
@@ -1386,7 +1513,7 @@ impl TypeRegistry {
 
     fn compute_record_layout(
         &mut self,
-        members: &[StructMember],
+        members: &[RecordMember],
         is_union: bool,
         packing: Option<u32>,
         alignment: Option<u16>,
@@ -2240,7 +2367,7 @@ enum LayoutTask {
     Array(TypeRef, usize),
     Complex(TypeRef),
     Function,
-    Record(Arc<[StructMember]>, bool, Option<u32>, Option<u16>),
+    Record(Arc<[RecordMember]>, bool, Option<u32>, Option<u16>),
     Enum(TypeRef),
     Alias(TypeRef),
     Incomplete,

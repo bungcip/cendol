@@ -471,12 +471,7 @@ impl<'src> Preprocessor<'src> {
             *entry = SourceManager::get_digit_metadata(i as u8);
         }
 
-        let comma_token = PPToken::new(
-            PPTokenKind::Comma,
-            PPTokenFlags::LEADING_SPACE,
-            SourceLoc::builtin(),
-            1,
-        );
+        let comma_token = PPToken::new(PPTokenKind::Comma, PPTokenFlags::LEADING_SPACE, SourceLoc::builtin(), 1);
 
         for (idx, &byte) in buffer[..bytes_to_embed].iter().enumerate().rev() {
             let (offset, len) = metadata[byte as usize];

@@ -248,3 +248,8 @@ Action: Always test VM type constraints using both direct VLAs and derived VM ty
 
 Learning: C11 6.7p3 requires that typedef redefinitions in the same scope denote the exact SAME type, not merely compatible types. This is a subtle distinction. While `int[]` and `int[10]` are compatible, they are not the same type. Similarly, `int` and `const int` are compatible in some contexts, but not the same. Enforcing strict type identity using `aliased_type != final_ty` during lowering prevents invalid redefinitions that would otherwise pass simple compatibility checks.
 Action: Add dedicated regression tests for `typedef` redefinition specifically targeting cases where types are compatible but not identical, to prevent regressions in this strict type identity constraint.
+
+2024-05-18 - [Function Return Type Constraints]
+
+Learning: C11 6.7.6.3p1 states that functions cannot return arrays or function types. However, when parsing code, `int f()[10];` or `int f()();` are often rejected as invalid syntax during the parsing phase ("Declaration not allowed in this context"). To properly test the semantic analysis phase enforcement of this constraint without parser interference, one must use `typedef` to obscure the array or function type, e.g., `typedef int arr[10]; arr f();`.
+Action: When testing semantic constraints involving complex derived types (like arrays or functions) in positions that might have syntactic limitations, use `typedef`s to bypass parser rejections and ensure the semantic rules are correctly enforced.

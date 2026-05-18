@@ -293,6 +293,7 @@ pub struct FileInfo {
 pub struct SourceManager {
     file_infos: Vec<FileInfo>,
     path_to_id: HashMap<PathBuf, SourceId>,
+    digits_id: std::sync::OnceLock<SourceId>,
 }
 
 impl Default for SourceManager {
@@ -300,6 +301,7 @@ impl Default for SourceManager {
         Self {
             file_infos: Vec::new(),
             path_to_id: HashMap::new(),
+            digits_id: std::sync::OnceLock::new(),
         }
     }
 }
@@ -307,6 +309,44 @@ impl Default for SourceManager {
 impl SourceManager {
     pub(crate) fn new() -> Self {
         Self::default()
+    }
+
+    /// Get the SourceId for the shared digits buffer ("0", "1", ..., "255"),
+    /// creating it if it doesn't exist.
+    pub(crate) fn get_digits_source_id(&mut self) -> SourceId {
+        if let Some(id) = self.digits_id.get() {
+            return *id;
+        }
+
+        let mut buffer = Vec::with_capacity(1024);
+        for i in 0..256 {
+            buffer.extend_from_slice(i.to_string().as_bytes());
+        }
+        let id = self.add_buffer(buffer, "<digits>", None, FileKind::Builtin);
+        let _ = self.digits_id.set(id);
+        id
+    }
+
+    /// Get the offset and length for a digit string in the shared digits buffer.
+    pub(crate) fn get_digit_metadata(byte: u8) -> (u32, u16) {
+        static METADATA: std::sync::OnceLock<[(u32, u16); 256]> = std::sync::OnceLock::new();
+        let table = METADATA.get_or_init(|| {
+            let mut t = [(0, 0); 256];
+            let mut offset = 0;
+            for i in 0..256 {
+                let len = if i < 10 {
+                    1
+                } else if i < 100 {
+                    2
+                } else {
+                    3
+                };
+                t[i as usize] = (offset, len);
+                offset += len as u32;
+            }
+            t
+        });
+        table[byte as usize]
     }
 
     /// Add a file to the source manager from a file path

@@ -154,6 +154,7 @@ pub(crate) struct MacroInfo {
     pub(crate) tokens: Arc<[PPToken]>,
     pub(crate) parameter_list: Arc<[StringId]>,
     pub(crate) variadic_arg: Option<StringId>,
+    pub(crate) parameter_needs_expansion: Arc<[bool]>,
 }
 
 /// Represents conditional compilation state

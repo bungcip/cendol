@@ -136,6 +136,7 @@ pub mod semantic_static_assert;
 
 pub mod driver_warning_formatting;
 pub mod guardian_choose_expr;
+pub mod guardian_function_return_type_constraints;
 pub mod guardian_typedef_redefinition;
 pub mod pp_pedantic_directives;
 pub mod pp_pedantic_dollar;
@@ -151,4 +152,3 @@ pub mod semantic_cleanup_diag;
 pub mod semantic_pedantic_gnu_extensions;
 pub mod semantic_return;
 pub mod semantic_usual_arithmetic_conversions;
-pub mod guardian_function_return_type_constraints;

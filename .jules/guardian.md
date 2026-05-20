@@ -248,3 +248,7 @@ Action: Always test VM type constraints using both direct VLAs and derived VM ty
 
 Learning: C11 6.7p3 requires that typedef redefinitions in the same scope denote the exact SAME type, not merely compatible types. This is a subtle distinction. While `int[]` and `int[10]` are compatible, they are not the same type. Similarly, `int` and `const int` are compatible in some contexts, but not the same. Enforcing strict type identity using `aliased_type != final_ty` during lowering prevents invalid redefinitions that would otherwise pass simple compatibility checks.
 Action: Add dedicated regression tests for `typedef` redefinition specifically targeting cases where types are compatible but not identical, to prevent regressions in this strict type identity constraint.
+
+2024-05-20 - [Modifiable Lvalue: Const qualification propagation]
+
+Learning: [C11 6.5.16p2 requires the left operand of an assignment to be a modifiable lvalue. Structs containing `const` qualified members are not modifiable lvalues, and any assignment to such structs must be rejected. The type system correctly identifies `const` qualification recursively for structs, and this applies not just to simple assignment but also increment/decrement and compound assignments. Tests added to enforce rejecting assignments/increments to const-containing structs and incomplete types to prevent compiler crashes or invalid codegen.] Action: [Always include tests for aggregate assignments when adding new type qualifiers or modifying lvalue checking logic.]

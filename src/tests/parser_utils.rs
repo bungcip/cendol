@@ -219,7 +219,10 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
         ),
         ParsedNodeKind::BuiltinBitCast(ty, expr) => ResolvedNodeKind::FunctionCall(
             Box::new(ResolvedNodeKind::Ident("__builtin_bit_cast".to_string())),
-            vec![ResolvedNodeKind::Ident(format!("parsed_type_{}", ty.base.get())), resolve_node(ast, *expr)],
+            vec![
+                ResolvedNodeKind::Ident(format!("parsed_type_{}", ty.base.get())),
+                resolve_node(ast, *expr),
+            ],
         ),
         ParsedNodeKind::BuiltinTypesCompatibleP(boxed) => {
             let (t1, t2) = &**boxed;

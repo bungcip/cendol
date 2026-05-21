@@ -129,3 +129,7 @@
 ## 2025-06-20 - UTF-8-Safe String Transformation via Slicing
 **Learning:** Transforming a `&str` by iterating over `as_bytes()` and casting to `char` (e.g., `bytes[i] as char`) is a major correctness bug that corrupts multi-byte UTF-8 sequences.
 **Action:** For performance-critical transformations like line-splice removal, use `memchr` to scan for ASCII triggers, then use string slicing and `push_str` to preserve the integrity of multi-byte UTF-8 sequences between triggers. This is both faster and correct.
+
+## 2026-05-21 - Pre-calculating Macro Parameter Expansion Needs
+**Learning:** Performing a linear scan of a macro's replacement list to determine if a parameter needs expansion (prescan) for every function-like macro expansion leads to O(N * M) complexity in the hot path.
+**Action:** Pre-calculate the expansion needs map once during macro definition (#define) and store it in MacroInfo. This reduces the check to O(1) during expansion, significantly improving performance for large macros or those with many parameters.

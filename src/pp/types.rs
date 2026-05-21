@@ -1,6 +1,6 @@
 use crate::ast::StringId;
 use crate::lang_options::CStandard;
-use crate::pp::pp_lexer::PPToken;
+use crate::pp::pp_lexer::{PPToken, PPTokenKind};
 use crate::source_manager::{SourceId, SourceLoc};
 use chrono::{DateTime, Utc};
 use hashbrown::HashMap;
@@ -154,6 +154,48 @@ pub(crate) struct MacroInfo {
     pub(crate) tokens: Arc<[PPToken]>,
     pub(crate) parameter_list: Arc<[StringId]>,
     pub(crate) variadic_arg: Option<StringId>,
+    /// Bolt ⚡: Pre-calculated map indicating if a parameter needs expansion.
+    /// This avoids O(N*M) body scans during every expansion.
+    pub(crate) parameter_needs_expansion: Arc<[bool]>,
+}
+
+impl MacroInfo {
+    /// Bolt ⚡: Pre-calculate which parameters need expansion (prescan).
+    /// A parameter needs expansion if it's used in the body without being stringified (#) or pasted (##).
+    pub(crate) fn calculate_expansion_needs(
+        tokens: &[PPToken],
+        params: &[StringId],
+        variadic: Option<StringId>,
+    ) -> Arc<[bool]> {
+        let mut needs_expansion = Vec::with_capacity(params.len() + variadic.is_some() as usize);
+
+        for &param_sym in params {
+            needs_expansion.push(Self::check_param_needs_expansion(tokens, param_sym));
+        }
+
+        if let Some(v_sym) = variadic {
+            needs_expansion.push(Self::check_param_needs_expansion(tokens, v_sym));
+        }
+
+        Arc::from(needs_expansion)
+    }
+
+    fn check_param_needs_expansion(tokens: &[PPToken], param_sym: StringId) -> bool {
+        for i in 0..tokens.len() {
+            if let PPTokenKind::Identifier(sym) = tokens[i].kind
+                && sym == param_sym
+            {
+                let preceded_by_hash = i > 0 && tokens[i - 1].kind == PPTokenKind::Hash;
+                let preceded_by_hashhash = i > 0 && tokens[i - 1].kind == PPTokenKind::HashHash;
+                let followed_by_hashhash = i + 1 < tokens.len() && tokens[i + 1].kind == PPTokenKind::HashHash;
+
+                if !preceded_by_hash && !preceded_by_hashhash && !followed_by_hashhash {
+                    return true;
+                }
+            }
+        }
+        false
+    }
 }
 
 /// Represents conditional compilation state

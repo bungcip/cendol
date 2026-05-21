@@ -245,12 +245,15 @@ impl<'src> Preprocessor<'src> {
         let tokens = self.collect_tokens_until_eod();
 
         // Store the macro
+        let tokens: Arc<[PPToken]> = Arc::from(tokens);
+        let params: Arc<[StringId]> = Arc::from(params);
         let mut macro_info = MacroInfo {
             location: name_token.location,
             flags,
-            tokens: Arc::from(tokens),
-            parameter_list: Arc::from(params),
+            tokens: tokens.clone(),
+            parameter_list: params.clone(),
             variadic_arg: variadic,
+            parameter_needs_expansion: MacroInfo::calculate_expansion_needs(&tokens, &params, variadic),
         };
 
         // Bolt ⚡: Pre-detect __VA_OPT__ in variadic macros to speed up expansion.

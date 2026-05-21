@@ -523,12 +523,14 @@ impl<'src> Preprocessor<'src> {
         let tokens = self.lex_macro_value(value_str, "<command-line>");
 
         let symbol = StringId::new(name);
+        let tokens: Arc<[PPToken]> = Arc::from(tokens);
         let macro_info = MacroInfo {
             location: SourceLoc::builtin(),
             flags: MacroFlags::empty(), // Not BUILTIN, so it can be redefined (with warning if different)
-            tokens: Arc::from(tokens),
+            tokens: tokens.clone(),
             parameter_list: Arc::from([]),
             variadic_arg: None,
+            parameter_needs_expansion: MacroInfo::calculate_expansion_needs(&tokens, &[], None),
         };
         self.macros.insert(symbol, macro_info);
     }
@@ -536,12 +538,14 @@ impl<'src> Preprocessor<'src> {
     /// Define a built-in macro
     fn define_builtin_macro(&mut self, name: &str, tokens: Vec<PPToken>) {
         let symbol = StringId::new(name);
+        let tokens: Arc<[PPToken]> = Arc::from(tokens);
         let macro_info = MacroInfo {
             location: SourceLoc::builtin(),
             flags: MacroFlags::BUILTIN,
-            tokens: Arc::from(tokens),
+            tokens: tokens.clone(),
             parameter_list: Arc::from([]),
             variadic_arg: None,
+            parameter_needs_expansion: MacroInfo::calculate_expansion_needs(&tokens, &[], None),
         };
         self.macros.insert(symbol, macro_info);
     }
@@ -551,12 +555,14 @@ impl<'src> Preprocessor<'src> {
         let symbol = StringId::new(name);
         let param_symbols: Vec<StringId> = params.iter().map(|&p| StringId::new(p)).collect();
         let tokens = self.lex_macro_value(body, "<builtin>");
+        let tokens: Arc<[PPToken]> = Arc::from(tokens);
         let macro_info = MacroInfo {
             location: SourceLoc::builtin(),
             flags: MacroFlags::BUILTIN | MacroFlags::FUNCTION_LIKE,
-            tokens: Arc::from(tokens),
-            parameter_list: Arc::from(param_symbols),
+            tokens: tokens.clone(),
+            parameter_list: Arc::from(param_symbols.clone()),
             variadic_arg: None,
+            parameter_needs_expansion: MacroInfo::calculate_expansion_needs(&tokens, &param_symbols, None),
         };
         self.macros.insert(symbol, macro_info);
     }

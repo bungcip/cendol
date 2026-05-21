@@ -1186,7 +1186,6 @@ impl<'src> Preprocessor<'src> {
 
         Ok((flags, params, variadic))
     }
-
 }
 
 /// Helper to cache source buffers for efficient token text retrieval

@@ -255,8 +255,7 @@ impl<'src> Preprocessor<'src> {
         };
 
         // Bolt ⚡: Pre-calculate expansion needs and detect __VA_OPT__.
-        let mut needs_expansion =
-            vec![false; macro_info.parameter_list.len() + if variadic.is_some() { 1 } else { 0 }];
+        let mut needs_expansion = vec![false; macro_info.parameter_list.len() + if variadic.is_some() { 1 } else { 0 }];
 
         for i in 0..macro_info.tokens.len() {
             let t = &macro_info.tokens[i];

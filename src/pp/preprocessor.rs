@@ -562,8 +562,7 @@ impl<'src> Preprocessor<'src> {
             {
                 let preceded_by_hash = i > 0 && tokens[i - 1].kind == PPTokenKind::Hash;
                 let preceded_by_hashhash = i > 0 && tokens[i - 1].kind == PPTokenKind::HashHash;
-                let followed_by_hashhash =
-                    i + 1 < tokens.len() && tokens[i + 1].kind == PPTokenKind::HashHash;
+                let followed_by_hashhash = i + 1 < tokens.len() && tokens[i + 1].kind == PPTokenKind::HashHash;
 
                 if !preceded_by_hash && !preceded_by_hashhash && !followed_by_hashhash {
                     needs_expansion[idx] = true;

@@ -159,13 +159,7 @@ impl<'src> Preprocessor<'src> {
         let mut expanded_args = Vec::with_capacity(args.len());
         for (idx, arg) in args.iter().enumerate() {
             let mut arg_clone = arg.clone();
-            let needs_expansion = if idx < macro_info.parameter_list.len() {
-                self.parameter_needs_expansion(macro_info, macro_info.parameter_list[idx])
-            } else if let Some(var_arg) = macro_info.variadic_arg {
-                self.parameter_needs_expansion(macro_info, var_arg)
-            } else {
-                false
-            };
+            let needs_expansion = macro_info.parameter_needs_expansion.get(idx).copied().unwrap_or(false);
 
             if needs_expansion {
                 self.expand_tokens(&mut arg_clone, false)?;
@@ -1010,13 +1004,7 @@ impl<'src> Preprocessor<'src> {
         let mut expanded_args = Vec::with_capacity(args.len());
         for (idx, arg) in args.iter().enumerate() {
             let mut arg_clone = arg.clone();
-            let needs_expansion = if idx < info.parameter_list.len() {
-                self.parameter_needs_expansion(&info, info.parameter_list[idx])
-            } else if let Some(var_arg) = info.variadic_arg {
-                self.parameter_needs_expansion(&info, var_arg)
-            } else {
-                false
-            };
+            let needs_expansion = info.parameter_needs_expansion.get(idx).copied().unwrap_or(false);
 
             if needs_expansion {
                 // Bolt ⚡: Ignore errors during argument prescan to match original behavior.
@@ -1197,25 +1185,6 @@ impl<'src> Preprocessor<'src> {
         }
 
         Ok((flags, params, variadic))
-    }
-
-    /// Check if a parameter is used in the replacement list in a way that requires its expanded argument
-    fn parameter_needs_expansion(&self, macro_info: &MacroInfo, param_sym: StringId) -> bool {
-        for i in 0..macro_info.tokens.len() {
-            if let PPTokenKind::Identifier(sym) = macro_info.tokens[i].kind
-                && sym == param_sym
-            {
-                let preceded_by_hash = i > 0 && macro_info.tokens[i - 1].kind == PPTokenKind::Hash;
-                let preceded_by_hashhash = i > 0 && macro_info.tokens[i - 1].kind == PPTokenKind::HashHash;
-                let followed_by_hashhash =
-                    i + 1 < macro_info.tokens.len() && macro_info.tokens[i + 1].kind == PPTokenKind::HashHash;
-
-                if !preceded_by_hash && !preceded_by_hashhash && !followed_by_hashhash {
-                    return true;
-                }
-            }
-        }
-        false
     }
 }
 

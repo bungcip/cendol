@@ -529,6 +529,7 @@ impl<'src> Preprocessor<'src> {
             tokens: Arc::from(tokens),
             parameter_list: Arc::from([]),
             variadic_arg: None,
+            parameter_needs_expansion: Arc::from([]),
         };
         self.macros.insert(symbol, macro_info);
     }
@@ -542,6 +543,7 @@ impl<'src> Preprocessor<'src> {
             tokens: Arc::from(tokens),
             parameter_list: Arc::from([]),
             variadic_arg: None,
+            parameter_needs_expansion: Arc::from([]),
         };
         self.macros.insert(symbol, macro_info);
     }
@@ -551,12 +553,30 @@ impl<'src> Preprocessor<'src> {
         let symbol = StringId::new(name);
         let param_symbols: Vec<StringId> = params.iter().map(|&p| StringId::new(p)).collect();
         let tokens = self.lex_macro_value(body, "<builtin>");
+
+        // Pre-calculate expansion needs for built-in function-like macros
+        let mut needs_expansion = vec![false; param_symbols.len()];
+        for i in 0..tokens.len() {
+            if let PPTokenKind::Identifier(sym) = tokens[i].kind
+                && let Some(idx) = param_symbols.iter().position(|&p| p == sym)
+            {
+                let preceded_by_hash = i > 0 && tokens[i - 1].kind == PPTokenKind::Hash;
+                let preceded_by_hashhash = i > 0 && tokens[i - 1].kind == PPTokenKind::HashHash;
+                let followed_by_hashhash = i + 1 < tokens.len() && tokens[i + 1].kind == PPTokenKind::HashHash;
+
+                if !preceded_by_hash && !preceded_by_hashhash && !followed_by_hashhash {
+                    needs_expansion[idx] = true;
+                }
+            }
+        }
+
         let macro_info = MacroInfo {
             location: SourceLoc::builtin(),
             flags: MacroFlags::BUILTIN | MacroFlags::FUNCTION_LIKE,
             tokens: Arc::from(tokens),
             parameter_list: Arc::from(param_symbols),
             variadic_arg: None,
+            parameter_needs_expansion: Arc::from(needs_expansion),
         };
         self.macros.insert(symbol, macro_info);
     }

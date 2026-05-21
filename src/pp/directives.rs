@@ -251,19 +251,42 @@ impl<'src> Preprocessor<'src> {
             tokens: Arc::from(tokens),
             parameter_list: Arc::from(params),
             variadic_arg: variadic,
+            parameter_needs_expansion: Arc::from([]), // Temporarily empty
         };
 
-        // Bolt ⚡: Pre-detect __VA_OPT__ in variadic macros to speed up expansion.
-        if macro_info.variadic_arg.is_some() {
-            for t in macro_info.tokens.iter() {
-                if let PPTokenKind::Identifier(sym) = t.kind
-                    && sym == self.keywords.va_opt
-                {
+        // Bolt ⚡: Pre-calculate expansion needs and detect __VA_OPT__.
+        let mut needs_expansion = vec![false; macro_info.parameter_list.len() + if variadic.is_some() { 1 } else { 0 }];
+
+        for i in 0..macro_info.tokens.len() {
+            let t = &macro_info.tokens[i];
+            if let PPTokenKind::Identifier(sym) = t.kind {
+                // Check for __VA_OPT__
+                if variadic.is_some() && sym == self.keywords.va_opt {
                     macro_info.flags |= MacroFlags::HAS_VA_OPT;
-                    break;
+                }
+
+                // Check for parameter usage that requires expansion
+                let param_idx = if let Some(pos) = macro_info.parameter_list.iter().position(|&p| p == sym) {
+                    Some(pos)
+                } else if variadic == Some(sym) {
+                    Some(macro_info.parameter_list.len())
+                } else {
+                    None
+                };
+
+                if let Some(idx) = param_idx {
+                    let preceded_by_hash = i > 0 && macro_info.tokens[i - 1].kind == PPTokenKind::Hash;
+                    let preceded_by_hashhash = i > 0 && macro_info.tokens[i - 1].kind == PPTokenKind::HashHash;
+                    let followed_by_hashhash =
+                        i + 1 < macro_info.tokens.len() && macro_info.tokens[i + 1].kind == PPTokenKind::HashHash;
+
+                    if !preceded_by_hash && !preceded_by_hashhash && !followed_by_hashhash {
+                        needs_expansion[idx] = true;
+                    }
                 }
             }
         }
+        macro_info.parameter_needs_expansion = Arc::from(needs_expansion);
 
         if self.check_macro_redefinition(name, &name_token, &macro_info) {
             self.macros.insert(name, macro_info);

@@ -480,6 +480,12 @@ fn test_builtin_alloca() {
 }
 
 #[test]
+fn test_builtin_bit_cast() {
+    let resolved = setup_expr("__builtin_bit_cast(float, 42)");
+    insta::assert_yaml_snapshot!(resolved);
+}
+
+#[test]
 fn test_builtin_trap() {
     let resolved = setup_expr("__builtin_trap()");
     insta::assert_yaml_snapshot!(&resolved, @"

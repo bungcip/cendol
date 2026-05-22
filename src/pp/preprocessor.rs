@@ -942,6 +942,20 @@ impl<'src> Preprocessor<'src> {
         tokens
     }
 
+    /// Collect tokens until Eod, including an already consumed initial token.
+    /// Bolt ⚡: This avoids redundant Vec allocations and copies from chaining.
+    pub(super) fn collect_tokens_until_eod_with_initial(&mut self, initial: PPToken) -> Vec<PPToken> {
+        let mut tokens = Vec::with_capacity(32);
+        tokens.push(initial);
+        while let Some(token) = self.lex_token() {
+            if token.kind == PPTokenKind::Eod {
+                break;
+            }
+            tokens.push(token);
+        }
+        tokens
+    }
+
     /// Check if we are currently skipping tokens
     pub(super) fn is_currently_skipping(&self) -> bool {
         // Bolt ⚡: Optimized to O(1) by checking only the top of the stack.

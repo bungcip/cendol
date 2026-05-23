@@ -129,3 +129,7 @@
 ## 2025-06-20 - UTF-8-Safe String Transformation via Slicing
 **Learning:** Transforming a `&str` by iterating over `as_bytes()` and casting to `char` (e.g., `bytes[i] as char`) is a major correctness bug that corrupts multi-byte UTF-8 sequences.
 **Action:** For performance-critical transformations like line-splice removal, use `memchr` to scan for ASCII triggers, then use string slicing and `push_str` to preserve the integrity of multi-byte UTF-8 sequences between triggers. This is both faster and correct.
+
+## 2025-06-25 - Efficient Token-to-String Conversion via Caching
+**Learning:** Reconstructing strings from preprocessor tokens frequently involves redundant `SourceManager` lookups and buffer retrievals. While `get_token_text` is convenient, calling it in a loop for many tokens (e.g., in `#warning` or include path reconstruction) creates significant overhead.
+**Action:** Use `SourceBufferCache` for all multi-token string reconstructions. This caches the last accessed source buffer and provides a fast-path for identifiers and fixed-text punctuators, reducing syscall-like overhead in the preprocessor. Ensure that optimizations to utility functions preserve exact behavioral invariants (like whitespace handling) unless a change is explicitly desired.

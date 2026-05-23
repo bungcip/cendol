@@ -90,9 +90,13 @@ impl<'src> Preprocessor<'src> {
     /// Helper to convert tokens to their string representation
     pub(super) fn tokens_to_string(&self, tokens: &[PPToken]) -> String {
         // Bolt ⚡: Pre-calculate capacity to avoid redundant reallocations.
-        let mut result = String::with_capacity(tokens.iter().map(|t| t.length as usize).sum());
+        let capacity = tokens.iter().map(|t| t.length as usize).sum();
+
+        let mut result = String::with_capacity(capacity);
+        let mut cache = SourceBufferCache::new(self.sm);
+
         for token in tokens {
-            result.push_str(&self.get_token_text(token));
+            result.push_str(&cache.get_token_text(token));
         }
         result
     }
@@ -1070,7 +1074,8 @@ impl<'src> Preprocessor<'src> {
             return Vec::new();
         }
 
-        let mut buffer = Vec::with_capacity(tokens.iter().map(|t| t.length as usize).sum());
+        // Bolt ⚡: Include tokens.len() in capacity to account for potential spaces between tokens.
+        let mut buffer = Vec::with_capacity(tokens.len() + tokens.iter().map(|t| t.length as usize).sum::<usize>());
         let mut metadata = Vec::with_capacity(tokens.len());
 
         {

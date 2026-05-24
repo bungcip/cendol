@@ -87,12 +87,26 @@ impl<'src> Preprocessor<'src> {
         result.map(Some)
     }
 
-    /// Helper to convert tokens to their string representation
+    /// Helper to convert tokens to their string representation.
+    /// Preserves LEADING_SPACE between tokens.
     pub(super) fn tokens_to_string(&self, tokens: &[PPToken]) -> String {
+        if tokens.is_empty() {
+            return String::new();
+        }
+
         // Bolt ⚡: Pre-calculate capacity to avoid redundant reallocations.
-        let mut result = String::with_capacity(tokens.iter().map(|t| t.length as usize).sum());
-        for token in tokens {
-            result.push_str(&self.get_token_text(token));
+        // We add tokens.len() as an upper bound for extra spaces.
+        let capacity = tokens.iter().map(|t| t.length as usize).sum::<usize>() + tokens.len();
+        let mut result = String::with_capacity(capacity);
+
+        let mut cache = SourceBufferCache::new(self.sm);
+
+        for (i, token) in tokens.iter().enumerate() {
+            // Bolt ⚡: Preserve leading spaces between tokens.
+            if i > 0 && token.flags.contains(PPTokenFlags::LEADING_SPACE) {
+                result.push(' ');
+            }
+            result.push_str(&cache.get_token_text(token));
         }
         result
     }
@@ -1070,7 +1084,10 @@ impl<'src> Preprocessor<'src> {
             return Vec::new();
         }
 
-        let mut buffer = Vec::with_capacity(tokens.iter().map(|t| t.length as usize).sum());
+        // Bolt ⚡: Pre-calculate capacity to include potential spaces.
+        // This avoids reallocations during buffer construction.
+        let capacity = tokens.iter().map(|t| t.length as usize).sum::<usize>() + tokens.len();
+        let mut buffer = Vec::with_capacity(capacity);
         let mut metadata = Vec::with_capacity(tokens.len());
 
         {
@@ -1108,20 +1125,19 @@ impl<'src> Preprocessor<'src> {
             FileKind::MacroExpansion,
         );
 
-        tokens
-            .iter()
-            .zip(metadata)
-            .map(|(t, (preserve, offset, len))| {
-                let loc = if preserve {
-                    t.location
-                } else {
-                    SourceLoc::new(virtual_id, offset)
-                };
-                let mut token = PPToken::new(t.kind, t.flags | PPTokenFlags::MACRO_EXPANDED, loc, len);
-                token.hide_set = t.hide_set;
-                token
-            })
-            .collect()
+        // Bolt ⚡: Use Vec::with_capacity and extend for the final token list.
+        let mut result = Vec::with_capacity(tokens.len());
+        for (t, (preserve, offset, len)) in tokens.iter().zip(metadata) {
+            let loc = if preserve {
+                t.location
+            } else {
+                SourceLoc::new(virtual_id, offset)
+            };
+            let mut token = PPToken::new(t.kind, t.flags | PPTokenFlags::MACRO_EXPANDED, loc, len);
+            token.hide_set = t.hide_set;
+            result.push(token);
+        }
+        result
     }
 
     pub(super) fn parse_macro_definition_params(

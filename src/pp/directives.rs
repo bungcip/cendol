@@ -319,10 +319,7 @@ impl<'src> Preprocessor<'src> {
 
     fn do_handle_include(&mut self, is_next: bool) -> Result<(), PPDiag> {
         let first_token = self.expect_token()?;
-
-        let mut tokens = std::iter::once(first_token)
-            .chain(self.collect_tokens_until_eod())
-            .collect::<Vec<_>>();
+        let mut tokens = self.collect_tokens_until_eod_with_initial(first_token);
 
         let (path_str, is_angled) = match tokens[0].kind {
             PPTokenKind::StringLiteral | PPTokenKind::Less => {
@@ -408,10 +405,7 @@ impl<'src> Preprocessor<'src> {
 
     fn handle_embed(&mut self) -> Result<(), PPDiag> {
         let first_token = self.expect_token()?;
-
-        let mut tokens = std::iter::once(first_token)
-            .chain(self.collect_tokens_until_eod())
-            .collect::<Vec<_>>();
+        let mut tokens = self.collect_tokens_until_eod_with_initial(first_token);
 
         if !matches!(tokens[0].kind, PPTokenKind::StringLiteral | PPTokenKind::Less) {
             self.expand_tokens(&mut tokens, false)?;

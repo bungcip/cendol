@@ -730,3 +730,18 @@ fn test_to_unsigned() {
     assert_eq!(BuiltinType::UInt.to_unsigned(), BuiltinType::UInt);
     assert_eq!(BuiltinType::Float.to_unsigned(), BuiltinType::Float);
 }
+
+#[test]
+fn test_is_char_type_coverage() {
+    use crate::semantic::type_registry::TypeRegistry;
+
+    let reg = TypeRegistry::new(target_lexicon::Triple::host());
+
+    // Test Builtin char type
+    let char_ty = reg.type_char;
+    assert!(reg.is_char_type(char_ty));
+
+    // Test Builtin non-char type
+    let int_ty = reg.type_int;
+    assert!(!reg.is_char_type(int_ty));
+}

@@ -130,6 +130,23 @@ fn test_parser_errors() {
         ("void foo() { (", "found end of file"),
         ("void foo() { { int x = +; } }", "found ;"),
         ("[[maybe_unused]]", "found ["),
+        ("int _Atomic(int[5]) x;", "array"),
+        ("int _Atomic(int(void)) x;", "function"),
+        ("int _Atomic(int[5]) x;", "array"),
+        ("int _Atomic(int(void)) x;", "function"),
+        ("int _Atomic(int[5]) x;", "specifier cannot be used with array type"),
+        (
+            "int _Atomic(int(void)) x;",
+            "specifier cannot be used with function type",
+        ),
+        (
+            "int _Atomic(_Atomic(int)) x;",
+            "specifier cannot be used with atomic type",
+        ),
+        (
+            "int _Atomic(int(void)) x;",
+            "specifier cannot be used with function type",
+        ),
     ];
 
     for (source, message) in cases {

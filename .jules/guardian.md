@@ -256,3 +256,7 @@ Learning: [C11 6.5.16p2 requires the left operand of an assignment to be a modif
 
 Learning: C11 6.7.6.3p1 states that functions cannot return arrays or function types. However, when parsing code, `int f()[10];` or `int f()();` are often rejected as invalid syntax during the parsing phase ("Declaration not allowed in this context"). To properly test the semantic analysis phase enforcement of this constraint without parser interference, one must use `typedef` to obscure the array or function type, e.g., `typedef int arr[10]; arr f();`.
 Action: When testing semantic constraints involving complex derived types (like arrays or functions) in positions that might have syntactic limitations, use `typedef`s to bypass parser rejections and ensure the semantic rules are correctly enforced.
+
+2024-05-25 - [Block-scope Thread-Local Validation]
+
+Learning: C11 §6.7.1p3 requires that `_Thread_local` variables in block scope must also be specified with either `static` or `extern` storage-class specifiers. Without explicitly testing this invariant, the compiler could easily accept automatic `_Thread_local` variables, breaking compilation or runtime assumptions as thread-local semantics do not apply to automatic storage. Action: Ensure storage class modifier combinations are robustly checked, especially for nested scopes and specific thread-local semantics.

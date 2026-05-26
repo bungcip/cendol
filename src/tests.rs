@@ -69,6 +69,7 @@ pub mod guardian_modifiable_lvalue;
 pub mod guardian_pointer_arithmetic_completeness;
 pub mod guardian_struct_member;
 pub mod parser_gcc_extensions;
+pub mod guardian_alignas_constraints;
 pub mod semantic_composite;
 pub mod test_utils;
 

@@ -712,6 +712,29 @@ impl<'a> SemanticAnalyzer<'a> {
 
         let node_kind = self.ast.get_kind(node);
 
+        // Bolt ⚡: Optimization: Early-exit for node kinds that are definitely not constant expressions.
+        // This avoids redundant type lookups and recursive evaluation attempts for common non-constant nodes.
+        match node_kind {
+            NodeKind::Assignment(..)
+            | NodeKind::FunctionCall(..)
+            | NodeKind::PostIncrement(..)
+            | NodeKind::PostDecrement(..)
+            | NodeKind::CompoundStmt(..)
+            | NodeKind::If(..)
+            | NodeKind::While(..)
+            | NodeKind::For(..)
+            | NodeKind::Return(..)
+            | NodeKind::Break
+            | NodeKind::Continue
+            | NodeKind::Goto(..)
+            | NodeKind::Label(..)
+            | NodeKind::Switch(..)
+            | NodeKind::ExpressionStmt(..)
+            | NodeKind::AsmStmt(..)
+            | NodeKind::TranslationUnit(..) => return false,
+            _ => {}
+        }
+
         match node_kind {
             NodeKind::Literal(l) if l.kind() == LitKind::Nullptr => return true,
             NodeKind::Cast(qt, inner) if qt.ty() == self.registry.type_void_ptr => {
@@ -742,6 +765,12 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn is_integer_constant_zero(&self, node: NodeRef) -> bool {
+        // Bolt ⚡: Fast-path for literals using the optimized LitRef::is_integer_zero().
+        // This avoids recursive constant evaluation and RwLock acquisition for common literals.
+        if let NodeKind::Literal(l) = self.ast.get_kind(node) {
+            return l.is_integer_zero();
+        }
+
         if let Some(qt) = self.semantic_info.types.get(node.index()).and_then(|t| *t)
             && qt.is_integer()
         {

@@ -300,6 +300,28 @@ impl LitRef {
         Self((TAG_CHAR << TAG_SHIFT) | ch as u64 | ((prefix as u64) << CHAR_PREFIX_SHIFT))
     }
 
+    /// Returns true if the literal is an integer-compatible zero (0, nullptr, false, '\0').
+    /// Bolt ⚡: Optimized zero-check that avoids intern table lookups and locks for most literals.
+    /// Note: Does NOT return true for 0.0, as float literals are not null pointer constants.
+    #[inline]
+    pub(crate) fn is_integer_zero(self) -> bool {
+        match self.tag() {
+            TAG_INT => (self.payload() & INT_VALUE_MASK) == 0,
+            TAG_BOOL => self.payload() == 0,
+            TAG_NULLPTR => true,
+            TAG_CHAR => (self.payload() & CHAR_VAL_MASK) == 0,
+            TAG_FLOAT32 => false,
+            TAG_SMALL_STR => false,
+            TAG_INTERNED => match self.get_val() {
+                LitVal::Int { value, .. } => value == 0,
+                LitVal::Char(c, _) => c == 0,
+                LitVal::True | LitVal::False => self == Self::FALSE,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     pub(crate) fn from_string<'a>(s: std::borrow::Cow<'a, str>, prefix: StrPrefix) -> Self {
         let bytes = s.as_bytes();
         if bytes.len() <= STR_MAX_SMALL_LEN && bytes.is_ascii() {

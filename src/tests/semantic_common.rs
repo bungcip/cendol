@@ -45,7 +45,7 @@ pub(crate) fn setup_analysis(source: &str) -> (Ast, TypeRegistry, SymbolTable) {
         &symbol_table,
         &mut registry,
         &crate::lang_options::LangOptions::default(),
-        &driver.source_manager,
+        &driver.sm,
     );
 
     if diag.has_errors() {

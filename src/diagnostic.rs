@@ -228,7 +228,7 @@ impl DiagnosticEngine {
     }
 
     /// Format a single diagnostic with rich source code context
-    fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
+    pub(crate) fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
         let message = if diag.level == DiagnosticLevel::Warning {
             if let Some(name) = diag.warning_name {
                 format!("{} [-W{}]", diag.message, name)
@@ -298,11 +298,6 @@ impl DiagnosticEngine {
             let formatted = self.format_diagnostic(diag, source_manager);
             eprintln!("{}", formatted);
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn test_format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
-        self.format_diagnostic(diag, source_manager)
     }
 }
 

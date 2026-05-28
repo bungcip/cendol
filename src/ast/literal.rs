@@ -250,7 +250,6 @@ pub enum LitVal {
 }
 
 impl LitVal {
-    #[cfg(test)]
     pub(crate) fn from_f64(val: f64, suffix: FloatSuffix) -> Self {
         Self::Float {
             bits: val.to_bits(),
@@ -345,10 +344,7 @@ impl LitRef {
                 let bits = (value as f32).to_bits() as u64;
                 Self((TAG_FLOAT32 << TAG_SHIFT) | bits | ((suffix as u64) << FLOAT_SUFFIX_SHIFT))
             }
-            _ => Self::intern(LitVal::Float {
-                bits: value.to_bits(),
-                suffix,
-            }),
+            _ => Self::intern(LitVal::from_f64(value, suffix)),
         }
     }
 
@@ -395,10 +391,7 @@ impl LitRef {
                 let p = self.payload();
                 let bits = (p & FLOAT32_VAL_MASK) as u32;
                 let suffix = FloatSuffix::from_u8(((p >> FLOAT_SUFFIX_SHIFT) & 0xF) as u8);
-                LitVal::Float {
-                    bits: (f32::from_bits(bits) as f64).to_bits(),
-                    suffix,
-                }
+                LitVal::from_f64(f32::from_bits(bits) as f64, suffix)
             }
             TAG_INTERNED => {
                 let id = (self.payload() & INTERN_INDEX_MASK) as u32;

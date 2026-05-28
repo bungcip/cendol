@@ -22,9 +22,7 @@ fn test_warning_attributes_formatting() {
     assert!(!warnings.is_empty(), "Should find warning tagged with attributes group");
 
     for warning in warnings {
-        let formatted = driver
-            .diagnostics
-            .test_format_diagnostic(warning, &driver.source_manager);
+        let formatted = driver.de.format_diagnostic(warning, &driver.sm);
         assert!(
             formatted.contains("[-Wattributes]"),
             "Formatted output should contain [-Wattributes]"
@@ -49,9 +47,7 @@ fn test_warning_hash_warnings_formatting() {
     assert!(!warnings.is_empty(), "Should find warning tagged with #warnings group");
 
     for warning in warnings {
-        let formatted = driver
-            .diagnostics
-            .test_format_diagnostic(warning, &driver.source_manager);
+        let formatted = driver.de.format_diagnostic(warning, &driver.sm);
         assert!(
             formatted.contains("[-W#warnings]"),
             "Formatted output should contain [-W#warnings]"
@@ -79,9 +75,7 @@ fn test_warning_builtin_macro_redefined_formatting() {
     );
 
     for warning in warnings {
-        let formatted = driver
-            .diagnostics
-            .test_format_diagnostic(warning, &driver.source_manager);
+        let formatted = driver.de.format_diagnostic(warning, &driver.sm);
         assert!(
             formatted.contains("[-Wbuiltin-macro-redefined]"),
             "Formatted output should contain [-Wbuiltin-macro-redefined]"

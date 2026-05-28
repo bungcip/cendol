@@ -113,7 +113,7 @@ fn check_diagnostic(driver: &CompilerDriver, message: &str, line: u32, col: u32)
     let diagnostics = driver.get_diagnostics();
     let found = diagnostics.iter().any(|d| {
         if d.message.contains(message)
-            && let Some((l, c)) = driver.source_manager.get_line_column(d.span.start())
+            && let Some((l, c)) = driver.sm.get_line_column(d.span.start())
             && l == line
             && c == col
         {

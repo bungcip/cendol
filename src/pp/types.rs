@@ -51,18 +51,7 @@ impl HideSetTable {
             insert_cache: HashMap::new(),
         }
     }
-
-    #[cfg(test)]
-    pub(crate) fn intern(&mut self, mut set: SmallVec<[StringId; 4]>) -> u32 {
-        if set.is_empty() {
-            return 0;
-        }
-        set.sort();
-        set.dedup();
-        self.intern_canonical(set)
-    }
-
-    fn intern_canonical(&mut self, set: SmallVec<[StringId; 4]>) -> u32 {
+    pub(crate) fn intern(&mut self, set: SmallVec<[StringId; 4]>) -> u32 {
         if set.is_empty() {
             return 0;
         }
@@ -111,7 +100,7 @@ impl HideSetTable {
             }
         }
 
-        let res = self.intern_canonical(result);
+        let res = self.intern(result);
         self.intersection_cache.insert(key, res);
         res
     }
@@ -130,7 +119,7 @@ impl HideSetTable {
                 new_set.extend_from_slice(&existing[..pos]);
                 new_set.push(symbol);
                 new_set.extend_from_slice(&existing[pos..]);
-                self.intern_canonical(new_set)
+                self.intern(new_set)
             }
         };
 

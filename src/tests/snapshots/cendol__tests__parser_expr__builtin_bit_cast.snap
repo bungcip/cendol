@@ -1,8 +1,0 @@
----
-source: src/tests/parser_expr.rs
-expression: resolved
----
-FunctionCall:
-  - Ident: __builtin_bit_cast
-  - - Ident: parsed_type_1
-    - LiteralInt: 42

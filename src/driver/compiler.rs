@@ -11,7 +11,7 @@ use std::time::Instant;
 use indexmap::IndexMap;
 
 use crate::ast::dumper::AstDumper;
-use crate::ast::{Ast, ParsedAst, SourceId};
+use crate::ast::{Ast, NodeKind, ParsedAst, SourceId};
 use crate::codegen::{ClifGen, ClifOutput, EmitKind};
 use crate::diagnostic::{DiagnosticEngine, IntoDiagnostic};
 use crate::driver::cli::PathOrBuffer;
@@ -19,6 +19,7 @@ use crate::mir::validation::MirValidator;
 use crate::parser::Lexer;
 
 use super::artifact::{CompileArtifact, CompilePhase, PipelineOutputs};
+use super::cli::CompileConfig;
 use crate::codegen::MirGen;
 use crate::mir::MirProgram;
 use crate::mir::dumper::{MirDumpConfig, MirDumper};
@@ -27,13 +28,11 @@ use crate::pp::{Preprocessor, dumper::PPDumper};
 use crate::semantic::{SymbolTable, TypeRegistry};
 use crate::source_manager::{FileKind, SourceManager};
 
-use super::cli::CompileConfig;
-
 /// Main compiler driver
 pub struct CompilerDriver {
     pub(crate) config: CompileConfig,
-    pub(crate) diagnostics: DiagnosticEngine,
-    pub(crate) source_manager: SourceManager,
+    pub(crate) de: DiagnosticEngine,
+    pub(crate) sm: SourceManager,
 }
 
 impl CompilerDriver {
@@ -45,15 +44,15 @@ impl CompilerDriver {
 
     /// Create a new compiler driver from configuration
     pub fn from_config(config: CompileConfig) -> Self {
-        let mut diagnostics = DiagnosticEngine::from_warnings(&config.warnings);
+        let mut de = DiagnosticEngine::from_warnings(&config.warnings);
         // Default to one error report as requested, or use the configured limit
-        diagnostics.set_error_limit(config.fmax_errors.unwrap_or(20));
+        de.set_error_limit(config.fmax_errors.unwrap_or(20));
         // Also set a default warning limit to prevent massive overhead for very large files
-        diagnostics.set_warning_limit(200);
+        de.set_warning_limit(200);
 
         let driver = CompilerDriver {
-            diagnostics,
-            source_manager: SourceManager::new(),
+            de,
+            sm: SourceManager::new(),
             config,
         };
 
@@ -104,13 +103,8 @@ impl CompilerDriver {
             }
 
             let source_id = match input_file {
-                PathOrBuffer::Path(path) => self
-                    .source_manager
-                    .add_file(&path, None)
-                    .map_err(PipelineError::IoError)?,
-                PathOrBuffer::Buffer(path, buffer) => {
-                    self.source_manager.add_buffer(buffer, path, None, FileKind::Real)
-                }
+                PathOrBuffer::Path(path) => self.sm.add_file(&path, None).map_err(PipelineError::IoError)?,
+                PathOrBuffer::Buffer(path, buffer) => self.sm.add_buffer(buffer, path, None, FileKind::Real),
             };
 
             let unit_output = self.run_translation_unit(source_id, stop_after)?;
@@ -129,11 +123,7 @@ impl CompilerDriver {
         let timing_enabled = self.config.timing;
         let total_start = if timing_enabled { Some(Instant::now()) } else { None };
 
-        let mut preprocessor = Preprocessor::new(
-            &mut self.source_manager,
-            &mut self.diagnostics,
-            &self.config.preprocessor,
-        );
+        let mut preprocessor = Preprocessor::new(&mut self.sm, &mut self.de, &self.config.preprocessor);
 
         for (name, value) in &self.config.defines {
             preprocessor.define_user_macro(name, value.as_deref());
@@ -146,7 +136,7 @@ impl CompilerDriver {
                 preprocessor
                     .process(source_id, &self.config.preprocessor)
                     .map_err(|e| {
-                        self.diagnostics.report_streaming(e.into(), &self.source_manager);
+                        self.de.report_streaming(e.into(), &self.sm);
                         PipelineError::Fatal
                     })?,
             );
@@ -163,7 +153,7 @@ impl CompilerDriver {
         let t1 = Instant::now();
         if stop_after == CompilePhase::Lex {
             out.lexed = Some(lexer.tokenize_all().map_err(|e| {
-                self.diagnostics.report_streaming(e.into(), &self.source_manager);
+                self.de.report_streaming(e.into(), &self.sm);
                 PipelineError::Fatal
             })?);
             self.check_diagnostics_and_return_if_error()?;
@@ -180,7 +170,7 @@ impl CompilerDriver {
             .parse_translation_unit()
             .map_err(|e| {
                 for diag in e.into_diagnostic() {
-                    self.diagnostics.report_streaming(diag, &self.source_manager);
+                    self.de.report_streaming(diag, &self.sm);
                 }
                 PipelineError::Fatal
             })?;
@@ -249,7 +239,7 @@ impl CompilerDriver {
         visit_ast(
             &parsed_ast,
             &mut ast,
-            &mut self.diagnostics,
+            &mut self.de,
             &mut symbol_table,
             &mut registry,
             &self.config.lang_options,
@@ -264,7 +254,6 @@ impl CompilerDriver {
     }
 
     fn validate_ast_invariants(&self, ast: &Ast) {
-        use crate::ast::NodeKind;
         for kind in &ast.kinds {
             match kind {
                 NodeKind::BinaryOp(op, ..) if op.is_assignment() => {
@@ -310,11 +299,11 @@ impl CompilerDriver {
         let t0 = if timing_enabled { Some(Instant::now()) } else { None };
         let semantic_info = visit_ast(
             &ast,
-            &mut self.diagnostics,
+            &mut self.de,
             &symbol_table,
             &mut registry,
             &self.config.lang_options,
-            &self.source_manager,
+            &self.sm,
         );
         if let Some(t0) = t0 {
             eprintln!("[TIMING]   Semantic Analyzer: {:?}", t0.elapsed());
@@ -349,7 +338,7 @@ impl CompilerDriver {
 
     /// Check if there are any diagnostics errors and return PipelineError::Fatal if there are
     fn check_diagnostics_and_return_if_error(&self) -> Result<(), PipelineError> {
-        if self.diagnostics.has_errors() {
+        if self.de.has_errors() {
             Err(PipelineError::Fatal)
         } else {
             Ok(())
@@ -432,7 +421,7 @@ impl CompilerDriver {
         } else if let Some(parsed_ast) = artifact.parsed_ast {
             print!("{}", AstDumper::dump_parsed_ast(&parsed_ast));
         } else if let Some(preprocessed) = artifact.preprocessed {
-            let dumper = PPDumper::new(&preprocessed, &self.source_manager, self.config.suppress_line_markers);
+            let dumper = PPDumper::new(&preprocessed, &self.sm, self.config.suppress_line_markers);
 
             if let Some(ref output_path) = self.config.output_path {
                 let mut file = std::fs::File::create(output_path)
@@ -460,10 +449,7 @@ impl CompilerDriver {
             let output_path = if let Some(ref path) = self.config.output_path {
                 path.clone()
             } else {
-                let file_info = self
-                    .source_manager
-                    .get_file_info(source_id)
-                    .expect("Source file should exist");
+                let file_info = self.sm.get_file_info(source_id).expect("Source file should exist");
                 let mut path = file_info.path.clone();
                 path.set_extension("o");
                 path
@@ -559,13 +545,13 @@ __cendol_vararg_trampoline:
     /// Get diagnostics for testing
     #[cfg(test)]
     pub(crate) fn get_diagnostics(&self) -> Vec<crate::diagnostic::Diagnostic> {
-        self.diagnostics.diagnostics.clone()
+        self.de.diagnostics.clone()
     }
 
     /// Print accumulated diagnostics without returning an error
     pub(crate) fn print_diagnostics(&self) {
-        self.diagnostics
-            .print_diagnostics_filtered(&self.source_manager, self.config.suppress_warnings);
+        self.de
+            .print_diagnostics_filtered(&self.sm, self.config.suppress_warnings);
     }
 }
 
@@ -587,26 +573,4 @@ pub enum DriverError {
 pub enum PipelineError {
     Fatal,
     IoError(std::io::Error),
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::PathBuf;
-
-    #[test]
-    fn test_external_object_handling() {
-        let mut config = CompileConfig::default();
-        let obj_path = PathBuf::from("test.o");
-        config.input_files.push(PathOrBuffer::Path(obj_path.clone()));
-
-        let mut driver = CompilerDriver::from_config(config);
-        // Using CompilePhase::Parse to ensure we stop early, but for external object handling
-        // it shouldn't matter as it bypasses the pipeline loop.
-        let outputs = driver.run_pipeline(CompilePhase::Parse).expect("Pipeline failed");
-
-        assert_eq!(outputs.external_object_files.len(), 1);
-        assert_eq!(outputs.external_object_files[0], obj_path);
-        assert!(outputs.units.is_empty());
-    }
 }

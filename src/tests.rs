@@ -76,7 +76,7 @@ pub mod test_utils;
 pub mod codegen_bool_cast;
 pub mod codegen_float;
 pub mod codegen_regr;
-pub mod driver_defines;
+pub mod driver_cli_handling;
 pub mod gnu_attributes;
 pub mod guardian_alias_completeness;
 pub mod guardian_alignas_vla;

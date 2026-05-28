@@ -43,7 +43,7 @@ fn compile_and_run_c(source: &str) -> std::process::Output {
     let result = driver.run();
 
     // Check for compilation errors
-    if result.is_err() || driver.source_manager.get_file_id("test.c").is_none() {
+    if result.is_err() || driver.sm.get_file_id("test.c").is_none() {
         driver.print_diagnostics();
         panic!("Compilation failed");
     }

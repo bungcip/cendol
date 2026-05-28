@@ -380,9 +380,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if let Some(decls) = definition {
             let mut packing = None;
             let mut alignment = None;
+            let mut is_transparent_union = false;
             for attr in attributes {
                 match attr {
                     DeclSpec::AttributePacked => packing = Some(1),
+                    DeclSpec::AttributeTransparentUnion => is_transparent_union = true,
                     DeclSpec::AlignmentSpec(aspec, _) => {
                         if let Some(val) = self.resolve_alignment(aspec, span) {
                             alignment = Some(std::cmp::max(alignment.unwrap_or(0), val));
@@ -395,7 +397,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
             }
             let members = self.visit_record_members(decls, span, is_union);
-            self.complete_record_symbol(tag, ty, members, packing, alignment, span)?;
+            self.complete_record_symbol(tag, ty, members, packing, alignment, is_transparent_union, span)?;
         }
 
         Ok(QualType::unqualified(ty))
@@ -588,6 +590,7 @@ pub(crate) struct DeclSpecInfo {
     pub(crate) has_auto: bool,
     pub(crate) is_packed: bool,
     pub(crate) cleanup_func: Option<ParsedNodeRef>,
+    pub(crate) is_transparent_union: bool,
 }
 
 /// Finalize tentative definitions by converting them to defined state
@@ -1400,6 +1403,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         };
 
         if spec_info.is_typedef {
+            if spec_info.is_transparent_union {
+                self.registry.set_transparent_union(final_ty.ty());
+            }
             if spec_info.cleanup_func.is_some() {
                 self.report_warning(span, SemanticError::AttributeCleanupOnType);
             }
@@ -1940,7 +1946,23 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let increment_dummy = self.push_dummy(span);
 
                 if let Some(init) = stmt.init {
-                    self.visit_node_entry(init, Some(&[child_start]));
+                    let parsed_init = self.parsed_ast.get_node(init);
+                    let init_has_multiple_decls = if let ParsedNodeKind::Declaration(decl) = &parsed_init.kind {
+                        decl.init_declarators.len() > 1
+                    } else {
+                        false
+                    };
+
+                    if init_has_multiple_decls {
+                        let init_nodes = self.visit_node_entry(init, None);
+                        let decl_list = DeclList {
+                            stmt_start: init_nodes[0],
+                            stmt_len: init_nodes.len() as u16,
+                        };
+                        self.ast.set_kind(child_start, NodeKind::DeclList(decl_list));
+                    } else {
+                        self.visit_node_entry(init, Some(&[child_start]));
+                    }
                 }
                 if let Some(cond) = stmt.condition {
                     self.visit_node_entry(cond, Some(&[condition_dummy]));
@@ -2109,7 +2131,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if in_parameter {
             let ptr_quals = self.extract_array_param_qualifiers(declarator);
-            Ok(self.registry.decay(final_type, ptr_quals))
+            let mut decayed = self.registry.decay(final_type, ptr_quals);
+            if let Some(first_member_ty) = self.registry.get_transparent_union_first_member_type(decayed.ty()) {
+                decayed = first_member_ty;
+            }
+            Ok(decayed)
         } else {
             Ok(final_type)
         }
@@ -2956,6 +2982,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     match spec {
                         DeclSpec::AttributeCleanup(expr) => info.cleanup_func = Some(*expr),
                         DeclSpec::AttributePacked => info.is_packed = true,
+                        DeclSpec::AttributeTransparentUnion => info.is_transparent_union = true,
                         DeclSpec::AlignmentSpec(align, is_gnu) => {
                             info.alignment = self.resolve_alignment(align, span);
                             if *is_gnu {
@@ -3195,6 +3222,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         members: Vec<RecordMember>,
         packing: Option<u32>,
         alignment: Option<u16>,
+        is_transparent_union: bool,
         span: SourceSpan,
     ) -> Result<(), SemanticDiag> {
         // Validation for name conflicts across anonymous members
@@ -3211,7 +3239,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         // Update the type in AST and SymbolTable
         self.registry
-            .complete_record(ty, Arc::clone(&members), final_packing, alignment);
+            .complete_record(ty, Arc::clone(&members), final_packing, alignment, is_transparent_union);
         if let Err(e) = self.registry.ensure_layout(ty) {
             return Err(SemanticDiag::new(span, e.to_semantic_kind()));
         }
@@ -3482,6 +3510,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 DeclSpec::AttributePacked => {
                     info.is_packed = true;
                 }
+                DeclSpec::AttributeTransparentUnion => {
+                    info.is_transparent_union = true;
+                }
                 DeclSpec::AttributeCleanup(node_ref) => {
                     info.cleanup_func = Some(*node_ref);
                 }
@@ -3552,11 +3583,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 let should_report = if decayed_qt.is_void() {
                     !is_void_param_list
-                } else if is_incomplete_enum {
-                    is_definition
                 } else {
-                    // For structs and other incomplete types, keep previous strictness (always error)
-                    true
+                    is_definition
                 };
 
                 if should_report {
@@ -3805,7 +3833,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 })
                 .collect::<Result<Vec<_>, SemanticDiag>>()?;
 
-            self.complete_record_symbol(tag, ty, struct_members, None, None, span)?;
+            self.complete_record_symbol(tag, ty, struct_members, None, None, false, span)?;
         }
         Ok(QualType::unqualified(ty))
     }

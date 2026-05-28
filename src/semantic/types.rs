@@ -906,6 +906,7 @@ pub enum TypeKind {
         is_union: bool,
         packing: Option<u32>,
         alignment: Option<u16>,
+        is_transparent_union: bool,
     },
     Enum {
         tag: Option<NameId>,

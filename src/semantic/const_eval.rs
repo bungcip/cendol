@@ -9,7 +9,25 @@ use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, StringId, UnaryOp};
 use crate::semantic::conversions::{integer_promotion, usual_arithmetic_conversions};
 use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
 use crate::semantic::types::ArraySizeType;
-use crate::semantic::{BuiltinType, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeRegistry};
+use crate::semantic::{BuiltinType, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeKind, TypeRef, TypeRegistry};
+
+fn has_unresolved_typeof(registry: &TypeRegistry, ty: TypeRef) -> bool {
+    let mut current = ty;
+    // Follow aliases first
+    loop {
+        match &registry.get(current).kind {
+            TypeKind::Alias(inner) => current = *inner,
+            TypeKind::TypeofExpr(_) | TypeKind::TypeofUnqualExpr(_) => return true,
+            _ => break,
+        }
+    }
+    // Now check recursively for pointer or array elements
+    match &registry.get(current).kind {
+        TypeKind::Pointer { pointee } => has_unresolved_typeof(registry, pointee.ty()),
+        TypeKind::Array { element_type, .. } => has_unresolved_typeof(registry, *element_type),
+        _ => false,
+    }
+}
 
 /// Context for constant expression evaluation
 pub(crate) struct ConstEvalCtx<'a> {
@@ -323,7 +341,11 @@ impl<'a> ConstEvalCtx<'a> {
                 eval_offsetof(self, *ty, *expr)
             }
             NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
-                Some(self.registry.is_compatible(t1.strip_all(), t2.strip_all()) as i64)
+                if has_unresolved_typeof(self.registry, t1.ty()) || has_unresolved_typeof(self.registry, t2.ty()) {
+                    return None;
+                }
+                let res = self.registry.is_compatible(t1.strip_all(), t2.strip_all());
+                Some(res as i64)
             }
             NodeKind::BuiltinComplex(real, _) => self.eval_int(*real),
             NodeKind::FunctionCall(call) => {

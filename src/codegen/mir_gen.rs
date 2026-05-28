@@ -304,6 +304,11 @@ impl<'a> MirGen<'a> {
                 self.current_scope_id = self.ast.scope_of(node);
                 self.visit_compound_statement(&cs)
             }
+            NodeKind::DeclList(dl) => {
+                for stmt in dl.stmt_start.range(dl.stmt_len) {
+                    self.visit_node(stmt);
+                }
+            }
             NodeKind::VarDecl(var_decl) => self.visit_var_decl(&var_decl),
 
             NodeKind::Return(expr) => self.visit_return_stmt(&expr),

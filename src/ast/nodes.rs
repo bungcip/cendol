@@ -63,6 +63,7 @@ pub(crate) enum NodeKind {
 
     // --- Statements (Complex statements are separate structs) ---
     CompoundStmt(CompoundStmt),
+    DeclList(DeclList),
     If(IfStmt),
     While(WhileStmt),
     DoWhile(NodeRef /* body */, NodeRef /* condition */),
@@ -146,6 +147,7 @@ impl NodeKind {
             NodeKind::GenericAssociation(..) => "GenericAssociation",
             NodeKind::BuiltinChooseExpr(..) => "BuiltinChooseExpr",
             NodeKind::CompoundStmt(..) => "CompoundStmt",
+            NodeKind::DeclList(..) => "DeclList",
             NodeKind::If(..) => "If",
             NodeKind::While(..) => "While",
             NodeKind::DoWhile(..) => "DoWhile",
@@ -289,6 +291,12 @@ impl NodeKind {
                 }
             }
 
+            NodeKind::DeclList(dl) => {
+                for child in dl.stmt_start.range(dl.stmt_len) {
+                    f(child);
+                }
+            }
+
             NodeKind::If(stmt) => {
                 f(stmt.condition);
                 f(stmt.then_branch);
@@ -397,6 +405,12 @@ pub(crate) struct ForStmt {
     pub(crate) child_start: NodeRef, // index to 3 nodes: init, condition, increment. NodeKind::Dummy is used if missing
     pub(crate) body: NodeRef,
     pub(crate) scope_id: ScopeId,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub(crate) struct DeclList {
+    pub(crate) stmt_start: NodeRef,
+    pub(crate) stmt_len: u16,
 }
 
 // Semantic node data structures (type-resolved)

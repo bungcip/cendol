@@ -40,7 +40,7 @@ fn test_incomplete_struct_parameter_prohibited() {
     run_fail_with_diagnostic(
         r#"
         struct S;
-        void f(struct S s);
+        void f(struct S s) {}
         int main() { return 0; }
         "#,
         CompilePhase::Mir,

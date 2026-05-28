@@ -546,7 +546,7 @@ fn test_incomplete_return_type() {
     run_fail_with_message(
         r#"
         struct S;
-        struct S foo();
+        struct S foo() {}
         "#,
         "incomplete return type",
     );

@@ -196,6 +196,7 @@ pub enum DeclSpec {
     Attribute,
     AttributePacked,
     AttributeCleanup(ParsedNodeRef),
+    AttributeTransparentUnion,
 }
 
 // Type specifiers

@@ -165,6 +165,7 @@ fn resolve_specs(ast: &ParsedAst, specifiers: &[DeclSpec]) -> Vec<String> {
             DeclSpec::Attribute => "__attribute__".to_string(),
             DeclSpec::AttributePacked => "packed".to_string(),
             DeclSpec::AttributeCleanup(_) => "cleanup(...)".to_string(),
+            DeclSpec::AttributeTransparentUnion => "transparent_union".to_string(),
         })
         .collect()
 }

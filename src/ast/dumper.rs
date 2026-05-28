@@ -165,6 +165,7 @@ impl AstDumper {
             // Statement types that don't directly contain TypeRefs
             NodeKind::TranslationUnit(_)
             | NodeKind::CompoundStmt(_)
+            | NodeKind::DeclList(_)
             | NodeKind::If(_)
             | NodeKind::While(_)
             | NodeKind::DoWhile(..)
@@ -488,6 +489,7 @@ impl AstDumper {
             NodeKind::GenericAssociation(ga) => write!(f, "ty={:?}, result_expr={}", ga.ty, ga.result_expr.raw())?,
 
             NodeKind::CompoundStmt(cs) => Self::write_range(f, "stmts", cs.stmt_start, cs.stmt_len)?,
+            NodeKind::DeclList(dl) => Self::write_range(f, "decls", dl.stmt_start, dl.stmt_len)?,
             NodeKind::If(if_stmt) => {
                 write!(
                     f,

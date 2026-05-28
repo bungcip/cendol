@@ -241,6 +241,42 @@ impl<'a> MirValidator<'a> {
         }
     }
 
+    fn format_mir_type(&self, id: TypeId) -> String {
+        match self.mir.get_type(id) {
+            MirType::Void => "void".to_string(),
+            MirType::Bool => "_Bool".to_string(),
+            MirType::I8 => "i8".to_string(),
+            MirType::I16 => "i16".to_string(),
+            MirType::I32 => "i32".to_string(),
+            MirType::I64 => "i64".to_string(),
+            MirType::U8 => "u8".to_string(),
+            MirType::U16 => "u16".to_string(),
+            MirType::U32 => "u32".to_string(),
+            MirType::U64 => "u64".to_string(),
+            MirType::F32 => "f32".to_string(),
+            MirType::F64 => "f64".to_string(),
+            MirType::F80 => "f80".to_string(),
+            MirType::F128 => "f128".to_string(),
+            MirType::Pointer { pointee } => format!("*{}", self.format_mir_type(*pointee)),
+            MirType::Array { element, size, .. } => format!("{}[{}]", self.format_mir_type(*element), size),
+            MirType::Function {
+                return_type,
+                params,
+                is_variadic,
+            } => {
+                let params_str: Vec<String> = params.iter().map(|p| self.format_mir_type(*p)).collect();
+                format!(
+                    "fn({}) -> {}{}",
+                    params_str.join(", "),
+                    self.format_mir_type(*return_type),
+                    if *is_variadic { "..." } else { "" }
+                )
+            }
+            MirType::Record { name, .. } => format!("struct/union {}", name.to_string()),
+            _ => format!("{:?}", self.mir.get_type(id)),
+        }
+    }
+
     fn validate_statement(&mut self, stmt: &MirStmt) {
         match stmt {
             MirStmt::Assign(place, rvalue) => {
@@ -252,9 +288,9 @@ impl<'a> MirValidator<'a> {
                     && !self.are_types_compatible(from, to)
                 {
                     eprintln!(
-                        "MIR VALIDATION ERROR: InvalidCast from {:?} to {:?} in rvalue {:?}",
-                        self.mir.get_type(from),
-                        self.mir.get_type(to),
+                        "MIR VALIDATION ERROR: InvalidCast from {} to {} in rvalue {:?}",
+                        self.format_mir_type(from),
+                        self.format_mir_type(to),
                         rvalue
                     );
                     self.errors.push(ValidationError::InvalidCast(from, to));

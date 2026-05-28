@@ -753,3 +753,94 @@ fn test_multidim_array_string_init_designator() {
     global @arr: [1][10]i8 = const array_literal [const array_literal [const 104, const 101, const 108, const 108, const 111, const 0, const 0, const 0, const 0, const 0]]
     ");
 }
+
+#[test]
+fn test_transparent_union_mir() {
+    let source = r#"
+        typedef union __attribute__((__transparent_union__)) {
+            int *i;
+            double *d;
+        } my_union;
+        void f(my_union u);
+        void g(int *ip) {
+            f(ip);
+        }
+    "#;
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir, @"
+    type %t0 = void
+    type %t1 = i32
+    type %t2 = ptr<%t1>
+    type %t3 = fn(%t2) -> %t0
+
+    fn g(%param0: ptr<i32>) -> void
+    {
+
+      bb1:
+        call f(%param0)
+        return
+    }
+
+    extern fn f(%param0: ptr<i32>) -> void
+    ");
+}
+
+#[test]
+fn test_typeof_compat_array_size() {
+    let source = r#"
+        struct tree_entry { int x; };
+        struct tree_content {
+            int entry_count;
+            struct tree_entry *entries[];
+        };
+        int main() {
+            struct tree_content *r = 0;
+            struct tree_content *t = 0;
+            char arr[1 - 2*!(__builtin_types_compatible_p(__typeof__(*(r->entries)), __typeof__(*(t->entries))))];
+            return sizeof(arr);
+        }
+    "#;
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir, @"
+    type %t0 = i32
+    type %t1 = struct tree_content { entry_count: %t0, entries: %t4 }
+    type %t2 = struct tree_entry { x: %t0 }
+    type %t3 = ptr<%t2>
+    type %t4 = [0]%t3
+    type %t5 = ptr<%t1>
+    type %t6 = void
+    type %t7 = ptr<%t6>
+    type %t8 = i8
+    type %t9 = [0]%t8
+    type %t10 = u64
+    type %t11 = ptr<%t8>
+
+    fn main() -> i32
+    {
+      locals {
+        %r: ptr<%t1>
+        %t: ptr<%t1>
+        %3: u64
+        %4: u64
+        %arr: ptr<i8>
+        %7: u64
+        %8: i32
+      }
+
+      bb1:
+        %r = const 0
+        %t = const 0
+        %3 = cast<u64>(const 1) * const 1
+        %4 = %3
+        %arr = call malloc(%3)
+        %7 = cast<u64>(const 1) * const 1
+        %8 = cast<i32>(%7)
+        call free(cast<ptr<void>>(%arr))
+        return %8
+    }
+
+    extern fn malloc(%param0: u64) -> ptr<void>
+
+    extern fn free(%param0: ptr<void>) -> void
+    ");
+}

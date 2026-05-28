@@ -434,6 +434,7 @@ impl<'a> SemanticAnalyzer<'a> {
         match self.ast.get_kind(node) {
             NodeKind::Default(_) => true,
             NodeKind::CompoundStmt(cs) => cs.stmt_start.range(cs.stmt_len).any(|s| self.has_default(s)),
+            NodeKind::DeclList(dl) => dl.stmt_start.range(dl.stmt_len).any(|s| self.has_default(s)),
             NodeKind::If(if_stmt) => {
                 self.has_default(if_stmt.then_branch) || if_stmt.else_branch.is_some_and(|e| self.has_default(e))
             }
@@ -493,6 +494,7 @@ impl<'a> SemanticAnalyzer<'a> {
         match self.ast.get_kind(node) {
             NodeKind::Break => true,
             NodeKind::CompoundStmt(cs) => cs.stmt_start.range(cs.stmt_len).any(|s| self.contains_break(s)),
+            NodeKind::DeclList(dl) => dl.stmt_start.range(dl.stmt_len).any(|s| self.contains_break(s)),
             NodeKind::If(if_stmt) => {
                 self.contains_break(if_stmt.then_branch) || if_stmt.else_branch.is_some_and(|e| self.contains_break(e))
             }
@@ -526,6 +528,14 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::CompoundStmt(cs) => {
                 for stmt in cs.stmt_start.range(cs.stmt_len) {
+                    if !self.can_fall_through(stmt) {
+                        return false;
+                    }
+                }
+                true
+            }
+            NodeKind::DeclList(dl) => {
+                for stmt in dl.stmt_start.range(dl.stmt_len) {
                     if !self.can_fall_through(stmt) {
                         return false;
                     }
@@ -720,6 +730,7 @@ impl<'a> SemanticAnalyzer<'a> {
             | NodeKind::PostIncrement(..)
             | NodeKind::PostDecrement(..)
             | NodeKind::CompoundStmt(..)
+            | NodeKind::DeclList(..)
             | NodeKind::If(..)
             | NodeKind::While(..)
             | NodeKind::For(..)
@@ -2650,19 +2661,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let sym = self.symbol_table.get_symbol(data.symbol);
                 self.visit_type_exprs(sym.type_info);
 
-                if let TypeAnalysisTask::Function {
-                    return_type,
-                    parameters,
-                    ..
-                } = self.get_analysis_task(sym.type_info)
-                {
-                    if !self.registry.is_complete(return_type)
-                        && return_type != self.registry.type_void
-                        && !return_type.is_enum()
-                    {
-                        self.report_error(node, SemanticError::IncompleteReturnType);
-                    }
-
+                if let TypeAnalysisTask::Function { parameters, .. } = self.get_analysis_task(sym.type_info) {
                     // Bolt ⚡: Extract parameter types without holding a borrow of self while calling ensure_layout.
                     let params_to_check: Vec<_> = parameters.iter().map(|p| p.param_type.ty()).collect();
                     for param_ty in params_to_check {
@@ -2799,6 +2798,13 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 self.active_vlas.truncate(prev_vla_count);
                 self.process_deferred_checks();
+                None
+            }
+
+            NodeKind::DeclList(dl) => {
+                for item in dl.stmt_start.range(dl.stmt_len) {
+                    self.visit_node(item);
+                }
                 None
             }
 
@@ -3433,6 +3439,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
             // Statements
             NodeKind::CompoundStmt(_)
+            | NodeKind::DeclList(_)
             | NodeKind::If(_)
             | NodeKind::While(_)
             | NodeKind::DoWhile(..)

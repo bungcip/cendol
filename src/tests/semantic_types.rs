@@ -131,7 +131,7 @@ fn rejects_sizeof_on_incomplete_struct() {
 fn rejects_function_returning_incomplete_type() {
     let source = r#"
         struct S;
-        struct S foo();
+        struct S foo() {}
     "#;
     run_fail_with_message(source, "function has incomplete return type");
 }
@@ -648,14 +648,14 @@ fn test_enum_unsigned_compatibility() {
 }
 
 #[test]
-fn test_incomplete_struct_in_declaration_rejected() {
+fn test_incomplete_struct_in_declaration_accepted() {
     let source = r#"
         struct S;
         void foo(struct S s);
         struct S bar(void);
         int main() { return 0; }
     "#;
-    run_fail_with_message(source, "incomplete type 'struct S'");
+    run_pass(source, CompilePhase::Mir);
 }
 
 #[test]

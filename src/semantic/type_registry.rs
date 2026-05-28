@@ -1053,6 +1053,7 @@ impl TypeRegistry {
             is_union,
             packing: None,
             alignment: None,
+            is_transparent_union: false,
         }))
     }
 
@@ -1062,6 +1063,7 @@ impl TypeRegistry {
         members: Arc<[RecordMember]>,
         packing: Option<u32>,
         alignment: Option<u16>,
+        is_transparent_union: bool,
     ) {
         let ty = &mut self.types[record.index()];
         match &mut ty.kind {
@@ -1070,15 +1072,50 @@ impl TypeRegistry {
                 members: slot,
                 packing: packing_slot,
                 alignment: alignment_slot,
+                is_transparent_union: trans_slot,
                 ..
             } => {
                 *slot = members;
                 *is_complete = true;
                 *packing_slot = packing;
                 *alignment_slot = alignment;
+                *trans_slot = is_transparent_union;
             }
             _ => unreachable!("complete_record on non-record"),
         }
+    }
+
+    pub(crate) fn set_transparent_union(&mut self, record: TypeRef) {
+        let mut ty = record;
+        while let TypeKind::Alias(inner) = &self.types[ty.index()].kind {
+            ty = *inner;
+        }
+        let t = &mut self.types[ty.index()];
+        if let TypeKind::Record {
+            is_transparent_union: trans,
+            ..
+        } = &mut t.kind
+        {
+            *trans = true;
+        }
+    }
+
+    pub(crate) fn get_transparent_union_first_member_type(&self, ty: TypeRef) -> Option<QualType> {
+        let mut curr = ty;
+        while let TypeKind::Alias(inner) = &self.types[curr.index()].kind {
+            curr = *inner;
+        }
+        if let TypeKind::Record {
+            is_transparent_union,
+            members,
+            ..
+        } = &self.types[curr.index()].kind
+        {
+            if *is_transparent_union && !members.is_empty() {
+                return Some(members[0].member_type);
+            }
+        }
+        None
     }
 
     pub(super) fn declare_enum(&mut self, tag: Option<NameId>, base_type: TypeRef, has_fixed: bool) -> TypeRef {

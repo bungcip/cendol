@@ -1758,6 +1758,7 @@ impl<'a> MirGen<'a> {
                 self.add_stmt(MirStmt::BuiltinPrefetch { addr, rw, locality });
                 Some(self.create_dummy_operand())
             }
+            BuiltinFunctionKind::Pause => Some(self.create_dummy_operand()),
             BuiltinFunctionKind::VaStart => {
                 let arg_start = call_expr.arg_start;
                 let ap_op = self.visit_expression(arg_start, true);

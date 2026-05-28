@@ -294,10 +294,20 @@ impl<'a> PPDumper<'a> {
         if is_macro {
             token.get_text_with_sm(self.source_manager)
         } else {
-            let slice = token.get_raw_slice(buffer);
-            std::str::from_utf8(slice)
-                .map(std::borrow::Cow::Borrowed)
-                .unwrap_or(std::borrow::Cow::Borrowed(""))
+            let actual_buffer = self
+                .source_manager
+                .get_buffer_safe(token.location.source_id())
+                .unwrap_or(buffer);
+            let start = token.location.offset() as usize;
+            let end = start + token.length as usize;
+            if end <= actual_buffer.len() {
+                let slice = &actual_buffer[start..end];
+                std::str::from_utf8(slice)
+                    .map(std::borrow::Cow::Borrowed)
+                    .unwrap_or(std::borrow::Cow::Borrowed(""))
+            } else {
+                std::borrow::Cow::Borrowed("")
+            }
         }
     }
 

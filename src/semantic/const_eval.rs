@@ -755,6 +755,21 @@ impl<'a> ConstEvalCtx<'a> {
     }
 
     fn eval_sizeof(&self, expr: Option<NodeRef>, qt: Option<QualType>) -> Option<i64> {
+        if let Some(e) = expr
+            && let NodeKind::Literal(literal_ref) = self.ast.get_kind(e)
+            && let LitVal::String { value, prefix } = literal_ref.get_val()
+        {
+            let builtin_type = get_string_builtin_type(prefix);
+            let size = get_string_literal_size(&value, prefix);
+            let elem_size = match builtin_type {
+                BuiltinType::Char | BuiltinType::UChar => 1,
+                BuiltinType::UShort => 2,
+                BuiltinType::Int | BuiltinType::UInt => 4,
+                _ => 1,
+            };
+            return Some((size * elem_size) as i64);
+        }
+
         let ty = if let Some(e) = expr {
             self.resolve_type(e)?.ty()
         } else {

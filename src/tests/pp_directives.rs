@@ -73,12 +73,14 @@ OK
 }
 
 #[test]
-fn test_unknown_pragma_throws_error() {
+fn test_unknown_pragma_warns() {
     let src = r#"
 #pragma unknown_pragma
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: UnknownPragma(\"unknown_pragma\"), span: SourceSpan(2199023255561) }""#);
+    insta::assert_yaml_snapshot!(diags, @r#"
+    - "Warning: Unknown pragma: unknown_pragma"
+    "#);
 }
 
 #[test]

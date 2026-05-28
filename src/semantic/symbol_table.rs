@@ -84,6 +84,7 @@ pub enum BuiltinFunctionKind {
     SignbitF,
     SignbitL,
     FrameAddress,
+    Pause,
 }
 
 impl BuiltinFunctionKind {
@@ -140,6 +141,7 @@ impl BuiltinFunctionKind {
             Self::SignbitF => "__builtin_signbitf",
             Self::SignbitL => "__builtin_signbitl",
             Self::FrameAddress => "__builtin_frame_address",
+            Self::Pause => "__builtin_ia32_pause",
         }
     }
 
@@ -195,6 +197,7 @@ impl BuiltinFunctionKind {
         Self::SignbitF,
         Self::SignbitL,
         Self::FrameAddress,
+        Self::Pause,
     ];
 
     pub fn is_bitwise(self) -> bool {

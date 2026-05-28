@@ -965,6 +965,7 @@ impl TypeRegistry {
             BuiltinFunctionKind::Unreachable | BuiltinFunctionKind::Trap => (vec![], self.type_void, false, true),
             BuiltinFunctionKind::Prefetch => (vec![p(self.type_void_ptr)], self.type_void, true, false),
             BuiltinFunctionKind::FrameAddress => (vec![p(self.type_int_unsigned)], self.type_void_ptr, false, false),
+            BuiltinFunctionKind::Pause => (vec![], self.type_void, false, false),
             BuiltinFunctionKind::Memcpy | BuiltinFunctionKind::Memmove => {
                 let void_ptr = self.type_void_ptr;
                 let const_void = QualType::new(self.type_void, TypeQualifiers::CONST);

@@ -134,6 +134,7 @@ impl crate::diagnostic::IntoDiagnostic for PPDiag {
             PPError::DollarInIdentifier => Some("dollar-in-identifier-extension"),
             PPError::MacroRedefined(_) => Some("macro-redefined"),
             PPError::DirectiveInMacroArgs => Some("embedded-directive"),
+            PPError::UnknownPragma(_) => Some("unknown-pragmas"),
             _ => None,
         };
         let mut diag = Diagnostic {

@@ -737,7 +737,10 @@ impl<'src> Preprocessor<'src> {
         } else if symbol == self.keywords.pack {
             return self.handle_pragma_pack();
         } else {
-            return self.emit_error(PPError::UnknownPragma(symbol), token.location);
+            let err = self.error(PPError::UnknownPragma(symbol), token.location);
+            self.report_pp_warning(err);
+            self.collect_tokens_until_eod();
+            return Ok(());
         }
 
         self.collect_tokens_until_eod();

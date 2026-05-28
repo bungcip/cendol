@@ -337,7 +337,6 @@ impl CompilerDriver {
     }
 
     fn run_codegen(&mut self, mir_program: MirProgram, emit_kind: EmitKind) -> Result<ClifOutput, PipelineError> {
-        // Validate MIR before code generation
         let validator = MirValidator::new(&mir_program);
         if let Err(errors) = validator.validate() {
             panic!("MIR validation failed: {:?}", errors);

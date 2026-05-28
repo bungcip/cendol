@@ -550,31 +550,50 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_list_init(&mut self, list: &InitializerList, target_qt: QualType, destination: Option<Place>) -> Operand {
-        let target_type = self.registry.get(target_qt.ty());
-        match &target_type.kind {
-            TypeKind::Record { .. } | TypeKind::Complex { .. } => self.visit_init_list(list, target_qt, destination),
-            TypeKind::Array { element_type, size } => {
-                let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
-                self.visit_array_init(
-                    list,
-                    QualType::unqualified(*element_type),
-                    array_size,
-                    target_qt,
-                    destination,
-                )
+        let (is_record, array_info) = {
+            let target_type = self.registry.get(target_qt.ty());
+            match &target_type.kind {
+                TypeKind::Record { .. } | TypeKind::Complex { .. } => (true, None),
+                TypeKind::Array { element_type, size } => (false, Some((*element_type, *size))),
+                _ => (false, None),
             }
-            _ => {
-                // Scalar initialized with braces: { x } or {}
-                if list.init_len == 0 {
-                    let mir_ty = self.lower_qual_type(target_qt);
-                    Operand::Constant(self.create_constant(mir_ty, ConstValueKind::Zero))
-                } else {
-                    let NodeKind::InitializerItem(item) = self.ast.get_kind(list.init_start) else {
-                        unreachable!()
-                    };
-                    self.visit_init(item.initializer, target_qt, destination)
+        };
+
+        if is_record {
+            return self.visit_init_list(list, target_qt, destination);
+        }
+
+        if let Some((element_type, size)) = array_info {
+            if list.init_len == 1 && self.registry.is_char_type(element_type) {
+                let NodeKind::InitializerItem(item) = self.ast.get_kind(list.init_start) else {
+                    unreachable!()
+                };
+                if let NodeKind::Literal(lit) = self.ast.get_kind(item.initializer)
+                    && lit.kind() == LitKind::String
+                {
+                    return self.visit_string_array_init(item.initializer, element_type, &size);
                 }
             }
+
+            let array_size = if let ArraySizeType::Constant(s) = size { s } else { 0 };
+            return self.visit_array_init(
+                list,
+                QualType::unqualified(element_type),
+                array_size,
+                target_qt,
+                destination,
+            );
+        }
+
+        // Scalar initialized with braces: { x } or {}
+        if list.init_len == 0 {
+            let mir_ty = self.lower_qual_type(target_qt);
+            Operand::Constant(self.create_constant(mir_ty, ConstValueKind::Zero))
+        } else {
+            let NodeKind::InitializerItem(item) = self.ast.get_kind(list.init_start) else {
+                unreachable!()
+            };
+            self.visit_init(item.initializer, target_qt, destination)
         }
     }
 

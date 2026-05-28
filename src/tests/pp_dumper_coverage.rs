@@ -56,3 +56,35 @@ fn test_dumper_with_includes() {
     assert!(output.contains("# 1 \"file1.c\" 1"));
     assert!(output.contains("int y;"));
 }
+
+#[test]
+fn test_dumper_regression_out_of_bounds() {
+    let mut sm = SourceManager::new();
+
+    // Create file1.c (root file, small buffer)
+    let id1 = sm.add_buffer(b"short;".to_vec(), "file1.c", None, FileKind::Real);
+    let id1_loc = SourceLoc::new(id1, 0);
+
+    // Create file2.h (included file, larger buffer, token at larger offset)
+    // include_loc is set to id1_loc
+    let file2_content = b"/* some header comment */\n\nint larger_offset_identifier;".to_vec();
+    let id2 = sm.add_buffer(file2_content, "file2.h", Some(id1_loc), FileKind::Real);
+
+    // Construct a token in file2.h at a large offset (31) exceeding the length of file1.c (6 bytes)
+    let t_included = PPToken::new(
+        PPTokenKind::Identifier("larger_offset_identifier".into()),
+        PPTokenFlags::empty(),
+        SourceLoc::new(id2, 31),
+        24,
+    );
+
+    let tokens = vec![t_included];
+
+    let dumper = PPDumper::new(&tokens, &sm, false);
+    let mut buf = Vec::new();
+    // This should not panic now with the bounds-check/correct-buffer resolution fix
+    dumper.dump(&mut buf).unwrap();
+
+    let output = String::from_utf8(buf).unwrap();
+    assert!(output.contains("larger_offset_identifier"));
+}

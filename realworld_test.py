@@ -65,6 +65,12 @@ PROJECTS = {
         "build_cmd": ["make", "CC={CC}", "HOST_CC=gcc", "PROGS=qjs"],
         "test_cmd": ["./qjs", "-e", "print('hello from quickjs built with cendol'); print(1+2)"],
         "clean_cmd": ["make", "clean"],
+    },
+    "curl": {
+        "download_url": "https://curl.se/download/curl-8.8.0.zip",
+        "build_cmd": ["sh", "-c", "CC={CC} ./configure --without-ssl --without-zlib --disable-shared --disable-threaded-resolver && make CC={CC}"],
+        "test_cmd": ["src/curl", "--version"],
+        "clean_cmd": ["make", "clean"],
     }
 }
 
@@ -74,6 +80,16 @@ def run_command(cmd, cwd=None):
     if result.returncode != 0:
         print(f"Error: Command failed with return code {result.returncode}")
         sys.exit(1)
+
+def clean_object_files(project_dir):
+    print(f"Cleaning object files in {project_dir}...")
+    for root, dirs, files in os.walk(project_dir):
+        for file in files:
+            if file.endswith(('.o', '.lo', '.la', '.a')):
+                try:
+                    os.remove(os.path.join(root, file))
+                except Exception:
+                    pass
 
 def print_usage():
     print("Usage: ./realworld_test.py <nama-project>|clean|nuke|prepare")
@@ -107,9 +123,16 @@ def prepare_project(project_name, realworld_dir):
             urllib.request.urlretrieve(config["download_url"], zip_path)
             with zipfile.ZipFile(zip_path, 'r') as zf:
                 zf.extractall(realworld_dir)
+                for info in zf.infolist():
+                    if info.external_attr > 0xffff:
+                        attr = info.external_attr >> 16
+                        if attr != 0:
+                            extracted_path = os.path.join(realworld_dir, info.filename)
+                            if os.path.exists(extracted_path):
+                                os.chmod(extracted_path, attr)
             os.remove(zip_path)
             # The zip extracts to a subdirectory, rename it
-            extracted = [d for d in os.listdir(realworld_dir) if d.startswith("sqlite-") and os.path.isdir(os.path.join(realworld_dir, d))]
+            extracted = [d for d in os.listdir(realworld_dir) if d.startswith(f"{project_name}-") and os.path.isdir(os.path.join(realworld_dir, d))]
             if extracted:
                 os.rename(os.path.join(realworld_dir, extracted[0]), project_dir)
     else:
@@ -189,7 +212,8 @@ def main():
     print("Building cendol...")
     run_command(build_cmd, cwd=cendol_root)
 
-    # 3. Build
+    # 3. Clean and Build
+    clean_object_files(project_dir)
     build_cmd = [arg.format(CC=cendol_bin) for arg in config["build_cmd"]]
     run_command(build_cmd, cwd=project_dir)
 

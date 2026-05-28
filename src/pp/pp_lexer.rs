@@ -189,13 +189,6 @@ impl PPToken {
         PPToken::new(kind, flags, location, text.len() as u16)
     }
 
-    /// Get the raw byte slice from the source buffer for this token
-    pub(super) fn get_raw_slice<'a>(&self, buffer: &'a [u8]) -> &'a [u8] {
-        let start = self.location.offset() as usize;
-        let end = start + self.length as usize;
-        &buffer[start..end]
-    }
-
     #[cfg(test)]
     pub(crate) fn get_text(&self) -> &str {
         match &self.kind {

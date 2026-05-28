@@ -817,13 +817,12 @@ impl<'a> MirFunctionBuilder<'a> {
         // Store statement
         self.builder.statements.push(stmt);
 
+        // Only add statement if the block is not yet terminated
         if let Some(block_id) = self.current_block
             && let Some(block) = self.builder.blocks.get_mut(block_id.index())
+            && matches!(block.terminator, Terminator::Unreachable)
         {
-            // Only add statement if the block is not yet terminated
-            if matches!(block.terminator, Terminator::Unreachable) {
-                block.statements.push(stmt_id);
-            }
+            block.statements.push(stmt_id);
         }
 
         stmt_id
@@ -831,22 +830,15 @@ impl<'a> MirFunctionBuilder<'a> {
 
     /// Set the terminator for the current block
     pub(crate) fn set_terminator(&mut self, terminator: Terminator) {
+        // Only overwrite if the current terminator is Unreachable (default)
+        // This preserves existing control flow (e.g. from goto) and prevents
+        // overwriting it with subsequent unreachable terminators.
         if let Some(block_id) = self.current_block
             && let Some(block) = self.builder.blocks.get_mut(block_id.index())
+            && matches!(block.terminator, Terminator::Unreachable)
         {
-            // Only overwrite if the current terminator is Unreachable (default)
-            // This preserves existing control flow (e.g. from goto) and prevents
-            // overwriting it with subsequent unreachable terminators.
-            if matches!(block.terminator, Terminator::Unreachable) {
-                block.terminator = terminator;
-            }
+            block.terminator = terminator;
         }
-    }
-
-    /// Set the current block
-    #[cfg(test)]
-    pub(crate) fn set_current_block(&mut self, block_id: MirBlockId) {
-        self.current_block = Some(block_id);
     }
 
     pub(crate) fn current_block_has_terminator(&self) -> bool {

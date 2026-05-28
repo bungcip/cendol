@@ -178,7 +178,7 @@ fn test_f128_constant_promotion() {
         let mut fb = builder.build_function(func_id, None);
         let block_id = fb.create_block();
         fb.builder.set_function_entry_block(func_id, block_id);
-        fb.set_current_block(block_id);
+        fb.current_block = Some(block_id);
 
         // Create a local to hold it
         let local_id = fb.create_local(None, f128_type_id, false);

@@ -6,7 +6,7 @@ use crate::pp::pp_lexer::PPLexer;
 use crate::pp::preprocessor::Preprocessor;
 use crate::pp::types::{MacroFlags, MacroInfo};
 use crate::pp::{PPToken, PPTokenFlags, PPTokenKind};
-use crate::source_manager::{FileKind, SourceId, SourceLoc, SourceManager};
+use crate::source_manager::{FileKind, SourceId, SourceLoc, SourceManager, SourceSpan};
 
 #[derive(Clone, Copy)]
 struct SubstitutionCtx<'a> {
@@ -635,24 +635,13 @@ impl<'src> Preprocessor<'src> {
 
     /// Paste tokens for ## operator
     fn paste_tokens(&mut self, left: &PPToken, right: &PPToken) -> Result<Vec<PPToken>, PPDiag> {
-        // Get text of both tokens
-        let left_buffer = self.sm.get_buffer(left.location.source_id());
-        let left_start = left.location.offset() as usize;
-        let left_end = left_start + left.length as usize;
-        let left_text = if left_end <= left_buffer.len() {
-            unsafe { std::str::from_utf8_unchecked(&left_buffer[left_start..left_end]) }
-        } else {
-            return self.emit_error(PPError::InvalidTokenPasting, left.location);
-        };
+        let left_span =
+            SourceSpan::new_with_length(left.location.source_id(), left.location.offset(), left.length as u32);
+        let left_text = self.sm.get_source_text(left_span);
 
-        let right_buffer = self.sm.get_buffer(right.location.source_id());
-        let right_start = right.location.offset() as usize;
-        let right_end = right_start + right.length as usize;
-        let right_text = if right_end <= right_buffer.len() {
-            unsafe { std::str::from_utf8_unchecked(&right_buffer[right_start..right_end]) }
-        } else {
-            return self.emit_error(PPError::InvalidTokenPasting, right.location);
-        };
+        let right_span =
+            SourceSpan::new_with_length(right.location.source_id(), right.location.offset(), right.length as u32);
+        let right_text = self.sm.get_source_text(right_span);
 
         // ⚡ Bolt: Avoid redundant format! and clone by building the byte buffer directly.
         let mut virtual_buffer = Vec::with_capacity(left_text.len() + right_text.len());

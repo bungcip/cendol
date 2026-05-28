@@ -1,4 +1,3 @@
-#![cfg(test)]
 use crate::ast::dumper::AstDumper;
 use crate::driver::artifact::CompilePhase;
 use crate::tests::test_utils;

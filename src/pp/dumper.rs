@@ -4,7 +4,7 @@
 //! with support for line markers and whitespace reconstruction.
 
 use crate::pp::{PPToken, PPTokenFlags, PPTokenKind};
-use crate::source_manager::{SourceId, SourceLoc, SourceManager};
+use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 use std::io::Write;
 
 /// Dumper for preprocessed output
@@ -79,7 +79,7 @@ impl<'a> PPDumper<'a> {
 
             self.handle_leading_space(writer, &state, token, gap_printed_space)?;
 
-            let text = self.get_token_text(token, state.buffer, is_macro);
+            let text = self.get_token_text(token, is_macro);
             write!(writer, "{}", text)?;
 
             state.at_line_start = false;
@@ -290,24 +290,13 @@ impl<'a> PPDumper<'a> {
         Ok(())
     }
 
-    fn get_token_text<'b>(&'b self, token: &PPToken, buffer: &'b [u8], is_macro: bool) -> std::borrow::Cow<'b, str> {
+    fn get_token_text<'b>(&'b self, token: &PPToken, is_macro: bool) -> std::borrow::Cow<'b, str> {
         if is_macro {
             token.get_text_with_sm(self.source_manager)
         } else {
-            let actual_buffer = self
-                .source_manager
-                .get_buffer_safe(token.location.source_id())
-                .unwrap_or(buffer);
-            let start = token.location.offset() as usize;
-            let end = start + token.length as usize;
-            if end <= actual_buffer.len() {
-                let slice = &actual_buffer[start..end];
-                std::str::from_utf8(slice)
-                    .map(std::borrow::Cow::Borrowed)
-                    .unwrap_or(std::borrow::Cow::Borrowed(""))
-            } else {
-                std::borrow::Cow::Borrowed("")
-            }
+            let span =
+                SourceSpan::new_with_length(token.location.source_id(), token.location.offset(), token.length as u32);
+            std::borrow::Cow::Borrowed(self.source_manager.get_source_text(span))
         }
     }
 

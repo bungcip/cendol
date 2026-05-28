@@ -23,7 +23,7 @@ pub enum PPError {
     ElifAfterElse,
     ElifWithoutIf,
     ElseWithoutIf,
-    InvalidTokenPasting,
+
     ExpectedEod,
     UnknownPragma(StringId),
     InvalidPragmaPackValue(StringId),
@@ -61,7 +61,7 @@ impl DiagDisplay for PPError {
             PPError::ElifAfterElse => write!(f, "#elif after #else"),
             PPError::ElifWithoutIf => write!(f, "#elif without #if"),
             PPError::ElseWithoutIf => write!(f, "#else without #if"),
-            PPError::InvalidTokenPasting => write!(f, "Invalid token pasting"),
+
             PPError::ExpectedEod => write!(f, "Expected end of directive"),
             PPError::UnknownPragma(pragma) => write!(f, "Unknown pragma: {}", pragma),
             PPError::InvalidPragmaPackValue(val) => write!(f, "Invalid Pragma Pack Value: {}", val),

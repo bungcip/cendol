@@ -31,7 +31,7 @@ fn test_dump_basic_module() {
         let mut fb = builder.build_function(func_id, None);
         let block_id = fb.create_block();
         fb.builder.set_function_entry_block(func_id, block_id);
-        fb.set_current_block(block_id);
+        fb.current_block = Some(block_id);
 
         use crate::mir::{MirStmt, Operand, Place, Rvalue, Terminator};
 

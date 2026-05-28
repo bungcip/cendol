@@ -2142,7 +2142,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         // C11 §6.7.9p14: Character array initialized by string literal
         if target_qt.is_array()
-            && d_len == 0
+            && !has_more_designators
             && let Some(element_ty) = self.registry.get_array_element(target_qt.ty())
             && (element_ty.is_char() || element_ty.is_wchar_t())
             && self.is_string_literal(expr)

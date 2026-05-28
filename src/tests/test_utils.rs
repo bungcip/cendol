@@ -169,3 +169,16 @@ pub(crate) fn run_pedantic_pass_with_diagnostic_message(source: &str, phase: Com
     assert!(result.is_ok(), "Compilation should have succeeded in pedantic mode");
     check_diagnostic_message_only(&driver, message);
 }
+
+impl CompileConfig {
+    pub(crate) fn from_virtual_file(source: String, stop_after: CompilePhase) -> Self {
+        let filename = "example.c";
+        let source = source.into_bytes();
+
+        Self {
+            input_files: vec![crate::driver::cli::PathOrBuffer::Buffer(filename.to_string(), source)],
+            stop_after,
+            ..Default::default()
+        }
+    }
+}

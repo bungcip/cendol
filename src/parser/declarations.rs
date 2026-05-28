@@ -473,9 +473,23 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
         let token = parser.current_token()?;
         match token.kind {
             TokenKind::Identifier(name) => {
+                // Inside __attribute__((...)), noreturn is just an attribute name (not a function specifier).
+                // GCC uses __attribute__((noreturn)) on function types, but on other types it's ignored.
                 if name == parser.keywords.attr_noreturn || name == parser.keywords.attr_noreturn_underscore {
-                    specs.push(DeclSpec::FunctionSpec(crate::ast::FunctionSpec::Noreturn));
+                    // Skip noreturn as an attribute - it's only valid on function types
                     parser.advance();
+                    if parser.accept(TokenKind::LeftParen).is_some() {
+                        let mut inner_depth = 1;
+                        while inner_depth > 0 && !parser.at_eof() {
+                            if parser.accept(TokenKind::LeftParen).is_some() {
+                                inner_depth += 1;
+                            } else if parser.accept(TokenKind::RightParen).is_some() {
+                                inner_depth -= 1;
+                            } else {
+                                parser.advance();
+                            }
+                        }
+                    }
                 } else if name == parser.keywords.attr_aligned || name == parser.keywords.attr_aligned_underscore {
                     parser.advance();
                     if parser.accept(TokenKind::LeftParen).is_some() {
@@ -515,8 +529,15 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
                 }
             }
             TokenKind::Noreturn => {
-                specs.push(DeclSpec::FunctionSpec(crate::ast::FunctionSpec::Noreturn));
+                // Inside __attribute__((...)), __noreturn__ is an attribute name,
+                // not a function specifier. Just skip it.
                 parser.advance();
+            }
+            TokenKind::Attribute => {
+                // Handle nested __attribute__ in attribute list
+                // These get collected and skipped
+                let nested = parse_attribute(parser)?;
+                specs.extend(nested);
             }
             TokenKind::LeftParen => {
                 depth += 1;

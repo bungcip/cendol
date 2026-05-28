@@ -154,3 +154,4 @@ pub mod semantic_cleanup_diag;
 pub mod semantic_pedantic_gnu_extensions;
 pub mod semantic_return;
 pub mod semantic_usual_arithmetic_conversions;
+pub mod parser_builtin_convertvector;

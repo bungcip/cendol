@@ -64,6 +64,7 @@ pub mod parser_stmt;
 pub mod parser_types;
 pub mod parser_utils;
 
+pub mod guardian_alignas_constraints;
 pub mod guardian_increment_completeness;
 pub mod guardian_modifiable_lvalue;
 pub mod guardian_pointer_arithmetic_completeness;

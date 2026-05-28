@@ -450,18 +450,30 @@ impl<'src> Preprocessor<'src> {
 
     /// Helper to define a built-in macro with a specific number value
     fn define_builtin_macro_with_val(&mut self, name: &str, value: &str) {
-        let source_id = self
-            .sm
-            .add_buffer(value.as_bytes().to_vec(), "<builtin>", None, FileKind::MacroExpansion);
+        // Bolt ⚡: Reuse the shared digits buffer for small integer values (0-255).
+        // This avoids creating ~100 redundant virtual buffers and SourceIds during
+        // preprocessor startup, reducing memory pressure and SourceManager churn.
+        let (loc, len) = if let Ok(val) = value.parse::<u8>() {
+            let digits_id = self.sm.get_digits_source_id();
+            let (offset, digit_len) = SourceManager::get_digit_metadata(val);
+            if digit_len as usize == value.len() {
+                (SourceLoc::new(digits_id, offset), digit_len)
+            } else {
+                let source_id = self
+                    .sm
+                    .add_buffer(value.as_bytes().to_vec(), "<builtin>", None, FileKind::MacroExpansion);
+                (SourceLoc::new(source_id, 0), value.len() as u16)
+            }
+        } else {
+            let source_id = self
+                .sm
+                .add_buffer(value.as_bytes().to_vec(), "<builtin>", None, FileKind::MacroExpansion);
+            (SourceLoc::new(source_id, 0), value.len() as u16)
+        };
 
         self.define_builtin_macro(
             name,
-            vec![PPToken::new(
-                PPTokenKind::Number,
-                PPTokenFlags::empty(),
-                SourceLoc::new(source_id, 0),
-                value.len() as u16,
-            )],
+            vec![PPToken::new(PPTokenKind::Number, PPTokenFlags::empty(), loc, len)],
         );
     }
 

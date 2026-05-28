@@ -41,6 +41,28 @@ fn test_integer_promotion_bitfield() {
 }
 
 #[test]
+fn test_integer_promotion_bitfield_wider_than_int() {
+    let source = r#"
+        #define IS_LONG_LONG(x) _Generic((x), long long: 1, default: 0)
+        #define IS_ULONG_LONG(x) _Generic((x), unsigned long long: 1, default: 0)
+        struct S {
+            long long llf : 40;
+            unsigned long long ullf : 40;
+        };
+        int main() {
+            struct S s;
+            // llf is promoted to long long (since it is wider than int)
+            _Static_assert(IS_LONG_LONG(s.llf + 0), "");
+            // ullf is promoted to unsigned long long (since it is wider than int)
+            _Static_assert(IS_ULONG_LONG(s.ullf + 0), "");
+            return 0;
+        }
+    "#;
+    let (_, result) = run_pipeline(source, CompilePhase::Mir);
+    assert!(result.is_ok());
+}
+
+#[test]
 fn test_usual_arithmetic_conversions_coverage() {
     let source = r#"
         void test() {

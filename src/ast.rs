@@ -208,7 +208,13 @@ impl Ast {
 
     /// Get resolved type for a node. panic if not resolved
     pub(crate) fn qual_type_of(&self, node: NodeRef) -> QualType {
-        self.get_resolved_type(node).unwrap()
+        self.get_resolved_type(node).unwrap_or_else(|| {
+            panic!(
+                "Type missing for AST node {:?} at index {}",
+                self.get_kind(node),
+                node.raw()
+            )
+        })
     }
 
     /// Get the value category for a node (reads from attached semantic_info)

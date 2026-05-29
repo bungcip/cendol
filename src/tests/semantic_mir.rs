@@ -480,6 +480,7 @@ fn test_parameter_shadowing() {
     insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = fn(%t0) -> %t0
+    type %t2 = ptr<%t1>
 
     fn main() -> i32
     {
@@ -567,16 +568,27 @@ fn test_function_with_many_return_types() {
     type %t9 = i64
     type %t10 = u16
     type %t11 = fn() -> %t4
-    type %t12 = fn() -> %t2
-    type %t13 = fn() -> %t5
-    type %t14 = fn() -> %t7
-    type %t15 = fn() -> %t10
-    type %t16 = fn() -> %t0
-    type %t17 = fn() -> %t6
-    type %t18 = fn() -> %t9
-    type %t19 = fn() -> %t3
-    type %t20 = fn() -> %t8
-    type %t21 = fn() -> %t1
+    type %t12 = ptr<%t11>
+    type %t13 = fn() -> %t2
+    type %t14 = ptr<%t13>
+    type %t15 = fn() -> %t5
+    type %t16 = ptr<%t15>
+    type %t17 = fn() -> %t7
+    type %t18 = ptr<%t17>
+    type %t19 = fn() -> %t10
+    type %t20 = ptr<%t19>
+    type %t21 = fn() -> %t0
+    type %t22 = ptr<%t21>
+    type %t23 = fn() -> %t6
+    type %t24 = ptr<%t23>
+    type %t25 = fn() -> %t9
+    type %t26 = ptr<%t25>
+    type %t27 = fn() -> %t3
+    type %t28 = ptr<%t27>
+    type %t29 = fn() -> %t8
+    type %t30 = ptr<%t29>
+    type %t31 = fn() -> %t1
+    type %t32 = ptr<%t31>
 
     fn main() -> i32
     {
@@ -840,6 +852,7 @@ fn test_external_function_call() {
     type %t3 = [5]%t1
     type %t4 = [5]%t1
     type %t5 = fn(%t2) -> %t0
+    type %t6 = ptr<%t5>
 
     global @.L.str0: [5]i8 = const "gate"
 
@@ -879,8 +892,9 @@ fn test_array_to_pointer_decay_in_function_call() {
     type %t1 = i8
     type %t2 = ptr<%t1>
     type %t3 = fn(%t2) -> %t0
-    type %t4 = [15]%t1
+    type %t4 = ptr<%t3>
     type %t5 = [15]%t1
+    type %t6 = [15]%t1
 
     global @.L.str0: [15]i8 = const "Hello, World!\n"
 
@@ -916,10 +930,11 @@ fn test_array_to_pointer_decay_in_variadic_function_call() {
     type %t1 = i8
     type %t2 = ptr<%t1>
     type %t3 = fn(%t2, ...) -> %t0
-    type %t4 = [15]%t1
+    type %t4 = ptr<%t3>
     type %t5 = [15]%t1
-    type %t6 = [5]%t1
+    type %t6 = [15]%t1
     type %t7 = [5]%t1
+    type %t8 = [5]%t1
 
     global @.L.str0: [15]i8 = const "Value: %d, %s\n"
     global @.L.str1: [5]i8 = const "test"
@@ -1173,6 +1188,7 @@ fn test_global_after_function() {
     insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = fn() -> %t0
+    type %t2 = ptr<%t1>
 
     global @s: i32 = const 42
 

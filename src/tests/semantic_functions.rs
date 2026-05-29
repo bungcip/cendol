@@ -169,10 +169,11 @@ fn test_func_opt_used() {
     type %t2 = ptr<%t1>
     type %t3 = void
     type %t4 = fn(%t2, ...) -> %t0
-    type %t5 = [3]%t1
+    type %t5 = ptr<%t4>
     type %t6 = [3]%t1
-    type %t7 = [4]%t1
+    type %t7 = [3]%t1
     type %t8 = [4]%t1
+    type %t9 = [4]%t1
 
     global @.L.str0: [3]i8 = const "%s"
     global @__func__.4: [4]i8 = const array_literal [const 102, const 111, const 111, const 0]

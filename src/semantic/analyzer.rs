@@ -3424,6 +3424,7 @@ impl<'a> SemanticAnalyzer<'a> {
     }
     fn visit_node(&mut self, node: NodeRef) -> Option<QualType> {
         let node_kind = self.ast.get_kind(node);
+
         let result_type = match node_kind {
             // Declarations
             NodeKind::TranslationUnit(_)

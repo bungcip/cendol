@@ -25,10 +25,11 @@ fn test_goto_into_block_skips_init() {
     type %t2 = i8
     type %t3 = ptr<%t2>
     type %t4 = fn(%t3, ...) -> %t1
-    type %t5 = [8]%t2
+    type %t5 = ptr<%t4>
     type %t6 = [8]%t2
-    type %t7 = [6]%t2
+    type %t7 = [8]%t2
     type %t8 = [6]%t2
+    type %t9 = [6]%t2
 
     global @.L.str0: [8]i8 = const "b = %d\n"
     global @.L.str1: [6]i8 = const "done\n"

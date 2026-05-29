@@ -772,6 +772,7 @@ fn test_transparent_union_mir() {
     type %t1 = i32
     type %t2 = ptr<%t1>
     type %t3 = fn(%t2) -> %t0
+    type %t4 = ptr<%t3>
 
     fn g(%param0: ptr<i32>) -> void
     {

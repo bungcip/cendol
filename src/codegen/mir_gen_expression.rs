@@ -628,14 +628,22 @@ impl<'a> MirGen<'a> {
                         Operand::Copy(Box::new(Place::Deref(Box::new(ptr_op))))
                     }
                 } else {
-                    let local_id = *self.func_state_mut().local_map.get(&sym).expect("Local not found");
-                    Operand::Copy(Box::new(Place::Local(local_id)))
+                    if let Some(&local_id) = self.func_state_mut().local_map.get(&sym) {
+                        Operand::Copy(Box::new(Place::Local(local_id)))
+                    } else {
+                        // Local not found in current function state; fall back to global symbol.
+                        // This avoids panics when lowering identifiers that may refer to
+                        // file-scoped or otherwise externally-declared variables.
+                        let global_id = self.get_or_lower_global(sym);
+                        Operand::Copy(Box::new(Place::Global(global_id)))
+                    }
                 }
             }
             SymbolKind::Function(_) => {
                 let func_id = self.get_or_declare_function(sym);
                 let func_type = self.get_function_type(func_id);
-                Operand::Constant(self.create_constant(func_type, ConstValueKind::FunctionAddress(func_id)))
+                let func_ptr_type = self.mb.add_type(MirType::Pointer { pointee: func_type });
+                Operand::Constant(self.create_constant(func_ptr_type, ConstValueKind::FunctionAddress(func_id)))
             }
             SymbolKind::EnumConstant { value } => self.create_int_operand(*value),
             _ => panic!("Unexpected symbol kind: {:?}", entry.kind),

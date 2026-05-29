@@ -71,6 +71,13 @@ PROJECTS = {
         "build_cmd": ["sh", "-c", "CC={CC} ./configure --without-ssl --without-zlib --disable-shared --disable-threaded-resolver && make CC={CC}"],
         "test_cmd": ["src/curl", "--version"],
         "clean_cmd": ["make", "clean"],
+    },
+    "git": {
+        "download_url": "https://github.com/git/git/archive/refs/tags/v2.45.2.zip",
+        "patch_cmd": ["sh", "-c", "rm -rf oss-fuzz t && sed -i '/all:: \\$(FUZZ_OBJS)/d' Makefile && sed -i 's/\\$(TEST_PROGRAMS)//g' Makefile && sed -i 's/\\$(UNIT_TEST_PROGS)//g' Makefile"],
+        "build_cmd": ["make", "-j4", "CC={CC}", "NO_OPENSSL=1", "NO_CURL=1", "NO_EXPAT=1", "NO_GETTEXT=1", "NO_TCLTK=1", "NO_ICONV=1", "PROGRAM_OBJS="],
+        "test_cmd": ["./git", "--version"],
+        "clean_cmd": ["make", "clean"],
     }
 }
 

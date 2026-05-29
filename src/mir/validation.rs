@@ -273,7 +273,6 @@ impl<'a> MirValidator<'a> {
                 )
             }
             MirType::Record { name, .. } => format!("struct/union {}", name.to_string()),
-            _ => format!("{:?}", self.mir.get_type(id)),
         }
     }
 
@@ -683,6 +682,24 @@ impl<'a> MirValidator<'a> {
         let (Some(ty1), Some(ty2)) = (self.mir.types.get(t1.index()), self.mir.types.get(t2.index())) else {
             return false;
         };
+
+        // Allow compatibility between a function type and a pointer-to-function type
+        // (C permits a function to decay to a pointer-to-function in many contexts).
+        if matches!(ty1, MirType::Function { .. }) {
+            if let MirType::Pointer { pointee } = ty2 {
+                if matches!(self.mir.get_type(*pointee), MirType::Function { .. }) {
+                    return true;
+                }
+            }
+        }
+
+        if matches!(ty2, MirType::Function { .. }) {
+            if let MirType::Pointer { pointee } = ty1 {
+                if matches!(self.mir.get_type(*pointee), MirType::Function { .. }) {
+                    return true;
+                }
+            }
+        }
 
         match (ty1, ty2) {
             (MirType::Pointer { pointee: p1 }, MirType::Pointer { pointee: p2 }) => self.are_types_compatible(*p1, *p2),

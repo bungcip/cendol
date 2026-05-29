@@ -3579,7 +3579,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // Bolt ⚡: Extension: allow incomplete enums in declarations (per GCC/Clang).
             if !self.registry.is_complete(decayed_qt.ty()) {
                 let is_void_param_list = params.len() == 1 && decayed_qt.is_void() && pname.is_none();
-                let is_incomplete_enum = matches!(self.registry.get(decayed_qt.ty()).kind, TypeKind::Enum { .. });
 
                 let should_report = if decayed_qt.is_void() {
                     !is_void_param_list

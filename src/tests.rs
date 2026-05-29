@@ -140,6 +140,7 @@ pub mod guardian_choose_expr;
 pub mod guardian_function_return_type_constraints;
 pub mod guardian_thread_local;
 pub mod guardian_typedef_redefinition;
+pub mod parser_builtin_convertvector;
 pub mod pp_pedantic_directives;
 pub mod pp_pedantic_dollar;
 pub mod regr_identifier_truncation;

@@ -235,6 +235,13 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
                 ],
             )
         }
+        ParsedNodeKind::BuiltinConvertVector(expr, ty) => ResolvedNodeKind::FunctionCall(
+            Box::new(ResolvedNodeKind::Ident("__builtin_convertvector".to_string())),
+            vec![
+                resolve_node(ast, *expr),
+                ResolvedNodeKind::Ident(format!("type_{}", ty.base.get())),
+            ],
+        ),
         ParsedNodeKind::BuiltinVaArg(ty, expr) => ResolvedNodeKind::FunctionCall(
             Box::new(ResolvedNodeKind::Ident("__builtin_va_arg".to_string())),
             vec![

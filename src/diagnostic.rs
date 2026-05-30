@@ -281,7 +281,7 @@ impl DiagnosticEngine {
                 };
 
                 // For visualization, use a 1-char span at the include/expansion location
-                let exp_span = SourceSpan::new_with_length(include_loc.source_id(), include_loc.offset(), 1);
+                let exp_span = SourceSpan::from_loc_and_length(include_loc, 1);
                 expansion_history.push((exp_span, note_msg));
 
                 current_id = include_loc.source_id();

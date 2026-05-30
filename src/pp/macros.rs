@@ -277,17 +277,16 @@ impl<'src> Preprocessor<'src> {
     /// Bolt ⚡: This optimization allows get_macro_param_tokens to return &[PPToken] instead of Cow,
     /// eliminating redundant allocations in the substitution hot-path.
     fn precalculate_variadic_args(&mut self, macro_info: &MacroInfo, args: &mut Vec<Vec<PPToken>>) -> (bool, bool) {
-        if macro_info.variadic_arg.is_some() {
-            let start = macro_info.parameter_list.len();
-            let is_empty = self.is_variadic_args_empty(macro_info, args);
-            let is_missing = args.len() <= start;
-            let combined = self.collect_variadic_args_with_commas(args, start);
-            args.truncate(start);
-            args.push(combined);
-            (is_empty, is_missing)
-        } else {
-            (false, false)
+        if macro_info.variadic_arg.is_none() {
+            return (false, false);
         }
+        let start = macro_info.parameter_list.len();
+        let is_empty = self.is_variadic_args_empty(macro_info, args);
+        let is_missing = args.len() <= start;
+        let combined = self.collect_variadic_args_with_commas(args, start);
+        args.truncate(start);
+        args.push(combined);
+        (is_empty, is_missing)
     }
 
     fn collect_variadic_args_with_commas(&mut self, args: &[Vec<PPToken>], start_index: usize) -> Vec<PPToken> {
@@ -635,12 +634,10 @@ impl<'src> Preprocessor<'src> {
 
     /// Paste tokens for ## operator
     fn paste_tokens(&mut self, left: &PPToken, right: &PPToken) -> Result<Vec<PPToken>, PPDiag> {
-        let left_span =
-            SourceSpan::new_with_length(left.location.source_id(), left.location.offset(), left.length as u32);
+        let left_span = SourceSpan::from_loc_and_length(left.location, left.length as u32);
         let left_text = self.sm.get_source_text(left_span);
 
-        let right_span =
-            SourceSpan::new_with_length(right.location.source_id(), right.location.offset(), right.length as u32);
+        let right_span = SourceSpan::from_loc_and_length(right.location, right.length as u32);
         let right_text = self.sm.get_source_text(right_span);
 
         // ⚡ Bolt: Avoid redundant format! and clone by building the byte buffer directly.
@@ -1209,40 +1206,32 @@ impl<'a> SourceBufferCache<'a> {
         }
     }
 
-    fn get_token_bytes<'b>(&'b mut self, token: &'b PPToken) -> &'b [u8] {
-        let sid = token.location.source_id();
-        let buffer = if self.last_sid == Some(sid) {
-            self.last_buffer.unwrap()
-        } else if let Some(b) = self.sm.get_buffer_safe(sid) {
-            self.last_sid = Some(sid);
-            self.last_buffer = Some(b);
-            b
+    fn get_buffer(&mut self, sid: SourceId) -> Option<&'a [u8]> {
+        if self.last_sid == Some(sid) {
+            self.last_buffer
         } else {
+            let b = self.sm.get_buffer_safe(sid);
+            self.last_sid = Some(sid);
+            self.last_buffer = b;
+            b
+        }
+    }
+
+    fn get_token_bytes<'b>(&'b mut self, token: &'b PPToken) -> &'b [u8] {
+        let Some(buffer) = self.get_buffer(token.location.source_id()) else {
             return &[];
         };
-
         let start = token.location.offset() as usize;
         let end = start + token.length as usize;
         if end <= buffer.len() { &buffer[start..end] } else { &[] }
     }
 
     fn get_token_text<'b>(&'b mut self, token: &'b PPToken) -> Cow<'b, str> {
-        if let PPTokenKind::Identifier(sym) = &token.kind {
-            return Cow::Borrowed(sym.as_str());
+        let sid = token.location.source_id();
+        if let Some(buffer) = self.get_buffer(sid) {
+            token.get_text_from_buffer(buffer)
+        } else {
+            token.get_text_with_sm(self.sm)
         }
-
-        if let Some(fixed) = token.kind.get_fixed_text() {
-            return Cow::Borrowed(fixed);
-        }
-
-        let bytes = self.get_token_bytes(token);
-        if bytes.is_empty() {
-            return Cow::Borrowed("");
-        }
-
-        // Safety: Preprocessor tokens are guaranteed to be valid UTF-8 by the lexer.
-        let raw = unsafe { std::str::from_utf8_unchecked(bytes) };
-
-        token.flags.apply_splices(raw)
     }
 }

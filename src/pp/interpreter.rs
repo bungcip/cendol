@@ -508,8 +508,10 @@ impl<'a> Interpreter<'a> {
     fn parse_unary(&mut self) -> Result<PPExpr, PPDiag> {
         let token = self.current()?;
 
+        let keywords = &self.preprocessor.keywords;
+
         // Handle `defined`
-        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.defined_symbol()) {
+        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == keywords.defined) {
             self.advance();
             let sym = if self.peek() == Some(&PPTokenKind::LeftParen) {
                 self.advance();
@@ -523,24 +525,24 @@ impl<'a> Interpreter<'a> {
         }
 
         // Handle `__has_include`
-        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.has_include_symbol()) {
+        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == keywords.has_include) {
             self.advance();
             return self.parse_has_include(false);
         }
 
         // Handle `__has_include_next`
-        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.has_include_next_symbol()) {
+        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == keywords.has_include_next) {
             self.advance();
             return self.parse_has_include(true);
         }
 
         type CheckConstructor = fn(StringId) -> PPExpr;
         let checks: [(StringId, CheckConstructor); 5] = [
-            (self.preprocessor.has_builtin_symbol(), PPExpr::HasBuiltin),
-            (self.preprocessor.has_attribute_symbol(), PPExpr::HasAttribute),
-            (self.preprocessor.has_c_attribute_symbol(), PPExpr::HasCAttribute),
-            (self.preprocessor.has_feature_symbol(), PPExpr::HasFeature),
-            (self.preprocessor.has_extension_symbol(), PPExpr::HasExtension),
+            (keywords.has_builtin, PPExpr::HasBuiltin),
+            (keywords.has_attribute, PPExpr::HasAttribute),
+            (keywords.has_c_attribute, PPExpr::HasCAttribute),
+            (keywords.has_feature, PPExpr::HasFeature),
+            (keywords.has_extension, PPExpr::HasExtension),
         ];
 
         if let PPTokenKind::Identifier(sym) = token.kind {

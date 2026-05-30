@@ -768,11 +768,7 @@ impl<'src> Lexer<'src> {
             None => return Ok(None),
         };
 
-        let span = SourceSpan::new_with_length(
-            pptoken.location.source_id(),
-            pptoken.location.offset(),
-            pptoken.length as u32,
-        );
+        let span = SourceSpan::from_loc_and_length(pptoken.location, pptoken.length as u32);
 
         if pptoken.kind == PPTokenKind::StringLiteral {
             // Collect all adjacent string literals FIRST to avoid borrow checker issues
@@ -796,7 +792,7 @@ impl<'src> Lexer<'src> {
                     prefix = next_prefix;
                 }
                 content.push_str(next_content);
-                let t_span = SourceSpan::new_with_length(t.location.source_id(), t.location.offset(), t.length as u32);
+                let t_span = SourceSpan::from_loc_and_length(t.location, t.length as u32);
                 merged_span = merged_span.merge(t_span);
             }
 

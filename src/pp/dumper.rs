@@ -294,8 +294,7 @@ impl<'a> PPDumper<'a> {
         if is_macro {
             token.get_text_with_sm(self.source_manager)
         } else {
-            let span =
-                SourceSpan::new_with_length(token.location.source_id(), token.location.offset(), token.length as u32);
+            let span = SourceSpan::from_loc_and_length(token.location, token.length as u32);
             std::borrow::Cow::Borrowed(self.source_manager.get_source_text(span))
         }
     }

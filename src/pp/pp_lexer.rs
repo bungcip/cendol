@@ -191,6 +191,11 @@ impl PPToken {
         PPToken::new(kind, flags, location, text.len() as u16)
     }
 
+    /// Create a PPToken with just kind and location
+    pub(crate) fn simple(kind: PPTokenKind, location: SourceLoc) -> Self {
+        PPToken::new(kind, PPTokenFlags::empty(), location, 0)
+    }
+
     #[cfg(test)]
     pub(crate) fn get_text(&self) -> &str {
         match &self.kind {
@@ -372,6 +377,16 @@ impl PPLexer {
         result.map(|(ch, _)| ch)
     }
 
+    /// Check if the next character matches, and consume it if it does.
+    fn consume_if(&mut self, ch: u8) -> bool {
+        if self.peek_char() == Some(ch) {
+            self.next_char();
+            true
+        } else {
+            false
+        }
+    }
+
     /// ⚡ Bolt: Consolidated operator lexing.
     /// This helper function centralizes the logic for lexing single and multi-character operators,
     /// significantly reducing code duplication and branching in the main `next_token` function.
@@ -385,14 +400,14 @@ impl PPLexer {
 
         // Helper macro to reduce boilerplate when creating a token.
         macro_rules! token {
-            ($kind:expr, $len:expr) => {{
+            ($kind:expr) => {{
                 let mut f = flags;
                 if self.has_splice {
                     f |= PPTokenFlags::HAS_SPLICES;
                 }
                 PPToken::new($kind, f, loc, (self.position - start_pos) as u16)
             }};
-            ($kind:expr, $len:expr, $custom_flags:expr) => {{
+            ($kind:expr, $custom_flags:expr) => {{
                 let mut f = $custom_flags;
                 if self.has_splice {
                     f |= PPTokenFlags::HAS_SPLICES;
@@ -401,164 +416,155 @@ impl PPLexer {
             }};
         }
 
-        // Helper macro to check the next character and consume it if it matches.
-        macro_rules! consume_if {
-            ($c:expr) => {{
-                if self.peek_char() == Some($c) {
-                    self.next_char();
-                    true
-                } else {
-                    false
-                }
-            }};
-        }
-
         match ch {
             b'#' => {
-                if consume_if!(b'#') {
-                    token!(PPTokenKind::HashHash, 2)
+                if self.consume_if(b'#') {
+                    token!(PPTokenKind::HashHash)
                 } else {
                     let mut token_flags = flags;
                     if is_at_start_of_line {
                         token_flags |= PPTokenFlags::STARTS_PP_LINE;
                         self.in_directive_line = true;
                     }
-                    token!(PPTokenKind::Hash, 1, token_flags)
+                    token!(PPTokenKind::Hash, token_flags)
                 }
             }
             b'+' => {
-                if consume_if!(b'+') {
-                    token!(PPTokenKind::Increment, 2)
-                } else if consume_if!(b'=') {
-                    token!(PPTokenKind::PlusAssign, 2)
+                if self.consume_if(b'+') {
+                    token!(PPTokenKind::Increment)
+                } else if self.consume_if(b'=') {
+                    token!(PPTokenKind::PlusAssign)
                 } else {
-                    token!(PPTokenKind::Plus, 1)
+                    token!(PPTokenKind::Plus)
                 }
             }
             b'-' => {
-                if consume_if!(b'-') {
-                    token!(PPTokenKind::Decrement, 2)
-                } else if consume_if!(b'=') {
-                    token!(PPTokenKind::MinusAssign, 2)
-                } else if consume_if!(b'>') {
-                    token!(PPTokenKind::Arrow, 2)
+                if self.consume_if(b'-') {
+                    token!(PPTokenKind::Decrement)
+                } else if self.consume_if(b'=') {
+                    token!(PPTokenKind::MinusAssign)
+                } else if self.consume_if(b'>') {
+                    token!(PPTokenKind::Arrow)
                 } else {
-                    token!(PPTokenKind::Minus, 1)
+                    token!(PPTokenKind::Minus)
                 }
             }
             b'*' => {
-                if consume_if!(b'=') {
-                    token!(PPTokenKind::StarAssign, 2)
+                if self.consume_if(b'=') {
+                    token!(PPTokenKind::StarAssign)
                 } else {
-                    token!(PPTokenKind::Star, 1)
+                    token!(PPTokenKind::Star)
                 }
             }
             b'/' => {
-                if consume_if!(b'=') {
-                    token!(PPTokenKind::DivAssign, 2)
+                if self.consume_if(b'=') {
+                    token!(PPTokenKind::DivAssign)
                 } else {
-                    token!(PPTokenKind::Slash, 1)
+                    token!(PPTokenKind::Slash)
                 }
             }
             b'%' => {
-                if consume_if!(b'=') {
-                    token!(PPTokenKind::ModAssign, 2)
+                if self.consume_if(b'=') {
+                    token!(PPTokenKind::ModAssign)
                 } else {
-                    token!(PPTokenKind::Percent, 1)
+                    token!(PPTokenKind::Percent)
                 }
             }
             b'=' => {
-                if consume_if!(b'=') {
-                    token!(PPTokenKind::Equal, 2)
+                if self.consume_if(b'=') {
+                    token!(PPTokenKind::Equal)
                 } else {
-                    token!(PPTokenKind::Assign, 1)
+                    token!(PPTokenKind::Assign)
                 }
             }
             b'!' => {
-                if consume_if!(b'=') {
-                    token!(PPTokenKind::NotEqual, 2)
+                if self.consume_if(b'=') {
+                    token!(PPTokenKind::NotEqual)
                 } else {
-                    token!(PPTokenKind::Not, 1)
+                    token!(PPTokenKind::Not)
                 }
             }
             b'<' => {
-                if consume_if!(b'<') {
-                    if consume_if!(b'=') {
-                        token!(PPTokenKind::LeftShiftAssign, 3)
+                if self.consume_if(b'<') {
+                    if self.consume_if(b'=') {
+                        token!(PPTokenKind::LeftShiftAssign)
                     } else {
-                        token!(PPTokenKind::LeftShift, 2)
+                        token!(PPTokenKind::LeftShift)
                     }
-                } else if consume_if!(b'=') {
-                    token!(PPTokenKind::LessEqual, 2)
+                } else if self.consume_if(b'=') {
+                    token!(PPTokenKind::LessEqual)
                 } else {
-                    token!(PPTokenKind::Less, 1)
+                    token!(PPTokenKind::Less)
                 }
             }
             b'>' => {
-                if consume_if!(b'>') {
-                    if consume_if!(b'=') {
-                        token!(PPTokenKind::RightShiftAssign, 3)
+                if self.consume_if(b'>') {
+                    if self.consume_if(b'=') {
+                        token!(PPTokenKind::RightShiftAssign)
                     } else {
-                        token!(PPTokenKind::RightShift, 2)
+                        token!(PPTokenKind::RightShift)
                     }
-                } else if consume_if!(b'=') {
-                    token!(PPTokenKind::GreaterEqual, 2)
+                } else if self.consume_if(b'=') {
+                    token!(PPTokenKind::GreaterEqual)
                 } else {
-                    token!(PPTokenKind::Greater, 1)
+                    token!(PPTokenKind::Greater)
                 }
             }
             b'&' => {
-                if consume_if!(b'&') {
-                    token!(PPTokenKind::LogicAnd, 2)
-                } else if consume_if!(b'=') {
-                    token!(PPTokenKind::AndAssign, 2)
+                if self.consume_if(b'&') {
+                    token!(PPTokenKind::LogicAnd)
+                } else if self.consume_if(b'=') {
+                    token!(PPTokenKind::AndAssign)
                 } else {
-                    token!(PPTokenKind::And, 1)
+                    token!(PPTokenKind::And)
                 }
             }
             b'|' => {
-                if consume_if!(b'|') {
-                    token!(PPTokenKind::LogicOr, 2)
-                } else if consume_if!(b'=') {
-                    token!(PPTokenKind::OrAssign, 2)
+                if self.consume_if(b'|') {
+                    token!(PPTokenKind::LogicOr)
+                } else if self.consume_if(b'=') {
+                    token!(PPTokenKind::OrAssign)
                 } else {
-                    token!(PPTokenKind::Or, 1)
+                    token!(PPTokenKind::Or)
                 }
             }
             b'^' => {
-                if consume_if!(b'=') {
-                    token!(PPTokenKind::XorAssign, 2)
+                if self.consume_if(b'=') {
+                    token!(PPTokenKind::XorAssign)
                 } else {
-                    token!(PPTokenKind::Xor, 1)
+                    token!(PPTokenKind::Xor)
                 }
             }
-            b'~' => token!(PPTokenKind::Tilde, 1),
-            b'.' => 'ellipsis: {
+            b'~' => token!(PPTokenKind::Tilde),
+            b'.' => {
                 let pos_after_first = self.position;
                 let at_start_after_first = self.at_start_of_line;
                 if self.peek_char() == Some(b'.') {
                     self.next_char(); // Consume second '.'
                     if self.peek_char() == Some(b'.') {
                         self.next_char(); // Consume third '.'
-                        break 'ellipsis token!(PPTokenKind::Ellipsis, 3);
+                        token!(PPTokenKind::Ellipsis)
+                    } else {
+                        // It was '..', backtrack to handle it as a single '.'
+                        self.position = pos_after_first;
+                        self.at_start_of_line = at_start_after_first;
+                        token!(PPTokenKind::Dot)
                     }
-                    // It was '..', which is not a valid C token. Backtrack to handle it as a single '.'
-                    self.position = pos_after_first;
-                    self.at_start_of_line = at_start_after_first;
+                } else {
+                    token!(PPTokenKind::Dot)
                 }
-                token!(PPTokenKind::Dot, 1)
             }
-            b'?' => token!(PPTokenKind::Question, 1),
-            b':' => token!(PPTokenKind::Colon, 1),
-            b',' => token!(PPTokenKind::Comma, 1),
-            b';' => token!(PPTokenKind::Semicolon, 1),
-            b'(' => token!(PPTokenKind::LeftParen, 1),
-            b')' => token!(PPTokenKind::RightParen, 1),
-            b'[' => token!(PPTokenKind::LeftBracket, 1),
-            b']' => token!(PPTokenKind::RightBracket, 1),
-            b'{' => token!(PPTokenKind::LeftBrace, 1),
-            b'}' => token!(PPTokenKind::RightBrace, 1),
-            _ => token!(PPTokenKind::Unknown, 1),
+            b'?' => token!(PPTokenKind::Question),
+            b':' => token!(PPTokenKind::Colon),
+            b',' => token!(PPTokenKind::Comma),
+            b';' => token!(PPTokenKind::Semicolon),
+            b'(' => token!(PPTokenKind::LeftParen),
+            b')' => token!(PPTokenKind::RightParen),
+            b'[' => token!(PPTokenKind::LeftBracket),
+            b']' => token!(PPTokenKind::RightBracket),
+            b'{' => token!(PPTokenKind::LeftBrace),
+            b'}' => token!(PPTokenKind::RightBrace),
+            _ => token!(PPTokenKind::Unknown),
         }
     }
 
@@ -612,11 +618,9 @@ impl PPLexer {
         if self.position as usize >= self.buffer.len() {
             if self.in_directive_line {
                 self.in_directive_line = false;
-                return Some(PPToken::new(
+                return Some(PPToken::simple(
                     PPTokenKind::Eod,
-                    PPTokenFlags::empty(),
                     SourceLoc::new(self.source_id, self.position),
-                    0,
                 ));
             } else {
                 return None;
@@ -649,87 +653,63 @@ impl PPLexer {
 
         // ch is the first character of the token.
         // If next_char encountered a splice, has_splice is now true.
-
         let token = match ch {
             b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'$' => {
-                if ch == b'L' || ch == b'u' || ch == b'U' {
-                    let next_ch = self.peek_char();
-
-                    // Check for u8" (UTF-8 string literal) or u8' (UTF-8 char literal)
-                    if ch == b'u' && next_ch == Some(b'8') {
-                        let saved_pos = self.position;
-                        let saved_at_start = self.at_start_of_line;
+                let tok = match (ch, self.peek_char()) {
+                    (b'u', Some(b'8')) => {
+                        let saved = (self.position, self.at_start_of_line);
                         self.next_char(); // consume '8'
-
-                        if self.peek_char() == Some(b'"') {
-                            Some(self.lex_string_literal(start_pos, &[ch, b'8'], flags))
-                        } else if self.peek_char() == Some(b'\'') {
-                            Some(self.lex_char_literal(start_pos, &[ch, b'8'], flags))
-                        } else {
-                            // Backtrack if it's not u8" or u8'
-                            self.position = saved_pos;
-                            self.at_start_of_line = saved_at_start;
-                            Some(self.lex_identifier(start_pos, ch, flags))
-                        }
-                    } else {
-                        match next_ch {
-                            Some(b'"') => Some(self.lex_string_literal(start_pos, &[ch], flags)),
-                            Some(b'\'') => Some(self.lex_char_literal(start_pos, &[ch], flags)),
-                            _ => Some(self.lex_identifier(start_pos, ch, flags)),
+                        match self.peek_char() {
+                            Some(b'"') => self.lex_string_literal(start_pos, b"u8", flags),
+                            Some(b'\'') => self.lex_char_literal(start_pos, b"u8", flags),
+                            _ => {
+                                self.position = saved.0;
+                                self.at_start_of_line = saved.1;
+                                self.lex_identifier(start_pos, ch, flags)
+                            }
                         }
                     }
-                } else {
-                    Some(self.lex_identifier(start_pos, ch, flags))
-                }
+                    (b'L' | b'u' | b'U', Some(b'"')) => self.lex_string_literal(start_pos, &[ch], flags),
+                    (b'L' | b'u' | b'U', Some(b'\'')) => self.lex_char_literal(start_pos, &[ch], flags),
+                    _ => self.lex_identifier(start_pos, ch, flags),
+                };
+                Some(tok)
             }
             b'\\' => {
-                let saved_pos = self.position;
-                let saved_at_start = self.at_start_of_line;
-
-                if self.lex_ucn(false).is_some() {
-                    // Valid UCN start. Backtrack to just after `\` so lex_identifier can re-parse it.
-                    self.position = saved_pos;
-                    self.at_start_of_line = saved_at_start;
-                    Some(self.lex_identifier(start_pos, ch, flags))
+                let saved = (self.position, self.at_start_of_line);
+                let is_ucn = self.lex_ucn(false).is_some();
+                self.position = saved.0;
+                self.at_start_of_line = saved.1;
+                Some(if is_ucn {
+                    self.lex_identifier(start_pos, ch, flags)
                 } else {
-                    // Not a UCN or invalid.
-                    // Backtrack to just after `\` (saved_pos).
-                    self.position = saved_pos;
-                    self.at_start_of_line = saved_at_start;
-                    Some(PPToken::new(
+                    PPToken::new(
                         PPTokenKind::Unknown,
                         flags,
                         SourceLoc::new(self.source_id, start_pos),
                         1,
-                    ))
-                }
+                    )
+                })
             }
-            0x80..=0xFF => {
-                if self.is_valid_utf8_start(ch) {
-                    Some(self.lex_identifier(start_pos, ch, flags))
-                } else {
-                    Some(PPToken::new(
-                        PPTokenKind::Unknown,
-                        flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                        1,
-                    ))
-                }
-            }
+            0x80..=0xFF => Some(if self.is_valid_utf8_start(ch) {
+                self.lex_identifier(start_pos, ch, flags)
+            } else {
+                PPToken::new(
+                    PPTokenKind::Unknown,
+                    flags,
+                    SourceLoc::new(self.source_id, start_pos),
+                    1,
+                )
+            }),
             b'0'..=b'9' => Some(self.lex_number(start_pos, ch, flags)),
             b'"' => Some(self.lex_string_literal(start_pos, &[ch], flags)),
             b'\'' => Some(self.lex_char_literal(start_pos, &[ch], flags)),
             b'#' | b'%' => Some(self.lex_operator(start_pos, ch, flags)),
-            b'.' => {
-                if let Some(next_ch) = self.peek_char()
-                    && next_ch.is_ascii_digit()
-                {
-                    Some(self.lex_number(start_pos, ch, flags))
-                } else {
-                    Some(self.lex_operator(start_pos, ch, flags))
-                }
-            }
-            // All operators and punctuation are handled by the optimized helper function.
+            b'.' => Some(if self.peek_char().is_some_and(|c| c.is_ascii_digit()) {
+                self.lex_number(start_pos, ch, flags)
+            } else {
+                self.lex_operator(start_pos, ch, flags)
+            }),
             b'+' | b'-' | b'*' | b'/' | b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'^' | b'~' | b'?' | b':' | b','
             | b';' | b'(' | b')' | b'[' | b']' | b'{' | b'}' => Some(self.lex_operator(start_pos, ch, flags)),
             _ => Some(PPToken::new(
@@ -1259,22 +1239,19 @@ impl PPLexer {
 
     /// Shared logic for lexing quoted literals (strings and chars)
     fn lex_quoted_literal(&mut self, ends_with_delimiter: bool, delimiter: u8) -> bool {
-        if !ends_with_delimiter {
-            // consume the quote
-            if self.next_char().is_none() {
-                return false;
-            };
+        if !ends_with_delimiter && self.next_char().is_none() {
+            return false;
         }
 
         let mut has_invalid_ucn = false;
         self.lex_common_literal_body(delimiter, &mut has_invalid_ucn);
-
         has_invalid_ucn
     }
 
     fn lex_string_literal(&mut self, start_pos: u32, prefix: &[u8], flags: PPTokenFlags) -> PPToken {
-        let ends_with_delimiter = !prefix.is_empty() && prefix.last() == Some(&b'"');
+        let ends_with_delimiter = prefix.ends_with(b"\"");
         let invalid_ucn = self.lex_quoted_literal(ends_with_delimiter, b'"');
+
         let mut final_flags = flags;
         if invalid_ucn {
             final_flags |= PPTokenFlags::HAS_INVALID_UCN;
@@ -1282,8 +1259,8 @@ impl PPLexer {
         if self.has_splice {
             final_flags |= PPTokenFlags::HAS_SPLICES;
         }
-        let length = self.position - start_pos;
 
+        let length = self.position - start_pos;
         PPToken::new(
             PPTokenKind::StringLiteral,
             final_flags,
@@ -1295,16 +1272,13 @@ impl PPLexer {
     /// Check if a byte is a valid start of a UTF-8 sequence
     /// Returns true if this could be the start of a valid UTF-8 sequence
     fn is_valid_utf8_start(&self, byte: u8) -> bool {
-        // Valid UTF-8 start bytes:
-        // 0x00-0x7F: ASCII (single byte, handled elsewhere)
-        // 0xC2-0xF4: Start of multi-byte sequence
-        // Invalid starts: 0x80-0xBF (continuation bytes), 0xC0, 0xC1, 0xF5-0xFF
         (0xC2..=0xF4).contains(&byte)
     }
 
     fn lex_char_literal(&mut self, start_pos: u32, prefix: &[u8], flags: PPTokenFlags) -> PPToken {
-        let ends_with_delimiter = !prefix.is_empty() && prefix.last() == Some(&b'\'');
+        let ends_with_delimiter = prefix.ends_with(b"'");
         let invalid_ucn = self.lex_quoted_literal(ends_with_delimiter, b'\'');
+
         let mut final_flags = flags;
         if invalid_ucn {
             final_flags |= PPTokenFlags::HAS_INVALID_UCN;

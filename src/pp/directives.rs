@@ -137,7 +137,7 @@ impl<'src> Preprocessor<'src> {
             .unwrap_or(SourceLoc::new(source_id, 0));
 
         // Append EOD token to mark end of pragma
-        tokens.push(PPToken::new(PPTokenKind::Eod, PPTokenFlags::empty(), eod_loc, 0));
+        tokens.push(PPToken::simple(PPTokenKind::Eod, eod_loc));
 
         tokens
     }
@@ -584,44 +584,32 @@ impl<'src> Preprocessor<'src> {
         self.expect_eod()
     }
 
-    fn get_parent_skipping(&self) -> bool {
-        if self.conditional_stack.len() > 1 {
-            self.conditional_stack[self.conditional_stack.len() - 2].was_skipping
-        } else {
-            false
-        }
-    }
-
     fn handle_elif_or_else(&mut self, condition: Option<bool>, location: SourceLoc) -> Result<(), PPDiag> {
         let is_elif = condition.is_some();
-        let empty_error = if is_elif {
-            PPError::ElifWithoutIf
-        } else {
-            PPError::ElseWithoutIf
+        let Some((current, rest)) = self.conditional_stack.split_last_mut() else {
+            let err = if is_elif {
+                PPError::ElifWithoutIf
+            } else {
+                PPError::ElseWithoutIf
+            };
+            return self.emit_error(err, location);
         };
 
-        if self.conditional_stack.is_empty() {
-            return self.emit_error(empty_error, location);
-        }
-
-        let parent_skipping = self.get_parent_skipping();
-        let current = self.conditional_stack.last_mut().unwrap();
-
-        let dup_error = if is_elif {
-            PPError::ElifAfterElse
-        } else {
-            PPError::MultipleElse
-        };
         if current.found_else {
-            return self.emit_error(dup_error, location);
+            let err = if is_elif {
+                PPError::ElifAfterElse
+            } else {
+                PPError::MultipleElse
+            };
+            return self.emit_error(err, location);
         }
 
         if !is_elif {
             current.found_else = true;
         }
 
-        let cond = condition.unwrap_or(true);
-        let should_process = !current.found_non_skipping && cond;
+        let parent_skipping = rest.last().is_some_and(|info| info.was_skipping);
+        let should_process = !current.found_non_skipping && condition.unwrap_or(true);
         if should_process {
             current.found_non_skipping = true;
         }
@@ -840,26 +828,15 @@ impl<'src> Preprocessor<'src> {
     fn handle_pragma_pack(&mut self) -> Result<(), PPDiag> {
         let loc = self.get_current_location();
 
-        // 1. Get first token
-        let t1 = match self.lex_token() {
-            Some(t) if t.kind != PPTokenKind::Eod => t,
-            _ => {
-                // Empty, e.g. `#pragma pack`
-                // Emit warning for missing '(' after '#pragma pack' and ignore
-                self.report_warning_with_name(loc, "missing '(' after '#pragma pack'".to_string(), "#pragmas");
-                return Ok(());
-            }
-        };
-
-        // 2. Check for optional '('
-        if t1.kind != PPTokenKind::LeftParen {
-            // Missing '(', warn and ignore
-            self.report_warning_with_name(t1.location, "missing '(' after '#pragma pack'".to_string(), "#pragmas");
-            // Consume the remaining tokens on the line
-            while let Some(t) = self.lex_token() {
-                if t.kind == PPTokenKind::Eod {
-                    break;
-                }
+        // 1. Check for left parenthesis
+        let t1 = self.lex_token();
+        if !matches!(&t1, Some(t) if t.kind == PPTokenKind::LeftParen) {
+            let warn_loc = t1.as_ref().map(|t| t.location).unwrap_or(loc);
+            self.report_warning_with_name(warn_loc, "missing '(' after '#pragma pack'".to_string(), "#pragmas");
+            if let Some(t) = t1
+                && t.kind != PPTokenKind::Eod
+            {
+                self.collect_tokens_until_eod();
             }
             return Ok(());
         }
@@ -867,7 +844,7 @@ impl<'src> Preprocessor<'src> {
         // We have the left paren!
         let t2 = self.expect_token()?;
 
-        // 3. If '()', it's Set(None)
+        // 2. If '()', it's Set(None)
         let kind = if t2.kind == PPTokenKind::RightParen {
             PragmaPackKind::Set(None)
         } else {
@@ -904,12 +881,8 @@ impl<'src> Preprocessor<'src> {
         // We expect Eod/Eof at the end
         self.expect_eod()?;
 
-        self.pending_tokens.push(PPToken::new(
-            PPTokenKind::PragmaPack(kind),
-            PPTokenFlags::empty(),
-            loc,
-            0,
-        ));
+        self.pending_tokens
+            .push(PPToken::simple(PPTokenKind::PragmaPack(kind), loc));
 
         Ok(())
     }
@@ -1052,12 +1025,8 @@ impl<'src> Preprocessor<'src> {
         // Emit a synthetic PragmaVisibility token into the pending stream so the
         // parser can consume it the same way it handles PragmaPack tokens.
         let loc = self.get_current_location();
-        self.pending_tokens.push(PPToken::new(
-            PPTokenKind::PragmaVisibility(kind),
-            PPTokenFlags::empty(),
-            loc,
-            0,
-        ));
+        self.pending_tokens
+            .push(PPToken::simple(PPTokenKind::PragmaVisibility(kind), loc));
 
         Ok(())
     }

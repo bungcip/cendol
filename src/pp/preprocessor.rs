@@ -148,23 +148,21 @@ impl<'src> Preprocessor<'src> {
             return None;
         };
 
-        let (kind, text) = if symbol == self.keywords.line_macro {
-            let line = self.sm.get_presumed_location(token.location).map(|p| p.0).unwrap_or(1);
-            let text = line.to_string();
-            (PPTokenKind::Number, text)
-        } else if symbol == self.keywords.file_macro {
-            let filename = self
-                .sm
-                .get_presumed_location(token.location)
-                .and_then(|p| p.2)
-                .unwrap_or("<unknown>");
-            let text = format!("\"{}\"", filename);
-            (PPTokenKind::StringLiteral, text)
-        } else if symbol == self.keywords.counter_macro {
-            let text = self.get_next_counter().to_string();
-            (PPTokenKind::Number, text)
-        } else {
-            return None;
+        let (kind, text) = match symbol {
+            s if s == self.keywords.line_macro => {
+                let line = self.sm.get_presumed_location(token.location).map(|p| p.0).unwrap_or(1);
+                (PPTokenKind::Number, line.to_string())
+            }
+            s if s == self.keywords.file_macro => {
+                let filename = self
+                    .sm
+                    .get_presumed_location(token.location)
+                    .and_then(|p| p.2)
+                    .unwrap_or("<unknown>");
+                (PPTokenKind::StringLiteral, format!("\"{}\"", filename))
+            }
+            s if s == self.keywords.counter_macro => (PPTokenKind::Number, self.get_next_counter().to_string()),
+            _ => return None,
         };
 
         let source_id = self.sm.add_buffer(
@@ -594,57 +592,18 @@ impl<'src> Preprocessor<'src> {
 
     /// Check if a macro is defined
     pub(crate) fn is_macro_defined(&self, symbol: StringId) -> bool {
-        if symbol == self.keywords.has_include
-            || symbol == self.keywords.has_include_next
-            || symbol == self.keywords.has_builtin
-            || symbol == self.keywords.has_attribute
-            || symbol == self.keywords.has_c_attribute
-            || symbol == self.keywords.has_feature
-            || symbol == self.keywords.has_extension
-        {
-            return true;
-        }
-        self.macros.contains_key(&symbol)
-    }
-
-    /// Get the interned symbol for the "defined" operator
-    pub(super) fn defined_symbol(&self) -> StringId {
-        self.keywords.defined_symbol()
-    }
-
-    /// Get the interned symbol for the "__has_include" operator
-    pub(super) fn has_include_symbol(&self) -> StringId {
-        self.keywords.has_include_symbol()
-    }
-
-    /// Get the interned symbol for the "__has_include_next" operator
-    pub(super) fn has_include_next_symbol(&self) -> StringId {
-        self.keywords.has_include_next_symbol()
-    }
-
-    /// Get the interned symbol for the "__has_builtin" operator
-    pub(super) fn has_builtin_symbol(&self) -> StringId {
-        self.keywords.has_builtin_symbol()
-    }
-
-    /// Get the interned symbol for the "__has_attribute" operator
-    pub(super) fn has_attribute_symbol(&self) -> StringId {
-        self.keywords.has_attribute_symbol()
-    }
-
-    /// Get the interned symbol for the "__has_c_attribute" operator
-    pub(super) fn has_c_attribute_symbol(&self) -> StringId {
-        self.keywords.has_c_attribute_symbol()
-    }
-
-    /// Get the interned symbol for the "__has_feature" operator
-    pub(super) fn has_feature_symbol(&self) -> StringId {
-        self.keywords.has_feature_symbol()
-    }
-
-    /// Get the interned symbol for the "__has_extension" operator
-    pub(super) fn has_extension_symbol(&self) -> StringId {
-        self.keywords.has_extension_symbol()
+        let kw = &self.keywords;
+        [
+            kw.has_include,
+            kw.has_include_next,
+            kw.has_builtin,
+            kw.has_attribute,
+            kw.has_c_attribute,
+            kw.has_feature,
+            kw.has_extension,
+        ]
+        .contains(&symbol)
+            || self.macros.contains_key(&symbol)
     }
 
     /// Get the text associated with a token, de-splicing if necessary
@@ -877,12 +836,7 @@ impl<'src> Preprocessor<'src> {
 
         if !self.eof_emitted {
             self.eof_emitted = true;
-            return Ok(Some(PPToken::new(
-                PPTokenKind::Eof,
-                PPTokenFlags::empty(),
-                self.get_current_location(),
-                0,
-            )));
+            return Ok(Some(PPToken::simple(PPTokenKind::Eof, self.get_current_location())));
         }
 
         Ok(None)
@@ -934,37 +888,31 @@ impl<'src> Preprocessor<'src> {
 
     /// emit Result<PPError> with SourceSpan from SourceLoc
     pub(super) fn emit_error<T>(&self, kind: PPError, loc: SourceLoc) -> Result<T, PPDiag> {
-        Err(PPDiag {
-            kind,
-            span: SourceSpan::from_loc(loc),
-        })
+        Err(self.error(kind, loc))
     }
 
     /// Collect tokens until Eod (end of directive line)
     pub(super) fn collect_tokens_until_eod(&mut self) -> Vec<PPToken> {
-        // ⚡ Bolt: Use a small initial capacity to avoid reallocations for common short expressions.
         let mut tokens = Vec::with_capacity(32);
-        while let Some(token) = self.lex_token() {
-            if token.kind == PPTokenKind::Eod {
-                break;
-            }
-            tokens.push(token);
-        }
+        self.collect_tokens_into(&mut tokens);
         tokens
     }
 
     /// Collect tokens until Eod, including an already consumed initial token.
-    /// Bolt ⚡: This avoids redundant Vec allocations and copies from chaining.
     pub(super) fn collect_tokens_until_eod_with_initial(&mut self, initial: PPToken) -> Vec<PPToken> {
         let mut tokens = Vec::with_capacity(32);
         tokens.push(initial);
+        self.collect_tokens_into(&mut tokens);
+        tokens
+    }
+
+    fn collect_tokens_into(&mut self, tokens: &mut Vec<PPToken>) {
         while let Some(token) = self.lex_token() {
             if token.kind == PPTokenKind::Eod {
                 break;
             }
             tokens.push(token);
         }
-        tokens
     }
 
     /// Check if we are currently skipping tokens
@@ -1119,23 +1067,11 @@ impl<'src> Preprocessor<'src> {
 
     /// Check if we should evaluate conditional expression (e.g. for #elif)
     pub(super) fn should_evaluate_conditional(&self) -> bool {
-        // We should evaluate ONLY if no parent is skipping
-        // The current level (which we are about to replace with elif) is at index len()-1.
-        // The parent is at index len()-2.
-        if self.conditional_stack.len() > 1 {
-            let parent_index = self.conditional_stack.len() - 2;
-            let parent_skipping = self.conditional_stack[parent_index].was_skipping;
-            if parent_skipping {
-                return false;
-            }
-        }
-
-        // And if we haven't found a true branch in this level yet
-        if let Some(current) = self.conditional_stack.last() {
-            !current.found_non_skipping
-        } else {
-            false
-        }
+        let Some((current, rest)) = self.conditional_stack.split_last() else {
+            return false;
+        };
+        let parent_skipping = rest.last().is_some_and(|info| info.was_skipping);
+        !parent_skipping && !current.found_non_skipping
     }
 
     /// Helper to report diagnostics

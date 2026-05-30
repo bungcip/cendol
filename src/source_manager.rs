@@ -130,6 +130,10 @@ impl SourceSpan {
         Self::new(loc, loc)
     }
 
+    pub(crate) fn from_loc_and_length(loc: SourceLoc, length: u32) -> Self {
+        Self::new_with_length(loc.source_id, loc.offset, length)
+    }
+
     pub(crate) fn start(&self) -> SourceLoc {
         let offset = (self.0 & Self::OFFSET_MASK) as u32;
         SourceLoc {

@@ -316,44 +316,4 @@ impl PPKeywordTable {
             None
         }
     }
-
-    /// Get the interned symbol for the "defined" operator
-    pub(crate) fn defined_symbol(&self) -> StringId {
-        self.defined
-    }
-
-    /// Get the interned symbol for the "__has_include" operator
-    pub(crate) fn has_include_symbol(&self) -> StringId {
-        self.has_include
-    }
-
-    /// Get the interned symbol for the "__has_include_next" operator
-    pub(crate) fn has_include_next_symbol(&self) -> StringId {
-        self.has_include_next
-    }
-
-    /// Get the interned symbol for the "__has_builtin" operator
-    pub(crate) fn has_builtin_symbol(&self) -> StringId {
-        self.has_builtin
-    }
-
-    /// Get the interned symbol for the "__has_attribute" operator
-    pub(crate) fn has_attribute_symbol(&self) -> StringId {
-        self.has_attribute
-    }
-
-    /// Get the interned symbol for the "__has_c_attribute" operator
-    pub(crate) fn has_c_attribute_symbol(&self) -> StringId {
-        self.has_c_attribute
-    }
-
-    /// Get the interned symbol for the "__has_feature" operator
-    pub(crate) fn has_feature_symbol(&self) -> StringId {
-        self.has_feature
-    }
-
-    /// Get the interned symbol for the "__has_extension" operator
-    pub(crate) fn has_extension_symbol(&self) -> StringId {
-        self.has_extension
-    }
 }

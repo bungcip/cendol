@@ -272,7 +272,7 @@ impl<'a> MirValidator<'a> {
                     if *is_variadic { "..." } else { "" }
                 )
             }
-            MirType::Record { name, .. } => format!("struct/union {}", name.to_string()),
+            MirType::Record { name, .. } => format!("struct/union {}", name),
         }
     }
 
@@ -685,20 +685,18 @@ impl<'a> MirValidator<'a> {
 
         // Allow compatibility between a function type and a pointer-to-function type
         // (C permits a function to decay to a pointer-to-function in many contexts).
-        if matches!(ty1, MirType::Function { .. }) {
-            if let MirType::Pointer { pointee } = ty2 {
-                if matches!(self.mir.get_type(*pointee), MirType::Function { .. }) {
-                    return true;
-                }
-            }
+        if matches!(ty1, MirType::Function { .. })
+            && let MirType::Pointer { pointee } = ty2
+            && matches!(self.mir.get_type(*pointee), MirType::Function { .. })
+        {
+            return true;
         }
 
-        if matches!(ty2, MirType::Function { .. }) {
-            if let MirType::Pointer { pointee } = ty1 {
-                if matches!(self.mir.get_type(*pointee), MirType::Function { .. }) {
-                    return true;
-                }
-            }
+        if matches!(ty2, MirType::Function { .. })
+            && let MirType::Pointer { pointee } = ty1
+            && matches!(self.mir.get_type(*pointee), MirType::Function { .. })
+        {
+            return true;
         }
 
         match (ty1, ty2) {

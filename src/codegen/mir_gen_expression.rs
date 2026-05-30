@@ -553,8 +553,14 @@ impl<'a> MirGen<'a> {
                 let operand = self.visit_expression(expr, true);
                 let operand_ty = self.get_operand_type(&operand);
                 let is_float = self.mb.get_type(operand_ty).is_float();
-                let rval = mir_gen_ops::emit_unary_rvalue(op, operand, is_float);
-                self.emit_rvalue_to_operand(rval, mir_ty)
+                if matches!(op, UnaryOp::LogicNot) && is_float {
+                    let zero = Operand::Constant(self.create_constant(operand_ty, ConstValueKind::Float(0.0)));
+                    let rval = Rvalue::BinaryFloatOp(BinaryFloatOp::Eq, operand, zero);
+                    self.emit_rvalue_to_operand(rval, mir_ty)
+                } else {
+                    let rval = mir_gen_ops::emit_unary_rvalue(op, operand, is_float);
+                    self.emit_rvalue_to_operand(rval, mir_ty)
+                }
             }
         }
     }
@@ -1495,6 +1501,22 @@ impl<'a> MirGen<'a> {
             AtomicOp::FetchAnd => self.visit_atomic_fetch_op(BinaryIntOp::BitAnd, &args, order, mir_ty),
             AtomicOp::FetchOr => self.visit_atomic_fetch_op(BinaryIntOp::BitOr, &args, order, mir_ty),
             AtomicOp::FetchXor => self.visit_atomic_fetch_op(BinaryIntOp::BitXor, &args, order, mir_ty),
+            AtomicOp::AddFetch | AtomicOp::SubFetch | AtomicOp::AndFetch | AtomicOp::OrFetch | AtomicOp::XorFetch => {
+                let bin_op = match op {
+                    AtomicOp::AddFetch => BinaryIntOp::Add,
+                    AtomicOp::SubFetch => BinaryIntOp::Sub,
+                    AtomicOp::AndFetch => BinaryIntOp::BitAnd,
+                    AtomicOp::OrFetch => BinaryIntOp::BitOr,
+                    AtomicOp::XorFetch => BinaryIntOp::BitXor,
+                    _ => unreachable!(),
+                };
+                let ptr = args[0].clone();
+                let val = args[1].clone();
+                let rval = Rvalue::AtomicFetchOp(bin_op, ptr, val.clone(), order);
+                let old_val = self.emit_rvalue_to_operand(rval, mir_ty);
+                let new_val_rval = Rvalue::BinaryIntOp(bin_op, old_val, val);
+                self.emit_rvalue_to_operand(new_val_rval, mir_ty)
+            }
         }
     }
 

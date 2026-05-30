@@ -157,6 +157,11 @@ impl PPExpr {
             || name == kw.atomic_fetch_and
             || name == kw.atomic_fetch_or
             || name == kw.atomic_fetch_xor
+            || name == kw.atomic_add_fetch
+            || name == kw.atomic_sub_fetch
+            || name == kw.atomic_and_fetch
+            || name == kw.atomic_or_fetch
+            || name == kw.atomic_xor_fetch
     }
 
     fn is_attribute_supported(_name: StringId, _kw: &PPKeywordTable) -> bool {

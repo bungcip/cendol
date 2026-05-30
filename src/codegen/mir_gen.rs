@@ -1803,7 +1803,12 @@ impl<'a> MirGen<'a> {
             }
             _ => {
                 let target_mty = self.mb.get_type(target_type_id);
-                if target_mty.is_void() || matches!(target_mty, MirType::Array { .. } | MirType::Record { .. } | MirType::Function { .. }) {
+                if target_mty.is_void()
+                    || matches!(
+                        target_mty,
+                        MirType::Array { .. } | MirType::Record { .. } | MirType::Function { .. }
+                    )
+                {
                     operand
                 } else {
                     Operand::Cast(target_type_id, Box::new(operand))

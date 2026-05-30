@@ -572,6 +572,11 @@ pub enum AtomicOp {
     FetchAnd,
     FetchOr,
     FetchXor,
+    AddFetch,
+    SubFetch,
+    AndFetch,
+    OrFetch,
+    XorFetch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

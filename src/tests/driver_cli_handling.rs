@@ -59,6 +59,7 @@ fn test_external_object_handling() {
     let outputs = driver.run_pipeline(CompilePhase::Parse).expect("Pipeline failed");
 
     assert_eq!(outputs.external_object_files.len(), 1);
-    assert_eq!(outputs.external_object_files[0], obj_path);
+    let expected_path = std::fs::canonicalize(&obj_path).unwrap_or(obj_path);
+    assert_eq!(outputs.external_object_files[0], expected_path);
     assert!(outputs.units.is_empty());
 }

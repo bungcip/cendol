@@ -2918,7 +2918,7 @@ impl ClifGen {
                         continue;
                     }
 
-                    if matches!(mir_type, MirType::F80 | MirType::F128) {
+                    if use_hack && matches!(mir_type, MirType::F80 | MirType::F128) {
                         // Consumes 2 slots
                         let lo = param_iter.next().unwrap();
                         let hi = param_iter.next().unwrap();
@@ -3043,10 +3043,10 @@ impl ClifGen {
         let mut worklist_functions = Vec::new();
         let mut worklist_globals = Vec::new();
 
-        // Initial roots: all non-import functions and all globals with initializers
+        // Initial roots: all external functions and all globals with initializers
         for (i, func) in self.mir.functions.iter().enumerate() {
             let id = MirFunctionId::new((i + 1) as u32).unwrap();
-            if func.linkage != MirLinkage::Import && reachable_functions.insert(id) {
+            if func.linkage == MirLinkage::External && reachable_functions.insert(id) {
                 worklist_functions.push(id);
             }
         }

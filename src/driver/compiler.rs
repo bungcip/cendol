@@ -89,7 +89,8 @@ impl CompilerDriver {
         for input_file in input_files {
             if input_file.is_external_object() {
                 if let PathOrBuffer::Path(path) = input_file {
-                    outputs.external_object_files.push(path);
+                    let abs_path = std::fs::canonicalize(&path).unwrap_or(path);
+                    outputs.external_object_files.push(abs_path);
                 }
                 continue;
             }

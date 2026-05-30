@@ -78,6 +78,13 @@ PROJECTS = {
         "build_cmd": ["make", "-j4", "CC={CC}", "NO_OPENSSL=1", "NO_CURL=1", "NO_EXPAT=1", "NO_GETTEXT=1", "NO_TCLTK=1", "NO_ICONV=1", "PROGRAM_OBJS="],
         "test_cmd": ["./git", "--version"],
         "clean_cmd": ["make", "clean"],
+    },
+    "redis": {
+        "download_url": "https://github.com/redis/redis/archive/refs/tags/7.2.4.zip",
+        "patch_cmd": ["true"],
+        "build_cmd": ["make", "-j4", "CC={CC}", "MALLOC=libc"],
+        "test_cmd": ["src/redis-server", "--version"],
+        "clean_cmd": ["make", "clean"],
     }
 }
 
@@ -92,7 +99,7 @@ def clean_object_files(project_dir):
     print(f"Cleaning object files in {project_dir}...")
     for root, dirs, files in os.walk(project_dir):
         for file in files:
-            if file.endswith(('.o', '.lo', '.la', '.a')):
+            if file.endswith(('.o', '.lo', '.la', '.a')) or file.startswith('.make-'):
                 try:
                     os.remove(os.path.join(root, file))
                 except Exception:

@@ -2456,10 +2456,22 @@ impl<'a> SemanticAnalyzer<'a> {
                 | AtomicOp::FetchAnd
                 | AtomicOp::FetchOr
                 | AtomicOp::FetchXor
+                | AtomicOp::AddFetch
+                | AtomicOp::SubFetch
+                | AtomicOp::AndFetch
+                | AtomicOp::OrFetch
+                | AtomicOp::XorFetch
                     if i == 1 =>
                 {
-                    if matches!(op, AtomicOp::FetchAnd | AtomicOp::FetchOr | AtomicOp::FetchXor)
-                        && !pointee.is_integer()
+                    if matches!(
+                        op,
+                        AtomicOp::FetchAnd
+                            | AtomicOp::FetchOr
+                            | AtomicOp::FetchXor
+                            | AtomicOp::AndFetch
+                            | AtomicOp::OrFetch
+                            | AtomicOp::XorFetch
+                    ) && !pointee.is_integer()
                     {
                         self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: pointee });
                     }
@@ -2486,7 +2498,12 @@ impl<'a> SemanticAnalyzer<'a> {
                 | AtomicOp::FetchSub
                 | AtomicOp::FetchAnd
                 | AtomicOp::FetchOr
-                | AtomicOp::FetchXor => pointee,
+                | AtomicOp::FetchXor
+                | AtomicOp::AddFetch
+                | AtomicOp::SubFetch
+                | AtomicOp::AndFetch
+                | AtomicOp::OrFetch
+                | AtomicOp::XorFetch => pointee,
                 AtomicOp::StoreN => QualType::unqualified(self.registry.type_void),
                 AtomicOp::CompareExchangeN => QualType::unqualified(self.registry.type_bool),
             }

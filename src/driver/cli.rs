@@ -22,27 +22,27 @@ pub struct Cli {
     pub output: Option<PathBuf>,
 
     /// Enable verbose diagnostic output
-    #[clap(short, long)]
+    #[clap(short, long, action = clap::ArgAction::SetTrue)]
     pub verbose: bool,
 
     /// Dump AST after parser phase
-    #[clap(long)]
+    #[clap(long, action = clap::ArgAction::SetTrue)]
     pub dump_ast_after_parser: bool,
 
     /// Dump AST after semantic lowering phase
-    #[clap(long)]
+    #[clap(long, action = clap::ArgAction::SetTrue)]
     pub dump_ast_after_semantic_lowering: bool,
 
     /// Dump MIR (Mid-level Intermediate Representation) to console
-    #[clap(long)]
+    #[clap(long, action = clap::ArgAction::SetTrue)]
     pub dump_mir: bool,
 
     /// Dump Cranelift IR (Intermediate Representation) to console
-    #[clap(long)]
+    #[clap(long, action = clap::ArgAction::SetTrue)]
     pub dump_cranelift: bool,
 
     /// Preprocess only, output preprocessed source to stdout
-    #[clap(short = 'E')]
+    #[clap(short = 'E', action = clap::ArgAction::SetTrue)]
     pub preprocess_only: bool,
 
     /// Preprocessor options
@@ -50,7 +50,7 @@ pub struct Cli {
     pub preprocessor: PreprocessorOptions,
 
     /// Suppress line markers in preprocessor output
-    #[clap(short = 'P')]
+    #[clap(short = 'P', action = clap::ArgAction::SetTrue)]
     pub suppress_line_markers: bool,
 
     /// Include search paths
@@ -66,11 +66,11 @@ pub struct Cli {
     pub warnings: Vec<String>,
 
     /// Issue all the warnings demanded by strict ISO C
-    #[clap(long)]
+    #[clap(long, action = clap::ArgAction::SetTrue)]
     pub pedantic: bool,
 
     /// Issue all the warnings demanded by strict ISO C as errors
-    #[clap(long)]
+    #[clap(long, action = clap::ArgAction::SetTrue)]
     pub pedantic_errors: bool,
 
     /// Set C language standard (e.g., c99, c11)
@@ -94,23 +94,23 @@ pub struct Cli {
     pub library_paths: Vec<PathBuf>,
 
     /// Compile only, do not link
-    #[clap(short = 'c')]
+    #[clap(short = 'c', action = clap::ArgAction::SetTrue, overrides_with = "compile_only")]
     pub compile_only: bool,
 
     /// Generate debug information
-    #[clap(short = 'g')]
+    #[clap(short = 'g', action = clap::ArgAction::SetTrue, overrides_with = "debug_info")]
     pub debug_info: bool,
 
     /// Strip symbols (ignored)
-    #[clap(short = 's')]
+    #[clap(short = 's', action = clap::ArgAction::SetTrue, overrides_with = "strip")]
     pub strip: bool,
 
     /// Pass -rdynamic to linker (ignored)
-    #[clap(long = "rdynamic")]
+    #[clap(long = "rdynamic", action = clap::ArgAction::SetTrue, overrides_with = "rdynamic")]
     pub rdynamic: bool,
 
     /// Create a shared library
-    #[clap(long = "shared")]
+    #[clap(long = "shared", action = clap::ArgAction::SetTrue, overrides_with = "shared")]
     pub shared: bool,
 
     /// Pass arguments to linker
@@ -126,19 +126,19 @@ pub struct Cli {
     pub fmax_errors: Option<usize>,
 
     /// Treat signed integer overflow as well-defined (wrapping)
-    #[clap(long = "fwrapv", overrides_with = "fno_wrapv")]
+    #[clap(long = "fwrapv", overrides_with = "fno_wrapv", action = clap::ArgAction::SetTrue)]
     pub fwrapv: bool,
 
     /// Treat signed integer overflow as undefined behavior
-    #[clap(long = "fno-wrapv", overrides_with = "fwrapv")]
+    #[clap(long = "fno-wrapv", overrides_with = "fwrapv", action = clap::ArgAction::SetTrue)]
     pub fno_wrapv: bool,
 
     /// Generate position-independent code
-    #[clap(long = "fPIC", overrides_with = "f_no_pic")]
+    #[clap(long = "fPIC", overrides_with = "f_no_pic", action = clap::ArgAction::SetTrue)]
     pub f_pic: bool,
 
     /// Do not generate position-independent code
-    #[clap(long = "fno-PIC", overrides_with = "f_pic")]
+    #[clap(long = "fno-PIC", overrides_with = "f_pic", action = clap::ArgAction::SetTrue)]
     pub f_no_pic: bool,
 
     /// GCC/Clang compatible flags to ignore (e.g., -fno-stack-protector)
@@ -150,11 +150,11 @@ pub struct Cli {
     pub ignored_m_flags: Vec<String>,
 
     /// Print timing information for each compilation phase
-    #[clap(long)]
+    #[clap(long, action = clap::ArgAction::SetTrue)]
     pub timing: bool,
 
     /// Suppress all warnings
-    #[clap(short = 'w')]
+    #[clap(short = 'w', action = clap::ArgAction::SetTrue)]
     pub suppress_warnings: bool,
 }
 

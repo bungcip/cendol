@@ -25,6 +25,12 @@ fn main() {
             "--fno-PIC".to_string()
         } else if arg == "-O" {
             "-O1".to_string()
+        } else if arg == "-W" {
+            "-Wextra".to_string()
+        } else if arg.starts_with("-g") && arg != "-g" {
+            "-g".to_string()
+        } else if arg == "-pthread" {
+            "--linker-arg=-pthread".to_string()
         } else if arg == "-shared" {
             "--shared".to_string()
         } else if arg.starts_with("-Wl,") {

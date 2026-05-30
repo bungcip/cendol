@@ -1014,7 +1014,12 @@ impl TypeRegistry {
             | BuiltinFunctionKind::AtomicFetchSub
             | BuiltinFunctionKind::AtomicFetchAnd
             | BuiltinFunctionKind::AtomicFetchOr
-            | BuiltinFunctionKind::AtomicFetchXor => (vec![], self.type_void_ptr, true, false),
+            | BuiltinFunctionKind::AtomicFetchXor
+            | BuiltinFunctionKind::AtomicAddFetch
+            | BuiltinFunctionKind::AtomicSubFetch
+            | BuiltinFunctionKind::AtomicAndFetch
+            | BuiltinFunctionKind::AtomicOrFetch
+            | BuiltinFunctionKind::AtomicXorFetch => (vec![], self.type_void_ptr, true, false),
             BuiltinFunctionKind::Complex => {
                 let d = self.type_double;
                 (vec![p(d), p(d)], self.type_complex_double, false, false)
@@ -1110,10 +1115,10 @@ impl TypeRegistry {
             members,
             ..
         } = &self.types[curr.index()].kind
+            && *is_transparent_union
+            && !members.is_empty()
         {
-            if *is_transparent_union && !members.is_empty() {
-                return Some(members[0].member_type);
-            }
+            return Some(members[0].member_type);
         }
         None
     }

@@ -459,9 +459,9 @@ impl<'src> Preprocessor<'src> {
             if digit_len as usize == value.len() {
                 (SourceLoc::new(digits_id, offset), digit_len)
             } else {
-                let source_id = self
-                    .sm
-                    .add_buffer(value.as_bytes().to_vec(), "<builtin>", None, FileKind::MacroExpansion);
+                let source_id =
+                    self.sm
+                        .add_buffer(value.as_bytes().to_vec(), "<builtin>", None, FileKind::MacroExpansion);
                 (SourceLoc::new(source_id, 0), value.len() as u16)
             }
         } else {

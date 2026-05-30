@@ -13,7 +13,7 @@ struct SubstitutionCtx<'a> {
     macro_info: &'a MacroInfo,
     symbol: StringId,
     args: &'a [Vec<PPToken>],
-    expanded_args: &'a [Vec<PPToken>],
+    expanded_args: &'a [Cow<'a, [PPToken]>],
     intersect_hs: u32,
     new_hs: u32,
     is_variadic_empty: bool,
@@ -160,13 +160,15 @@ impl<'src> Preprocessor<'src> {
         // Pre-expand arguments (prescan)
         let mut expanded_args = Vec::with_capacity(args.len());
         for (idx, arg) in args.iter().enumerate() {
-            let mut arg_clone = arg.clone();
             let needs_expansion = macro_info.parameter_needs_expansion.get(idx).copied().unwrap_or(false);
 
             if needs_expansion {
+                let mut arg_clone = arg.clone();
                 self.expand_tokens(&mut arg_clone, false)?;
+                expanded_args.push(Cow::Owned(arg_clone));
+            } else {
+                expanded_args.push(Cow::Borrowed(arg.as_slice()));
             }
-            expanded_args.push(arg_clone);
         }
 
         // Compute new hide set for expanded tokens.
@@ -304,20 +306,20 @@ impl<'src> Preprocessor<'src> {
         result
     }
 
-    fn get_macro_param_tokens<'a>(
+    fn get_macro_param_tokens<'a, T: AsRef<[PPToken]>>(
         &self,
         macro_info: &MacroInfo,
         symbol: StringId,
-        args: &'a [Vec<PPToken>],
+        args: &'a [T],
     ) -> Option<&'a [PPToken]> {
         if let Some(idx) = macro_info.parameter_list.iter().position(|&p| p == symbol) {
-            return Some(&args[idx]);
+            return Some(args[idx].as_ref());
         }
         if macro_info.variadic_arg == Some(symbol) {
             // Combined variadic tokens are stored at the index matching parameter_list.len()
             let idx = macro_info.parameter_list.len();
             if idx < args.len() {
-                return Some(&args[idx]);
+                return Some(args[idx].as_ref());
             }
         }
         None
@@ -460,8 +462,13 @@ impl<'src> Preprocessor<'src> {
                 }
                 PPTokenKind::Identifier(sym) => {
                     let next_is_hh = i + 1 < tokens_slice.len() && tokens_slice[i + 1].kind == PPTokenKind::HashHash;
-                    let src = if next_is_hh { ctx.args } else { ctx.expanded_args };
-                    if let Some(param_tokens) = self.get_macro_param_tokens(ctx.macro_info, sym, src) {
+                    let param_tokens = if next_is_hh {
+                        self.get_macro_param_tokens(ctx.macro_info, sym, ctx.args)
+                    } else {
+                        self.get_macro_param_tokens(ctx.macro_info, sym, ctx.expanded_args)
+                    };
+
+                    if let Some(param_tokens) = param_tokens {
                         if param_tokens.is_empty() {
                             last_token_produced_output = false;
                         } else {
@@ -985,14 +992,16 @@ impl<'src> Preprocessor<'src> {
         // Pre-expand arguments (prescan)
         let mut expanded_args = Vec::with_capacity(args.len());
         for (idx, arg) in args.iter().enumerate() {
-            let mut arg_clone = arg.clone();
             let needs_expansion = info.parameter_needs_expansion.get(idx).copied().unwrap_or(false);
 
             if needs_expansion {
+                let mut arg_clone = arg.clone();
                 // Bolt ⚡: Ignore errors during argument prescan to match original behavior.
                 let _ = self.expand_tokens(&mut arg_clone, in_conditional);
+                expanded_args.push(Cow::Owned(arg_clone));
+            } else {
+                expanded_args.push(Cow::Borrowed(arg.as_slice()));
             }
-            expanded_args.push(arg_clone);
         }
 
         let intersect_hs = self

@@ -301,7 +301,12 @@ impl AstDumper {
                 Self::format_literal(f, &literal.get_val())?;
                 return writeln!(f);
             }
-            PNK::Break | PNK::Continue | PNK::EmptyStmt | PNK::Dummy | PNK::PragmaPack(_) => {
+            PNK::Break
+            | PNK::Continue
+            | PNK::EmptyStmt
+            | PNK::Dummy
+            | PNK::PragmaPack(_)
+            | PNK::PragmaVisibility(_) => {
                 return writeln!(f, "{}", kind.tagname());
             }
             _ => {}

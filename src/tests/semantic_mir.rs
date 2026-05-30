@@ -1427,6 +1427,7 @@ fn test_const_global_mir() {
       initial_value: 1
       alignment: ~
       linkage: External
+      visibility: Default
     - name: y
       type_id: 1
       is_constant: false
@@ -1434,5 +1435,6 @@ fn test_const_global_mir() {
       initial_value: 2
       alignment: ~
       linkage: External
+      visibility: Default
     ");
 }

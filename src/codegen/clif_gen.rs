@@ -5,6 +5,7 @@
 //! - No C logic
 //! - Assume MIR is valid
 
+use crate::lang_options::{SignedOverflowMode, Visibility};
 use crate::mir::MirProgram;
 use crate::mir::{
     BinaryFloatOp, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, GlobalId, LocalId, MirBlockId, MirFunction,
@@ -56,10 +57,15 @@ fn lower_type(mir_type: &MirType) -> Option<Type> {
 }
 
 /// Helper function to convert MIR linkage to Cranelift linkage
-fn lower_mir_linkage(linkage: MirLinkage) -> Linkage {
+pub(crate) fn lower_mir_linkage(linkage: MirLinkage, visibility: Visibility) -> Linkage {
     match linkage {
         MirLinkage::Internal => Linkage::Local,
-        MirLinkage::External => Linkage::Export,
+        MirLinkage::External => match visibility {
+            Visibility::Default => Linkage::Export,
+            Visibility::Hidden => Linkage::Hidden,
+            Visibility::Protected => Linkage::Export,
+            Visibility::Internal => Linkage::Hidden,
+        },
         MirLinkage::Import => Linkage::Import,
     }
 }
@@ -782,61 +788,64 @@ fn get_call_result(ctx: &mut BodyEmitContext, call_inst: Inst, return_type_id: T
 
 fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut BodyEmitContext) -> Value {
     // 1. Determine function properties and callee address if indirect/variadic
-    let (return_type_id, param_types, is_variadic, name_linkage, target_addr, use_variadic_hack) = match call_target {
-        CallTarget::Direct(func_id) => {
-            let func = ctx.mir.get_function(*func_id);
-            let param_types: Vec<TypeId> = func.params.iter().map(|&p| ctx.mir.get_local(p).type_id).collect();
-            let name_linkage = Some((func.name, func.linkage));
-            let is_defined = func.linkage != MirLinkage::Import;
-            (
-                func.return_type,
-                param_types,
-                func.is_variadic,
-                name_linkage,
-                None,
-                func.is_variadic && is_defined && ctx.triple.architecture == target_lexicon::Architecture::X86_64,
-            )
-        }
-        CallTarget::Indirect(func_operand) => {
-            let func_ptr_type_id = lower_operand_type_id(func_operand, ctx.mir, ctx.pointee_to_pointer);
-            let func_ptr_type = ctx.mir.get_type(func_ptr_type_id);
+    let (return_type_id, param_types, is_variadic, name_linkage, target_addr, use_variadic_hack, visibility) =
+        match call_target {
+            CallTarget::Direct(func_id) => {
+                let func = ctx.mir.get_function(*func_id);
+                let param_types: Vec<TypeId> = func.params.iter().map(|&p| ctx.mir.get_local(p).type_id).collect();
+                let name_linkage = Some((func.name, func.linkage));
+                let is_defined = func.linkage != MirLinkage::Import;
+                (
+                    func.return_type,
+                    param_types,
+                    func.is_variadic,
+                    name_linkage,
+                    None,
+                    func.is_variadic && is_defined && ctx.triple.architecture == target_lexicon::Architecture::X86_64,
+                    func.visibility,
+                )
+            }
+            CallTarget::Indirect(func_operand) => {
+                let func_ptr_type_id = lower_operand_type_id(func_operand, ctx.mir, ctx.pointee_to_pointer);
+                let func_ptr_type = ctx.mir.get_type(func_ptr_type_id);
 
-            let ((return_type_id, param_types), is_function_type, is_variadic_call) = match func_ptr_type {
-                MirType::Pointer { pointee } => match ctx.mir.get_type(*pointee) {
+                let ((return_type_id, param_types), is_function_type, is_variadic_call) = match func_ptr_type {
+                    MirType::Pointer { pointee } => match ctx.mir.get_type(*pointee) {
+                        MirType::Function {
+                            return_type,
+                            params,
+                            is_variadic,
+                        } => ((*return_type, params.clone()), false, *is_variadic),
+                        _ => panic!("Indirect call operand points to non-function type"),
+                    },
                     MirType::Function {
                         return_type,
                         params,
                         is_variadic,
-                    } => ((*return_type, params.clone()), false, *is_variadic),
-                    _ => panic!("Indirect call operand points to non-function type"),
-                },
-                MirType::Function {
-                    return_type,
-                    params,
-                    is_variadic,
-                } => ((*return_type, params.clone()), true, *is_variadic),
-                _ => panic!("Indirect call operand is not a pointer"),
-            };
+                    } => ((*return_type, params.clone()), true, *is_variadic),
+                    _ => panic!("Indirect call operand is not a pointer"),
+                };
 
-            let callee_val = if is_function_type {
-                match func_operand {
-                    Operand::Copy(place) => emit_place_addr(place, ctx),
-                    _ => emit_operand(func_operand, ctx, types::I64),
-                }
-            } else {
-                emit_operand(func_operand, ctx, types::I64)
-            };
+                let callee_val = if is_function_type {
+                    match func_operand {
+                        Operand::Copy(place) => emit_place_addr(place, ctx),
+                        _ => emit_operand(func_operand, ctx, types::I64),
+                    }
+                } else {
+                    emit_operand(func_operand, ctx, types::I64)
+                };
 
-            (
-                return_type_id,
-                param_types,
-                is_variadic_call,
-                None,
-                Some(callee_val),
-                is_variadic_call && ctx.triple.architecture == target_lexicon::Architecture::X86_64,
-            )
-        }
-    };
+                (
+                    return_type_id,
+                    param_types,
+                    is_variadic_call,
+                    None,
+                    Some(callee_val),
+                    is_variadic_call && ctx.triple.architecture == target_lexicon::Architecture::X86_64,
+                    ctx.mir.visibility,
+                )
+            }
+        };
 
     // 2. Prepare call site signature and resolve arguments
     let lower_ctx = SignatureLoweringContext {
@@ -889,7 +898,7 @@ fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut Body
             );
             let decl = ctx
                 .module
-                .declare_function(name.as_str(), lower_mir_linkage(linkage), &canonical_sig)
+                .declare_function(name.as_str(), lower_mir_linkage(linkage, visibility), &canonical_sig)
                 .expect("Failed to declare variadic function");
             let func_ref = ctx.module.declare_func_in_func(decl, ctx.builder.func);
             let addr = ctx.builder.ins().func_addr(types::I64, func_ref);
@@ -913,7 +922,7 @@ fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut Body
         let (name, linkage) = name_linkage.unwrap();
         let decl = ctx
             .module
-            .declare_function(name.as_str(), lower_mir_linkage(linkage), &sig)
+            .declare_function(name.as_str(), lower_mir_linkage(linkage, visibility), &sig)
             .expect("Failed to declare function");
         let func_ref = ctx.module.declare_func_in_func(decl, ctx.builder.func);
         ctx.builder.ins().call(func_ref, &arg_values)
@@ -1287,7 +1296,7 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                     let global_id = *global_id;
                     let addend = *addend;
                     let global = ctx.mir.get_global(global_id);
-                    let linkage = lower_mir_linkage(global.linkage);
+                    let linkage = lower_mir_linkage(global.linkage, global.visibility);
                     let global_val = ctx
                         .module
                         .declare_data(global.name.as_str(), linkage, true, global.is_tls)
@@ -1590,7 +1599,7 @@ fn emit_place_addr(place: &Place, ctx: &mut BodyEmitContext) -> Value {
         }
         Place::Global(global_id) => {
             let global = ctx.mir.get_global(*global_id);
-            let linkage = lower_mir_linkage(global.linkage);
+            let linkage = lower_mir_linkage(global.linkage, global.visibility);
             let global_val = ctx
                 .module
                 .declare_data(global.name.as_str(), linkage, true, global.is_tls)
@@ -2017,10 +2026,41 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                         ctx.builder,
                     );
 
+                    let is_signed = is_operand_signed(left_operand, ctx.mir, ctx.pointee_to_pointer);
                     match op {
-                        BinaryIntOp::Add => ctx.builder.ins().iadd(left_val, right_val),
-                        BinaryIntOp::Sub => ctx.builder.ins().isub(left_val, right_val),
-                        BinaryIntOp::Mul => ctx.builder.ins().imul(left_val, right_val),
+                        BinaryIntOp::Add => {
+                            if ctx.mir.signed_overflow_mode == SignedOverflowMode::Trap && is_signed {
+                                let (res, overflow) = ctx.builder.ins().sadd_overflow(left_val, right_val);
+                                ctx.builder
+                                    .ins()
+                                    .trapnz(overflow, cranelift::prelude::TrapCode::INTEGER_OVERFLOW);
+                                res
+                            } else {
+                                ctx.builder.ins().iadd(left_val, right_val)
+                            }
+                        }
+                        BinaryIntOp::Sub => {
+                            if ctx.mir.signed_overflow_mode == SignedOverflowMode::Trap && is_signed {
+                                let (res, overflow) = ctx.builder.ins().ssub_overflow(left_val, right_val);
+                                ctx.builder
+                                    .ins()
+                                    .trapnz(overflow, cranelift::prelude::TrapCode::INTEGER_OVERFLOW);
+                                res
+                            } else {
+                                ctx.builder.ins().isub(left_val, right_val)
+                            }
+                        }
+                        BinaryIntOp::Mul => {
+                            if ctx.mir.signed_overflow_mode == SignedOverflowMode::Trap && is_signed {
+                                let (res, overflow) = ctx.builder.ins().smul_overflow(left_val, right_val);
+                                ctx.builder
+                                    .ins()
+                                    .trapnz(overflow, cranelift::prelude::TrapCode::INTEGER_OVERFLOW);
+                                res
+                            } else {
+                                ctx.builder.ins().imul(left_val, right_val)
+                            }
+                        }
                         BinaryIntOp::Div => {
                             if is_operand_signed(left_operand, ctx.mir, ctx.pointee_to_pointer) {
                                 ctx.builder.ins().sdiv(left_val, right_val)
@@ -2585,9 +2625,10 @@ fn finalize_function_processing(
     func_ctx: &mut cranelift::codegen::Context,
     emit_kind: EmitKind,
     compiled_functions: &mut HashMap<String, String>,
+    visibility: Visibility,
 ) {
     // Now declare and define the function
-    let linkage = lower_mir_linkage(func.linkage);
+    let linkage = lower_mir_linkage(func.linkage, visibility);
 
     let id = module
         .declare_function(func.name.as_str(), linkage, &func_ctx.func.signature)
@@ -2699,7 +2740,7 @@ impl ClifGen {
                 continue;
             }
             let global = self.mir.get_global(global_id);
-            let linkage = lower_mir_linkage(global.linkage);
+            let linkage = lower_mir_linkage(global.linkage, global.visibility);
 
             let data_id = self
                 .module
@@ -2715,7 +2756,7 @@ impl ClifGen {
                 continue;
             }
             let func = self.mir.get_function(func_id);
-            let linkage = lower_mir_linkage(func.linkage);
+            let linkage = lower_mir_linkage(func.linkage, func.visibility);
 
             // Calculate signature for declaration
             let mut sig = self.module.make_signature();
@@ -3034,6 +3075,7 @@ impl ClifGen {
             &mut func_ctx,
             self.emit_kind,
             &mut self.compiled_functions,
+            func.visibility,
         );
     }
 

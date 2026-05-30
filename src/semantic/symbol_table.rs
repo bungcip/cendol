@@ -284,6 +284,7 @@ pub struct Symbol {
     pub def_span: SourceSpan,
     pub def_state: DefinitionState,
     pub is_completed: bool,
+    pub visibility: crate::lang_options::Visibility,
 }
 
 impl Symbol {
@@ -440,6 +441,7 @@ impl SymbolTable {
             def_span: SourceSpan::empty(),
             def_state: DefinitionState::DeclaredOnly,
             is_completed: false,
+            visibility: crate::lang_options::Visibility::Default,
         });
 
         table
@@ -603,6 +605,7 @@ impl SymbolTable {
             def_span: span,
             def_state: DefinitionState::Defined,
             is_completed: true,
+            visibility: crate::lang_options::Visibility::Default,
         }
     }
 

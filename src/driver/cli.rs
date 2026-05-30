@@ -7,7 +7,10 @@ use clap::{Args, Parser as CliParser};
 use std::path::PathBuf;
 use target_lexicon::{DefaultToHost, Triple};
 
-use crate::{driver::artifact::CompilePhase, lang_options::CStandard};
+use crate::{
+    driver::artifact::CompilePhase,
+    lang_options::{CStandard, SignedOverflowMode},
+};
 
 /// CLI interface using clap
 #[derive(CliParser, Debug, Default)]
@@ -77,6 +80,10 @@ pub struct Cli {
     #[clap(long = "std", value_name = "STANDARD")]
     pub c_standard: Option<CStandard>,
 
+    /// Set default symbol visibility (e.g., default, hidden, protected, internal)
+    #[clap(long = "fvisibility", value_name = "VISIBILITY")]
+    pub fvisibility: Option<crate::lang_options::Visibility>,
+
     /// Target triple (e.g. x86_64-unknown-linux-gnu)
     #[clap(long = "target", value_name = "TRIPLE")]
     pub target: Option<String>,
@@ -126,12 +133,28 @@ pub struct Cli {
     pub fmax_errors: Option<usize>,
 
     /// Treat signed integer overflow as well-defined (wrapping)
-    #[clap(long = "fwrapv", overrides_with = "fno_wrapv", action = clap::ArgAction::SetTrue)]
+    #[clap(long = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
     pub fwrapv: bool,
 
     /// Treat signed integer overflow as undefined behavior
-    #[clap(long = "fno-wrapv", overrides_with = "fwrapv", action = clap::ArgAction::SetTrue)]
+    #[clap(long = "fno-wrapv", overrides_with = "fwrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
     pub fno_wrapv: bool,
+
+    /// Treat signed integer overflow as undefined behavior
+    #[clap(long = "fstrict-overflow", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
+    pub fstrict_overflow: bool,
+
+    /// Treat signed integer overflow as well-defined (wrapping)
+    #[clap(long = "fno-strict-overflow", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
+    pub fno_strict_overflow: bool,
+
+    /// Generate traps for signed overflow on addition, subtraction, and multiplication
+    #[clap(long = "ftrapv", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
+    pub ftrapv: bool,
+
+    /// Do not generate traps for signed overflow
+    #[clap(long = "fno-trapv", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", action = clap::ArgAction::SetTrue)]
+    pub fno_trapv: bool,
 
     /// Generate position-independent code
     #[clap(long = "fPIC", overrides_with = "f_no_pic", action = clap::ArgAction::SetTrue)]
@@ -295,12 +318,15 @@ impl Cli {
 
         // Build language options
 
-        let mut fwrapv = true;
-        if self.fno_wrapv {
-            fwrapv = false;
+        let mut signed_overflow_mode = SignedOverflowMode::Wrap;
+        if self.fno_wrapv || self.fstrict_overflow {
+            signed_overflow_mode = SignedOverflowMode::Undefined;
         }
-        if self.fwrapv {
-            fwrapv = true;
+        if self.fwrapv || self.fno_strict_overflow || self.fno_trapv {
+            signed_overflow_mode = SignedOverflowMode::Wrap;
+        }
+        if self.ftrapv {
+            signed_overflow_mode = SignedOverflowMode::Trap;
         }
 
         let mut fpic = true;
@@ -316,8 +342,9 @@ impl Cli {
             c_standard,
             pedantic: self.pedantic,
             pedantic_errors: self.pedantic_errors,
-            fwrapv,
+            signed_overflow_mode,
             fpic,
+            visibility: self.fvisibility.unwrap_or_default(),
         };
 
         // Build preprocessor configuration with include paths
@@ -529,24 +556,121 @@ mod tests {
     fn test_cli_fwrapv() {
         use clap::Parser;
 
-        // Default should be true
+        // Default should be Wrap
         let cli1 = Cli::parse_from(["cendol", "dummy.c"]);
-        assert!(cli1.into_config().unwrap().lang_options.fwrapv);
+        assert_eq!(
+            cli1.into_config().unwrap().lang_options.signed_overflow_mode,
+            SignedOverflowMode::Wrap
+        );
 
         // Explicit -fwrapv
         let cli2 = Cli::parse_from(["cendol", "dummy.c", "--fwrapv"]);
-        assert!(cli2.into_config().unwrap().lang_options.fwrapv);
+        assert_eq!(
+            cli2.into_config().unwrap().lang_options.signed_overflow_mode,
+            SignedOverflowMode::Wrap
+        );
 
         // Explicit -fno-wrapv
         let cli3 = Cli::parse_from(["cendol", "dummy.c", "--fno-wrapv"]);
-        assert!(!cli3.into_config().unwrap().lang_options.fwrapv);
+        assert_eq!(
+            cli3.into_config().unwrap().lang_options.signed_overflow_mode,
+            SignedOverflowMode::Undefined
+        );
 
-        // Last one wins: -fwrapv -fno-wrapv -> false
+        // Last one wins: -fwrapv -fno-wrapv -> Undefined
         let cli4 = Cli::parse_from(["cendol", "dummy.c", "--fwrapv", "--fno-wrapv"]);
-        assert!(!cli4.into_config().unwrap().lang_options.fwrapv);
+        assert_eq!(
+            cli4.into_config().unwrap().lang_options.signed_overflow_mode,
+            SignedOverflowMode::Undefined
+        );
 
-        // Last one wins: -fno-wrapv -fwrapv -> true
+        // Last one wins: -fno-wrapv -fwrapv -> Wrap
         let cli5 = Cli::parse_from(["cendol", "dummy.c", "--fno-wrapv", "--fwrapv"]);
-        assert!(cli5.into_config().unwrap().lang_options.fwrapv);
+        assert_eq!(
+            cli5.into_config().unwrap().lang_options.signed_overflow_mode,
+            SignedOverflowMode::Wrap
+        );
+
+        // Explicit -fstrict-overflow
+        let cli6 = Cli::parse_from(["cendol", "dummy.c", "--fstrict-overflow"]);
+        assert_eq!(
+            cli6.into_config().unwrap().lang_options.signed_overflow_mode,
+            SignedOverflowMode::Undefined
+        );
+
+        // Explicit -fno-strict-overflow
+        let cli7 = Cli::parse_from(["cendol", "dummy.c", "--fno-strict-overflow"]);
+        assert_eq!(
+            cli7.into_config().unwrap().lang_options.signed_overflow_mode,
+            SignedOverflowMode::Wrap
+        );
+
+        // Mix: -fstrict-overflow -fno-strict-overflow -> Wrap
+        let cli8 = Cli::parse_from(["cendol", "dummy.c", "--fstrict-overflow", "--fno-strict-overflow"]);
+        assert_eq!(
+            cli8.into_config().unwrap().lang_options.signed_overflow_mode,
+            SignedOverflowMode::Wrap
+        );
+
+        // Mix: -fno-strict-overflow -fstrict-overflow -> Undefined
+        let cli9 = Cli::parse_from(["cendol", "dummy.c", "--fno-strict-overflow", "--fstrict-overflow"]);
+        assert_eq!(
+            cli9.into_config().unwrap().lang_options.signed_overflow_mode,
+            SignedOverflowMode::Undefined
+        );
+
+        // Mix: -fwrapv -fstrict-overflow -> Undefined
+        let cli10 = Cli::parse_from(["cendol", "dummy.c", "--fwrapv", "--fstrict-overflow"]);
+        assert_eq!(
+            cli10.into_config().unwrap().lang_options.signed_overflow_mode,
+            SignedOverflowMode::Undefined
+        );
+
+        // Mix: -fstrict-overflow -fwrapv -> Wrap
+        let cli11 = Cli::parse_from(["cendol", "dummy.c", "--fstrict-overflow", "--fwrapv"]);
+        assert_eq!(
+            cli11.into_config().unwrap().lang_options.signed_overflow_mode,
+            SignedOverflowMode::Wrap
+        );
+    }
+
+    #[test]
+    fn test_cli_ftrapv() {
+        use clap::Parser;
+
+        // Default should be Wrap (i.e. not Trap)
+        let cli1 = Cli::parse_from(["cendol", "dummy.c"]);
+        assert_eq!(
+            cli1.into_config().unwrap().lang_options.signed_overflow_mode,
+            SignedOverflowMode::Wrap
+        );
+
+        // Explicit -ftrapv
+        let cli2 = Cli::parse_from(["cendol", "dummy.c", "--ftrapv"]);
+        assert_eq!(
+            cli2.into_config().unwrap().lang_options.signed_overflow_mode,
+            SignedOverflowMode::Trap
+        );
+
+        // Explicit -fno-trapv
+        let cli3 = Cli::parse_from(["cendol", "dummy.c", "--fno-trapv"]);
+        assert_eq!(
+            cli3.into_config().unwrap().lang_options.signed_overflow_mode,
+            SignedOverflowMode::Wrap
+        );
+
+        // Last one wins: -ftrapv -fno-trapv -> Wrap
+        let cli4 = Cli::parse_from(["cendol", "dummy.c", "--ftrapv", "--fno-trapv"]);
+        assert_eq!(
+            cli4.into_config().unwrap().lang_options.signed_overflow_mode,
+            SignedOverflowMode::Wrap
+        );
+
+        // Last one wins: -fno-trapv -ftrapv -> Trap
+        let cli5 = Cli::parse_from(["cendol", "dummy.c", "--fno-trapv", "--ftrapv"]);
+        assert_eq!(
+            cli5.into_config().unwrap().lang_options.signed_overflow_mode,
+            SignedOverflowMode::Trap
+        );
     }
 }

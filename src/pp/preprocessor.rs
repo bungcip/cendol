@@ -59,6 +59,7 @@ pub struct Preprocessor<'src> {
     pub(crate) counter: u32,
     pub(crate) in_macro_argument_parsing: usize,
     eof_emitted: bool,
+    pub(crate) poisoned_identifiers: HashSet<StringId>,
 }
 
 impl<'src> Preprocessor<'src> {
@@ -123,6 +124,7 @@ impl<'src> Preprocessor<'src> {
             counter: 0,
             in_macro_argument_parsing: 0,
             eof_emitted: false,
+            poisoned_identifiers: HashSet::new(),
         };
 
         // Initialize built-in headers
@@ -359,6 +361,7 @@ impl<'src> Preprocessor<'src> {
         self.define_builtin_macro_with_val("__GNUC__", "4");
         self.define_builtin_macro_with_val("__GNUC_MINOR__", "2");
         self.define_builtin_macro_with_val("__GNUC_PATCHLEVEL__", "1");
+        self.define_builtin_macro_string("__VERSION__", "\"4.2.1 (Cendol)\"");
 
         // Atomic memory ordering constants
         self.define_builtin_macro_with_val("__ATOMIC_RELAXED", "0");
@@ -1035,6 +1038,17 @@ impl<'src> Preprocessor<'src> {
 
     /// Lex the next token
     pub(super) fn lex_token(&mut self) -> Option<PPToken> {
+        let token = self.lex_token_internal()?;
+        if let PPTokenKind::Identifier(sym) = token.kind {
+            if self.poisoned_identifiers.contains(&sym) {
+                let err = self.error(PPError::PoisonedIdentifier(sym), token.location);
+                self.report_pp_error(err);
+            }
+        }
+        Some(token)
+    }
+
+    fn lex_token_internal(&mut self) -> Option<PPToken> {
         if let Some(token) = self.pending_tokens.pop() {
             return Some(token);
         }

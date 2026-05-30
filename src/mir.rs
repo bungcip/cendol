@@ -7,6 +7,7 @@
 //! - Cranelift-friendly: Easy to lower to Cranelift IR
 //! - Non-SSA: Uses basic blocks with explicit control flow
 
+use crate::lang_options::SignedOverflowMode;
 use serde::Serialize;
 use std::num::NonZeroU32;
 
@@ -98,6 +99,7 @@ pub(crate) struct MirFunction {
 
     pub(crate) linkage: MirLinkage,
     pub(crate) is_variadic: bool, // Track if this function is variadic
+    pub(crate) visibility: crate::lang_options::Visibility,
 
     // Only valid if linkage is Defined (Internal or External)
     pub(crate) locals: Vec<LocalId>,
@@ -113,6 +115,7 @@ impl MirFunction {
             params: Vec::new(),
             linkage,
             is_variadic: false,
+            visibility: crate::lang_options::Visibility::Default,
             locals: Vec::new(),
             blocks: Vec::new(),
             entry_block: None,
@@ -587,10 +590,18 @@ pub(crate) struct Global {
     pub(crate) initial_value: Option<ConstValueId>,
     pub(crate) alignment: Option<u16>, // Max alignment in bytes
     pub(crate) linkage: MirLinkage,
+    pub(crate) visibility: crate::lang_options::Visibility,
 }
 
 impl Global {
-    pub(crate) fn new(name: NameId, type_id: TypeId, is_constant: bool, is_tls: bool, linkage: MirLinkage) -> Self {
+    pub(crate) fn new(
+        name: NameId,
+        type_id: TypeId,
+        is_constant: bool,
+        is_tls: bool,
+        linkage: MirLinkage,
+        visibility: crate::lang_options::Visibility,
+    ) -> Self {
         Self {
             name,
             type_id,
@@ -599,11 +610,11 @@ impl Global {
             initial_value: None,
             alignment: None,
             linkage,
+            visibility,
         }
     }
 }
 
-/// Global declaration configuration
 pub(crate) struct GlobalDecl {
     pub(crate) name: NameId,
     pub(crate) type_id: TypeId,
@@ -611,6 +622,7 @@ pub(crate) struct GlobalDecl {
     pub(crate) is_tls: bool,
     pub(crate) linkage: MirLinkage,
     pub(crate) initial_value: Option<ConstValueId>,
+    pub(crate) visibility: crate::lang_options::Visibility,
 }
 
 impl GlobalDecl {
@@ -623,6 +635,7 @@ impl GlobalDecl {
             is_tls: false,
             linkage,
             initial_value: None,
+            visibility: crate::lang_options::Visibility::Default,
         }
     }
 
@@ -634,6 +647,7 @@ impl GlobalDecl {
             is_tls: false,
             linkage: MirLinkage::Internal,
             initial_value: Some(init),
+            visibility: crate::lang_options::Visibility::Default,
         }
     }
 }
@@ -683,6 +697,8 @@ pub(crate) struct MirProgram {
     pub(crate) statements: Vec<MirStmt>,
     pub(crate) pointer_width: u8,
     pub(crate) is_pic: bool,
+    pub(crate) signed_overflow_mode: SignedOverflowMode,
+    pub(crate) visibility: crate::lang_options::Visibility,
 }
 
 impl MirProgram {
@@ -922,7 +938,14 @@ impl MirBuilder {
         let global_id = GlobalId::new(self.next_global_id).unwrap();
         self.next_global_id += 1;
 
-        let mut global = Global::new(decl.name, decl.type_id, decl.is_constant, decl.is_tls, decl.linkage);
+        let mut global = Global::new(
+            decl.name,
+            decl.type_id,
+            decl.is_constant,
+            decl.is_tls,
+            decl.linkage,
+            decl.visibility,
+        );
         global.initial_value = decl.initial_value;
         self.globals.push(global);
         self.module.globals.push(global_id);
@@ -939,6 +962,16 @@ impl MirBuilder {
     pub(crate) fn set_global_alignment(&mut self, global_id: GlobalId, alignment: u16) {
         if let Some(global) = self.globals.get_mut(global_id.index()) {
             global.alignment = Some(alignment);
+        }
+    }
+
+    pub(crate) fn set_function_visibility(
+        &mut self,
+        func_id: MirFunctionId,
+        visibility: crate::lang_options::Visibility,
+    ) {
+        if let Some(func) = self.functions.get_mut(func_id.index()) {
+            func.visibility = visibility;
         }
     }
 
@@ -1005,6 +1038,8 @@ impl MirBuilder {
             statements: self.statements,
             pointer_width,
             is_pic,
+            signed_overflow_mode: SignedOverflowMode::Wrap,
+            visibility: crate::lang_options::Visibility::Default,
         }
     }
 

@@ -16,6 +16,13 @@ pub enum PragmaPackKind {
     Set(Option<u8>),
 }
 
+/// Pragma visibility kinds
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+pub enum PragmaVisibilityKind {
+    Push(crate::lang_options::Visibility),
+    Pop,
+}
+
 use super::ParsedTypeArena;
 
 /// Node reference type for referencing child nodes in ParsedAst.
@@ -139,6 +146,9 @@ pub enum ParsedNodeKind {
 
     // --- Pragma Pack ---
     PragmaPack(PragmaPackKind),
+
+    // --- Pragma Visibility ---
+    PragmaVisibility(PragmaVisibilityKind),
 
     // --- Dummy Node ---
     Dummy,
@@ -460,6 +470,7 @@ impl ParsedNodeKind {
             ParsedNodeKind::TranslationUnit(..) => "TranslationUnit",
             ParsedNodeKind::InitializerList(..) => "InitializerList",
             ParsedNodeKind::PragmaPack(..) => "PragmaPack",
+            ParsedNodeKind::PragmaVisibility(..) => "PragmaVisibility",
             ParsedNodeKind::BuiltinComplex(..) => "BuiltinComplex",
             ParsedNodeKind::BuiltinBitCast(..) => "BuiltinBitCast",
             ParsedNodeKind::BuiltinConvertVector(..) => "BuiltinConvertVector",
@@ -480,6 +491,7 @@ impl ParsedNodeKind {
             | ParsedNodeKind::Goto(_)
             | ParsedNodeKind::EmptyStmt
             | ParsedNodeKind::PragmaPack(_)
+            | ParsedNodeKind::PragmaVisibility(_)
             | ParsedNodeKind::Dummy => {}
             ParsedNodeKind::UnaryOp(_, e)
             | ParsedNodeKind::PostIncrement(e)

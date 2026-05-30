@@ -18,7 +18,7 @@ use crate::ast::literal::{LitKind, LitRef, LitVal, StrPrefix};
 use crate::ast::parsed::{ParsedDecl, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, TypeSpec};
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, DiagnosticLevel};
-use crate::lang_options::CStandard;
+use crate::lang_options::{CStandard, Visibility};
 use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::errors::{SemanticDiag, SemanticError};
 use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
@@ -43,6 +43,9 @@ pub(crate) struct LowerCtx<'a, 'src> {
     pub(crate) next_compound_uses_scope: Option<ScopeId>,
     pub(crate) pragma_pack_stack: Vec<Option<u8>>,
     pub(crate) current_packing: Option<u8>,
+    /// Stack for `#pragma GCC visibility push(...)` / `pop`
+    pub(crate) visibility_stack: Vec<Visibility>,
+    pub(crate) current_visibility: Visibility,
     pub(crate) in_prototype: bool,
     pub(crate) lang_opts: &'a crate::lang_options::LangOptions,
     pub(crate) anon_counter: u32,
@@ -93,6 +96,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             next_compound_uses_scope: None,
             pragma_pack_stack: Vec::new(),
             current_packing: None,
+            visibility_stack: Vec::new(),
+            current_visibility: lang_opts.visibility,
             in_prototype: false,
             lang_opts,
             anon_counter: 0,
@@ -675,6 +680,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.handle_pragma_pack(*kind);
                 smallvec![]
             }
+            ParsedNodeKind::PragmaVisibility(kind) => {
+                self.handle_pragma_visibility(*kind);
+                smallvec![]
+            }
             // ... other top level kinds ...
             _ => self.visit_node_rest(node, target_slots),
         }
@@ -696,6 +705,20 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
+    fn handle_pragma_visibility(&mut self, kind: PragmaVisibilityKind) {
+        match kind {
+            PragmaVisibilityKind::Push(vis) => {
+                self.visibility_stack.push(self.current_visibility);
+                self.current_visibility = vis;
+            }
+            PragmaVisibilityKind::Pop => {
+                if let Some(prev) = self.visibility_stack.pop() {
+                    self.current_visibility = prev;
+                }
+            }
+        }
+    }
+
     fn visit_translation_unit(&mut self, children: &[ParsedNodeRef], span: SourceSpan) -> NodeRef {
         self.symbol_table.set_current_scope(ScopeId::GLOBAL);
         let tu_node = self.push_dummy(span);
@@ -706,7 +729,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         for &child in children {
             let child = self.parsed_ast.get_node(child);
             let count = match &child.kind {
-                ParsedNodeKind::PragmaPack(..) => 0,
+                ParsedNodeKind::PragmaPack(..) | ParsedNodeKind::PragmaVisibility(..) => 0,
                 ParsedNodeKind::FunctionDef(..) | ParsedNodeKind::StaticAssert(..) => 1,
                 ParsedNodeKind::Declaration(decl) => {
                     if !decl.init_declarators.is_empty() {
@@ -1054,6 +1077,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 existing
             }
         };
+        self.symbol_table.get_symbol_mut(func_sym).visibility = self.current_visibility;
 
         let scope_id = self.symbol_table.push_scope();
 
@@ -1510,6 +1534,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 existing
             }
         };
+        self.symbol_table.get_symbol_mut(func_sym).visibility = self.current_visibility;
         self.ast.set_kind(
             node,
             NodeKind::FunctionDecl(FunctionDecl {
@@ -1688,6 +1713,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 cleanup_func: cleanup_sym,
             },
         );
+        if let Ok(sym) = sym_res {
+            self.symbol_table.get_symbol_mut(sym).visibility = self.current_visibility;
+        }
 
         let init_expr = init.map(|n| {
             let ie = self.visit_expression(n);
@@ -3704,6 +3732,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
                 ParsedNodeKind::PragmaPack(kind) => {
                     self.handle_pragma_pack(*kind);
+                }
+                ParsedNodeKind::PragmaVisibility(kind) => {
+                    self.handle_pragma_visibility(*kind);
                 }
                 _ => unreachable!(),
             }

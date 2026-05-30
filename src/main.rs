@@ -8,7 +8,11 @@ fn main() {
     // Clap does not strictly support single-dash long options (e.g. -std=c99), so we manually
     // map them to double-dash options (e.g. --std=c99) before parsing.
     let args = std::env::args().map(|arg| {
-        if arg.starts_with("-std=") || arg.starts_with("-target=") || arg.starts_with("-fuse-ld=") || arg == "-rdynamic"
+        if arg.starts_with("-std=")
+            || arg.starts_with("-target=")
+            || arg.starts_with("-fuse-ld=")
+            || arg == "-rdynamic"
+            || arg.starts_with("-fvisibility=")
         {
             format!("-{}", arg)
         } else if arg == "-pedantic" {
@@ -19,6 +23,14 @@ fn main() {
             "--fwrapv".to_string()
         } else if arg == "-fno-wrapv" {
             "--fno-wrapv".to_string()
+        } else if arg == "-fstrict-overflow" {
+            "--fstrict-overflow".to_string()
+        } else if arg == "-fno-strict-overflow" {
+            "--fno-strict-overflow".to_string()
+        } else if arg == "-ftrapv" {
+            "--ftrapv".to_string()
+        } else if arg == "-fno-trapv" {
+            "--fno-trapv".to_string()
         } else if arg == "-fPIC" {
             "--fPIC".to_string()
         } else if arg == "-fno-PIC" {

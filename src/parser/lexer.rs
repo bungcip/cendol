@@ -1,6 +1,6 @@
 use crate::ast::literal::{CharPrefix, FloatSuffix, IntSuffix, LitRef, LitVal, StrPrefix};
 use crate::ast::literal_parsing;
-use crate::ast::{FunctionSpec, PragmaPackKind, StorageClass, StringId, TypeQualifier};
+use crate::ast::{FunctionSpec, PragmaPackKind, PragmaVisibilityKind, StorageClass, StringId, TypeQualifier};
 use crate::lang_options::CStandard;
 use crate::pp::error::PPDiag;
 use crate::pp::{PPToken, PPTokenKind, Preprocessor};
@@ -165,6 +165,7 @@ pub enum TokenKind {
     Unknown,
     Invalid, // Lexing error
     PragmaPack(PragmaPackKind),
+    PragmaVisibility(PragmaVisibilityKind),
 }
 
 impl TokenKind {
@@ -377,6 +378,7 @@ impl TokenKind {
             EndOfFile => "end of file",
             Unknown => "unknown token",
             PragmaPack(_) => "#pragma pack",
+            PragmaVisibility(_) => "#pragma GCC visibility",
             Func => "__func__",
             Function => "__FUNCTION__",
             Invalid => "invalid token",
@@ -725,6 +727,7 @@ impl<'src> Lexer<'src> {
             PPTokenKind::Eof => TokenKind::EndOfFile,
             PPTokenKind::Eod => TokenKind::Unknown,
             PPTokenKind::PragmaPack(kind) => TokenKind::PragmaPack(kind),
+            PPTokenKind::PragmaVisibility(kind) => TokenKind::PragmaVisibility(kind),
             // Handle punctuation tokens using the optimized match-based function
             pptoken_kind => classify_punctuation(pptoken_kind),
         }

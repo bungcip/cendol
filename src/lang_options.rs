@@ -7,13 +7,45 @@ pub enum CStandard {
     C23,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, serde::Serialize)]
+pub enum SignedOverflowMode {
+    #[default]
+    Wrap,
+    Trap,
+    Undefined,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, serde::Serialize)]
+pub enum Visibility {
+    #[default]
+    Default,
+    Hidden,
+    Protected,
+    Internal,
+}
+
+impl std::str::FromStr for Visibility {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "default" => Ok(Visibility::Default),
+            "hidden" => Ok(Visibility::Hidden),
+            "protected" => Ok(Visibility::Protected),
+            "internal" => Ok(Visibility::Internal),
+            _ => Err(format!("invalid visibility: {}", s)),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct LangOptions {
     pub c_standard: CStandard,
     pub pedantic: bool,
     pub pedantic_errors: bool,
-    pub fwrapv: bool,
+    pub signed_overflow_mode: SignedOverflowMode,
     pub fpic: bool,
+    pub visibility: Visibility,
 }
 
 impl Default for LangOptions {
@@ -22,8 +54,9 @@ impl Default for LangOptions {
             c_standard: CStandard::default(),
             pedantic: false,
             pedantic_errors: false,
-            fwrapv: true, // cendol defaults to wrapping
-            fpic: true,   // cendol defaults to PIC
+            signed_overflow_mode: SignedOverflowMode::Wrap, // cendol defaults to wrapping
+            fpic: true,                                     // cendol defaults to PIC
+            visibility: Visibility::Default,
         }
     }
 }

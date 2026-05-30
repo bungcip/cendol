@@ -1,5 +1,6 @@
 use crate::ast::nodes;
 use crate::ast::*;
+use crate::lang_options::SignedOverflowMode;
 use crate::mir::MirArrayLayout;
 use crate::mir::MirProgram;
 use crate::mir::{
@@ -81,6 +82,8 @@ pub(crate) struct MirGen<'a> {
     pub(crate) func_state: Option<FunctionState>,
     pub(crate) keywords: MirGenKeywords,
     pub(crate) is_pic: bool,
+    pub(crate) signed_overflow_mode: SignedOverflowMode,
+    pub(crate) visibility: crate::lang_options::Visibility,
 }
 
 pub(crate) struct MirGenKeywords {
@@ -207,17 +210,22 @@ impl<'a> MirGen<'a> {
             let return_mir_type = self.lower_type(return_type);
             let param_mir_types = parameters.into_iter().map(|p| self.lower_qual_type(p)).collect();
 
-            self.define_or_declare_function(
+            let func_id = self.define_or_declare_function(
                 entry.name,
                 param_mir_types,
                 return_mir_type,
                 is_variadic,
                 has_definition,
                 linkage,
-            )
+            );
+            self.mb.set_function_visibility(func_id, entry.visibility);
+            func_id
         } else {
             let return_mir_type = self.get_int_type();
-            self.define_or_declare_function(entry.name, vec![], return_mir_type, false, has_definition, linkage)
+            let func_id =
+                self.define_or_declare_function(entry.name, vec![], return_mir_type, false, has_definition, linkage);
+            self.mb.set_function_visibility(func_id, entry.visibility);
+            func_id
         }
     }
     pub(crate) fn new(
@@ -225,6 +233,8 @@ impl<'a> MirGen<'a> {
         symbol_table: &'a SymbolTable,
         registry: &'a mut TypeRegistry,
         is_pic: bool,
+        signed_overflow_mode: SignedOverflowMode,
+        visibility: crate::lang_options::Visibility,
     ) -> Self {
         Self {
             ast,
@@ -239,6 +249,8 @@ impl<'a> MirGen<'a> {
             current_scope_id: ScopeId::GLOBAL,
             func_state: None,
             is_pic,
+            signed_overflow_mode,
+            visibility,
         }
     }
 
@@ -280,6 +292,8 @@ impl<'a> MirGen<'a> {
             statements: output.statements,
             pointer_width: 8,
             is_pic: self.is_pic,
+            signed_overflow_mode: self.signed_overflow_mode,
+            visibility: self.visibility,
         }
     }
 
@@ -609,6 +623,7 @@ impl<'a> MirGen<'a> {
             is_tls: v.is_thread_local,
             linkage,
             initial_value: None,
+            visibility: symbol.visibility,
         });
 
         if let Some(align) = v.alignment {

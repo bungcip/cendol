@@ -29,6 +29,7 @@ impl PPTokenFlags {
 }
 
 pub use crate::ast::PragmaPackKind;
+pub use crate::ast::PragmaVisibilityKind;
 
 /// Token kinds for preprocessor tokens
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -92,6 +93,7 @@ pub enum PPTokenKind {
     Eod,
     Unknown,
     PragmaPack(PragmaPackKind),
+    PragmaVisibility(PragmaVisibilityKind),
 }
 
 impl PPTokenKind {

@@ -5,6 +5,7 @@ mod codegen_atomic;
 pub mod codegen_basics;
 pub mod codegen_builtins;
 pub mod codegen_common;
+pub mod codegen_trapv;
 
 pub mod codegen_bitfield;
 pub mod codegen_global_redeclaration;
@@ -76,6 +77,7 @@ pub mod test_utils;
 pub mod codegen_bool_cast;
 pub mod codegen_float;
 pub mod codegen_regr;
+pub mod codegen_visibility;
 pub mod driver_cli_handling;
 pub mod gnu_attributes;
 pub mod guardian_alias_completeness;

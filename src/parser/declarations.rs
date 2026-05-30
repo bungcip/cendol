@@ -214,6 +214,13 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRe
             continue;
         }
 
+        if let TokenKind::PragmaVisibility(kind) = token.kind {
+            let node = parser.push_node(ParsedNodeKind::PragmaVisibility(kind), token.span);
+            top_level_declarations.push(node);
+            parser.advance();
+            continue;
+        }
+
         if parser.accept(TokenKind::Semicolon).is_some() {
             continue;
         }

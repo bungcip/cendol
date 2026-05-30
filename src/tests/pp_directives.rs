@@ -274,3 +274,25 @@ fn test_include_extra_tokens_quoted() {
     let (_, diags) = setup_pp_snapshot_with_diags(src);
     insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: ExpectedEod, span: SourceSpan(2199023255572) }""#);
 }
+
+#[test]
+fn test_pragma_gcc_poison() {
+    let src = r#"
+#pragma GCC poison foo bar
+int foo = 1;
+int baz = 2;
+int bar = 3;
+"#;
+    let (_tokens, diags) = setup_pp_snapshot_with_diags(src);
+    assert!(!diags.is_empty(), "expected diagnostics due to poisoned identifiers");
+    let diag_str = format!("{:?}", diags);
+    assert!(
+        diag_str.contains("attempt to use poisoned identifier 'foo'"),
+        "expected poisoned identifier error for foo"
+    );
+    assert!(
+        diag_str.contains("attempt to use poisoned identifier 'bar'"),
+        "expected poisoned identifier error for bar"
+    );
+    assert!(!diag_str.contains("baz"), "should not have error for baz");
+}

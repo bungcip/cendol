@@ -47,6 +47,15 @@ fn parse_struct_decl_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, Par
             continue;
         }
 
+        if let Some(token) = parser.try_current_token()
+            && let TokenKind::PragmaVisibility(kind) = token.kind
+        {
+            let node = parser.push_node(ParsedNodeKind::PragmaVisibility(kind), token.span);
+            declarations.push(node);
+            parser.advance();
+            continue;
+        }
+
         let declaration = parse_struct_decl(parser)?;
         declarations.push(declaration);
     }

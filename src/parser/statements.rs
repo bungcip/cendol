@@ -40,6 +40,10 @@ pub(crate) fn parse_statement(parser: &mut Parser) -> Result<ParsedNodeRef, Pars
             parser.advance();
             Ok(parser.push_node(ParsedNodeKind::PragmaPack(kind), token.span))
         }
+        TokenKind::PragmaVisibility(kind) => {
+            parser.advance();
+            Ok(parser.push_node(ParsedNodeKind::PragmaVisibility(kind), token.span))
+        }
         _ => parse_expression_statement(parser),
     }
 }
@@ -74,6 +78,15 @@ fn parse_compound_statement_inner(parser: &mut Parser) -> Result<(ParsedNodeRef,
             && let TokenKind::PragmaPack(kind) = token.kind
         {
             let node = parser.push_node(ParsedNodeKind::PragmaPack(kind), token.span);
+            items.push(node);
+            parser.advance();
+            continue;
+        }
+
+        if let Some(token) = parser.try_current_token()
+            && let TokenKind::PragmaVisibility(kind) = token.kind
+        {
+            let node = parser.push_node(ParsedNodeKind::PragmaVisibility(kind), token.span);
             items.push(node);
             parser.advance();
             continue;

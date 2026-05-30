@@ -40,6 +40,7 @@ pub(crate) struct DiagnosticEngine {
     /// Bolt ⚡: Flag to ensure the "too many warnings" note is only emitted once.
     pub(crate) warning_limit_reached: bool,
     pub(crate) disabled_warnings: HashSet<String>,
+    pub(crate) diagnostic_stack: Vec<HashSet<String>>,
     pub(crate) renderer: Renderer,
 }
 
@@ -61,6 +62,7 @@ impl Default for DiagnosticEngine {
             error_limit_reached: false,
             warning_limit_reached: false,
             disabled_warnings: HashSet::new(),
+            diagnostic_stack: Vec::new(),
             renderer,
         }
     }
@@ -91,7 +93,18 @@ impl DiagnosticEngine {
             error_limit_reached: false,
             warning_limit_reached: false,
             disabled_warnings,
+            diagnostic_stack: Vec::new(),
             renderer,
+        }
+    }
+
+    pub(crate) fn push_diagnostics(&mut self) {
+        self.diagnostic_stack.push(self.disabled_warnings.clone());
+    }
+
+    pub(crate) fn pop_diagnostics(&mut self) {
+        if let Some(state) = self.diagnostic_stack.pop() {
+            self.disabled_warnings = state;
         }
     }
 

@@ -33,6 +33,7 @@ pub enum PPError {
     MacroRedefined(StringId),
     DollarInIdentifier,
     DirectiveInMacroArgs,
+    PoisonedIdentifier(StringId),
 }
 
 impl PPError {
@@ -74,6 +75,9 @@ impl DiagDisplay for PPError {
             PPError::DollarInIdentifier => write!(f, "'$' in identifier or number"),
             PPError::DirectiveInMacroArgs => {
                 write!(f, "embedding a directive within macro arguments is not portable")
+            }
+            PPError::PoisonedIdentifier(name) => {
+                write!(f, "attempt to use poisoned identifier '{}'", name)
             }
         }
     }

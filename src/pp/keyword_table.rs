@@ -138,6 +138,12 @@ pub struct PPKeywordTable {
     pub(crate) attr_unsequenced_underscore: StringId,
     pub(crate) attr_reproducible: StringId,
     pub(crate) attr_reproducible_underscore: StringId,
+    pub(crate) gcc: StringId,
+    pub(crate) diagnostic: StringId,
+    pub(crate) visibility: StringId,
+    pub(crate) poison: StringId,
+    pub(crate) ignored_kw: StringId,
+    pub(crate) fatal: StringId,
 }
 
 impl Default for PPKeywordTable {
@@ -262,6 +268,12 @@ impl PPKeywordTable {
             attr_unsequenced_underscore: StringId::new("__unsequenced__"),
             attr_reproducible: StringId::new("reproducible"),
             attr_reproducible_underscore: StringId::new("__reproducible__"),
+            gcc: StringId::new("GCC"),
+            diagnostic: StringId::new("diagnostic"),
+            visibility: StringId::new("visibility"),
+            poison: StringId::new("poison"),
+            ignored_kw: StringId::new("ignored"),
+            fatal: StringId::new("fatal"),
         }
     }
 

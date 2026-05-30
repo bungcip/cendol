@@ -1,10 +1,11 @@
 use crate::ast::StringId;
 use crate::diagnostic::{Diagnostic, DiagnosticLevel};
+use crate::lang_options::Visibility;
 use crate::pp::error::{PPDiag, PPError};
 use crate::pp::pp_lexer::PPLexer;
 use crate::pp::preprocessor::Preprocessor;
 use crate::pp::types::{IncludeStackInfo, MacroFlags, MacroInfo, PPConditionalInfo};
-use crate::pp::{DirectiveKind, PPToken, PPTokenFlags, PPTokenKind, PragmaPackKind};
+use crate::pp::{DirectiveKind, PPToken, PPTokenFlags, PPTokenKind, PragmaPackKind, PragmaVisibilityKind};
 use crate::source_manager::{FileKind, SourceId, SourceLoc, SourceManager, SourceSpan};
 use std::sync::Arc;
 
@@ -736,6 +737,8 @@ impl<'src> Preprocessor<'src> {
             self.handle_pragma_error(DiagnosticLevel::Error)?;
         } else if symbol == self.keywords.pack {
             return self.handle_pragma_pack();
+        } else if symbol == self.keywords.gcc {
+            return self.handle_pragma_gcc();
         } else {
             let err = self.error(PPError::UnknownPragma(symbol), token.location);
             self.report_pp_warning(err);
@@ -951,5 +954,149 @@ impl<'src> Preprocessor<'src> {
     fn read_directive_message(&mut self) -> String {
         let tokens = self.collect_tokens_until_eod();
         self.tokens_to_string(&tokens)
+    }
+
+    // -------------------------------------------------------------------------
+    // #pragma GCC diagnostic | visibility | poison
+    // -------------------------------------------------------------------------
+
+    fn handle_pragma_gcc(&mut self) -> Result<(), PPDiag> {
+        // Next token is the GCC pragma sub-command
+        let (tok, sym) = self.expect_identifier()?;
+
+        if sym == self.keywords.diagnostic {
+            self.handle_pragma_gcc_diagnostic()?;
+        } else if sym == self.keywords.visibility {
+            return self.handle_pragma_gcc_visibility();
+        } else if sym == self.keywords.poison {
+            self.handle_pragma_gcc_poison()?;
+        } else {
+            // Unknown GCC pragma — emit a soft warning and ignore
+            let err = self.error(PPError::UnknownPragma(sym), tok.location);
+            self.report_pp_warning(err);
+        }
+
+        self.collect_tokens_until_eod();
+        Ok(())
+    }
+
+    /// `#pragma GCC diagnostic push|pop|warning|error|ignored|fatal "-Wfoo"`
+    fn handle_pragma_gcc_diagnostic(&mut self) -> Result<(), PPDiag> {
+        let (tok, sym) = self.expect_identifier()?;
+
+        if sym == self.keywords.push {
+            self.diag.push_diagnostics();
+            return Ok(());
+        }
+
+        if sym == self.keywords.pop {
+            self.diag.pop_diagnostics();
+            return Ok(());
+        }
+
+        // For warning / error / ignored / fatal, the next token is the warning flag string.
+        let new_level = if sym == self.keywords.warning {
+            Some(DiagnosticLevel::Warning)
+        } else if sym == self.keywords.error {
+            Some(DiagnosticLevel::Error)
+        } else if sym == self.keywords.ignored_kw {
+            None // "ignored" means suppress
+        } else if sym == self.keywords.fatal {
+            Some(DiagnosticLevel::Error) // treat as error
+        } else {
+            let err = self.error(PPError::UnknownPragma(sym), tok.location);
+            self.report_pp_warning(err);
+            return Ok(());
+        };
+
+        // Parse the warning flag string, e.g. "-Wunused-variable"
+        let (text, text_loc) = self.expect_string_literal()?;
+        let flag = self.extract_literal_content(&text, text_loc, PPError::InvalidDirective)?;
+
+        // Strip leading "-W" if present
+        let warning_name = if let Some(stripped) = flag.strip_prefix("-W") {
+            stripped.to_string()
+        } else {
+            flag.to_string()
+        };
+
+        match new_level {
+            None => {
+                // "ignored" — add to the disabled set
+                self.diag.disabled_warnings.insert(warning_name);
+            }
+            Some(DiagnosticLevel::Warning) => {
+                // "warning" — re-enable (remove from disabled set)
+                self.diag.disabled_warnings.remove(&warning_name);
+            }
+            Some(_) => {
+                // "error" / "fatal" — re-enable as error-level
+                // For now simply remove from disabled set; full escalation would
+                // require a separate error-upgrade table in DiagnosticEngine.
+                self.diag.disabled_warnings.remove(&warning_name);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// `#pragma GCC visibility push(default|hidden|protected|internal)` or `pop`
+    fn handle_pragma_gcc_visibility(&mut self) -> Result<(), PPDiag> {
+        let (tok, sym) = self.expect_identifier()?;
+
+        let kind = if sym == self.keywords.push {
+            // `push(visibility)`
+            self.expect_kind(PPTokenKind::LeftParen)?;
+            let (vis_tok, vis_sym) = self.expect_identifier()?;
+            let vis_str = vis_sym.as_str();
+            let vis = vis_str.parse::<Visibility>().unwrap_or_else(|_| {
+                let err = self.error(PPError::InvalidDirective, vis_tok.location);
+                self.report_pp_warning(err);
+                Visibility::Default
+            });
+            self.expect_kind(PPTokenKind::RightParen)?;
+            PragmaVisibilityKind::Push(vis)
+        } else if sym == self.keywords.pop {
+            PragmaVisibilityKind::Pop
+        } else {
+            let err = self.error(PPError::UnknownPragma(sym), tok.location);
+            self.report_pp_warning(err);
+            self.collect_tokens_until_eod();
+            return Ok(());
+        };
+
+        self.collect_tokens_until_eod();
+
+        // Emit a synthetic PragmaVisibility token into the pending stream so the
+        // parser can consume it the same way it handles PragmaPack tokens.
+        let loc = self.get_current_location();
+        self.pending_tokens.push(PPToken::new(
+            PPTokenKind::PragmaVisibility(kind),
+            PPTokenFlags::empty(),
+            loc,
+            0,
+        ));
+
+        Ok(())
+    }
+
+    /// `#pragma GCC poison ident1 ident2 …`
+    fn handle_pragma_gcc_poison(&mut self) -> Result<(), PPDiag> {
+        loop {
+            let tok = match self.lex_token() {
+                Some(t) => t,
+                None => break,
+            };
+            match tok.kind {
+                PPTokenKind::Eod | PPTokenKind::Eof => break,
+                PPTokenKind::Identifier(sym) => {
+                    self.poisoned_identifiers.insert(sym);
+                }
+                _ => {
+                    // Non-identifier token on poison line — ignore silently
+                }
+            }
+        }
+        Ok(())
     }
 }

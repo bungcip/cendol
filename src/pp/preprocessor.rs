@@ -453,17 +453,25 @@ impl<'src> Preprocessor<'src> {
 
     /// Helper to define a built-in macro with a specific number value
     fn define_builtin_macro_with_val(&mut self, name: &str, value: &str) {
-        let source_id = self
-            .sm
-            .add_buffer(value.as_bytes().to_vec(), "<builtin>", None, FileKind::MacroExpansion);
+        // Bolt ⚡: Reuse the shared digits buffer for small integers (0-255)
+        // to avoid SourceId churn and redundant virtual buffers during preprocessor initialization.
+        let (source_id, offset, len) = if let Ok(val) = value.parse::<u8>() {
+            let (offset, len) = SourceManager::get_digit_metadata(val);
+            (self.sm.get_digits_source_id(), offset, len)
+        } else {
+            let sid = self
+                .sm
+                .add_buffer(value.as_bytes().to_vec(), "<builtin>", None, FileKind::MacroExpansion);
+            (sid, 0, value.len() as u16)
+        };
 
         self.define_builtin_macro(
             name,
             vec![PPToken::new(
                 PPTokenKind::Number,
                 PPTokenFlags::empty(),
-                SourceLoc::new(source_id, 0),
-                value.len() as u16,
+                SourceLoc::new(source_id, offset),
+                len,
             )],
         );
     }

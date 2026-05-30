@@ -14,7 +14,7 @@ fn test_warning_attributes_formatting() {
     let (driver, result) = run_pipeline(source, CompilePhase::Mir);
     assert!(result.is_ok());
 
-    let diagnostics = driver.get_diagnostics();
+    let diagnostics = &driver.de.diagnostics;
     let warnings: Vec<_> = diagnostics
         .iter()
         .filter(|d| d.warning_name == Some("attributes"))
@@ -39,7 +39,7 @@ fn test_warning_hash_warnings_formatting() {
     let (driver, result) = run_pipeline(source, CompilePhase::Mir);
     assert!(result.is_ok());
 
-    let diagnostics = driver.get_diagnostics();
+    let diagnostics = &driver.de.diagnostics;
     let warnings: Vec<_> = diagnostics
         .iter()
         .filter(|d| d.warning_name == Some("#warnings"))
@@ -64,7 +64,7 @@ fn test_warning_builtin_macro_redefined_formatting() {
     let (driver, result) = run_pipeline(source, CompilePhase::Mir);
     assert!(result.is_ok());
 
-    let diagnostics = driver.get_diagnostics();
+    let diagnostics = &driver.de.diagnostics;
     let warnings: Vec<_> = diagnostics
         .iter()
         .filter(|d| d.warning_name == Some("builtin-macro-redefined"))

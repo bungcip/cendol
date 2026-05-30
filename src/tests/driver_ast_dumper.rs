@@ -4,7 +4,7 @@ use crate::tests::test_utils;
 
 fn get_artifact(source: &str, phase: CompilePhase) -> crate::driver::artifact::CompileArtifact {
     let (driver, result) = test_utils::run_pipeline(source, phase);
-    let out = result.unwrap_or_else(|e| panic!("Pipeline failed: {}\nDiagnostics: {:?}", e, driver.get_diagnostics()));
+    let out = result.unwrap_or_else(|e| panic!("Pipeline failed: {}\nDiagnostics: {:?}", e, driver.de.diagnostics));
     out.units.into_iter().next().unwrap().1
 }
 

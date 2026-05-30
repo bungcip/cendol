@@ -549,12 +549,6 @@ __cendol_vararg_trampoline:
         Ok(())
     }
 
-    /// Get diagnostics for testing
-    #[cfg(test)]
-    pub(crate) fn get_diagnostics(&self) -> Vec<crate::diagnostic::Diagnostic> {
-        self.de.diagnostics.clone()
-    }
-
     /// Print accumulated diagnostics without returning an error
     pub(crate) fn print_diagnostics(&self) {
         self.de

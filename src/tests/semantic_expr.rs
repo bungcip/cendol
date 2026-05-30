@@ -255,7 +255,7 @@ fn test_pointer_signedness_mismatch() {
         &driver,
         "pointer targets in assignment differ in signedness (passing 'int*' to 'unsigned int*')",
     );
-    assert_eq!(driver.get_diagnostics().len(), 2);
+    assert_eq!(driver.de.diagnostics.len(), 2);
 }
 
 #[test]
@@ -746,7 +746,7 @@ fn test_nested_qualifier_preservation() {
     ";
     let driver = run_fail(code, CompilePhase::Mir);
     check_diagnostic_message_only(&driver, "cannot assign to read-only location");
-    assert_eq!(driver.get_diagnostics().len(), 2);
+    assert_eq!(driver.de.diagnostics.len(), 2);
 }
 
 // Comma Operator Tests

@@ -9,7 +9,7 @@ use crate::tests::test_utils::run_pipeline;
 
 pub(crate) fn setup_mir(source: &str) -> String {
     let (driver, result) = run_pipeline(source, CompilePhase::Mir);
-    let mut out = result.unwrap_or_else(|_| panic!("failed to run: {:?}", driver.get_diagnostics()));
+    let mut out = result.unwrap_or_else(|_| panic!("failed to run: {:?}", driver.de.diagnostics));
     let artifact = out.units.values_mut().next().expect("No units in output");
 
     let mir = artifact.mir_program.as_ref().expect("No semantic output available");
@@ -20,7 +20,7 @@ pub(crate) fn setup_mir(source: &str) -> String {
 
 pub(crate) fn setup_lowering(source: &str) -> (Ast, TypeRegistry, SymbolTable) {
     let (driver, result) = run_pipeline(source, CompilePhase::SemanticLowering);
-    let out = result.unwrap_or_else(|_| panic!("failed to run: {:?}", driver.get_diagnostics()));
+    let out = result.unwrap_or_else(|_| panic!("failed to run: {:?}", driver.de.diagnostics));
     let unit = out.units.into_values().next().expect("No units in output");
 
     (
@@ -32,7 +32,7 @@ pub(crate) fn setup_lowering(source: &str) -> (Ast, TypeRegistry, SymbolTable) {
 
 pub(crate) fn setup_analysis(source: &str) -> (Ast, TypeRegistry, SymbolTable) {
     let (driver, result) = run_pipeline(source, CompilePhase::SemanticLowering);
-    let out = result.unwrap_or_else(|_| panic!("failed to run: {:?}", driver.get_diagnostics()));
+    let out = result.unwrap_or_else(|_| panic!("failed to run: {:?}", driver.de.diagnostics));
     let unit = out.units.into_values().next().expect("No units in output");
 
     let mut ast = unit.ast.expect("No AST available");

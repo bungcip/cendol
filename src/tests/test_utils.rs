@@ -64,7 +64,7 @@ pub(crate) fn sort_clif_ir(ir: &str) -> String {
 pub(crate) fn run_pass(source: &str, phase: CompilePhase) -> CompilerDriver {
     let (driver, result) = run_pipeline(source, phase);
     if result.is_err() {
-        panic!("Compilation failed unexpectedly: {:?}", driver.get_diagnostics());
+        panic!("Compilation failed unexpectedly: {:?}", driver.de.diagnostics);
     }
     driver
 }
@@ -79,7 +79,7 @@ pub(crate) fn run_pass_with_std(
     let mut driver = CompilerDriver::from_config(config);
     let result = driver.run_pipeline(phase).map_err(|e| format!("{:?}", e));
     if result.is_err() {
-        panic!("Compilation failed unexpectedly: {:?}", driver.get_diagnostics());
+        panic!("Compilation failed unexpectedly: {:?}", driver.de.diagnostics);
     }
     driver
 }
@@ -110,7 +110,7 @@ pub(crate) fn run_fail_with_diagnostic(source: &str, phase: CompilePhase, messag
 }
 
 fn check_diagnostic(driver: &CompilerDriver, message: &str, line: u32, col: u32) {
-    let diagnostics = driver.get_diagnostics();
+    let diagnostics = &driver.de.diagnostics;
     let found = diagnostics.iter().any(|d| {
         if d.message.contains(message)
             && let Some((l, c)) = driver.sm.get_line_column(d.span.start())
@@ -129,7 +129,7 @@ fn check_diagnostic(driver: &CompilerDriver, message: &str, line: u32, col: u32)
 }
 
 pub(crate) fn check_diagnostic_message_only(driver: &CompilerDriver, message: &str) {
-    let diagnostics = driver.get_diagnostics();
+    let diagnostics = &driver.de.diagnostics;
     let found = diagnostics.iter().any(|d| d.message.contains(message));
     assert!(
         found,

@@ -45,7 +45,7 @@ fn test_empty_declarations_multiple() {
 
     let driver = run_pass(source, CompilePhase::Mir);
     check_diagnostic_message_only(&driver, "declaration does not declare anything");
-    assert_eq!(driver.get_diagnostics().len(), 5);
+    assert_eq!(driver.de.diagnostics.len(), 5);
 }
 
 /// Test empty declaration in function scope
@@ -62,7 +62,7 @@ fn test_empty_declaration_in_function() {
 
     let driver = run_pass(source, CompilePhase::Mir);
     check_diagnostic_message_only(&driver, "declaration does not declare anything");
-    assert_eq!(driver.get_diagnostics().len(), 3);
+    assert_eq!(driver.de.diagnostics.len(), 3);
 }
 
 fn check_type(source: &str, expected: &str) {

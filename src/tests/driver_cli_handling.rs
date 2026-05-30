@@ -32,7 +32,7 @@ fn test_driver_defines() {
 "#;
 
     let tokens = compile_with_defines(source, &[("TEST_DEFINE", None)]);
-    let has_main = tokens.iter().any(|t| t.get_text() == "main");
+    let has_main = tokens.iter().any(|t| t.get_text_from_buffer(&[]) == "main");
     assert!(has_main, "Output should contain 'main' when TEST_DEFINE is set");
 }
 
@@ -43,7 +43,7 @@ int main(void) { return SUCCESS; }
 "#;
 
     let tokens = compile_with_defines(source, &[("SUCCESS", Some("ok"))]);
-    let has_value = tokens.iter().any(|t| t.get_text() == "ok");
+    let has_value = tokens.iter().any(|t| t.get_text_from_buffer(&[]) == "ok");
     assert!(has_value, "Output should contain 'ok' when SUCCESS is set to ok");
 }
 

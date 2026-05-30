@@ -697,7 +697,7 @@ impl<'src> Lexer<'src> {
                 unreachable!("String literal should be handled in next_token")
             }
             PPTokenKind::CharLiteral(codepoint) => {
-                let text = self.preprocessor.get_token_text(pptoken);
+                let text = pptoken.get_text(self.preprocessor.sm);
                 let prefix = if text.starts_with("u8'") {
                     CharPrefix::Utf8
                 } else if text.starts_with("L'") {
@@ -713,7 +713,7 @@ impl<'src> Lexer<'src> {
                 TokenKind::Literal(lit)
             }
             PPTokenKind::Number => {
-                let text = self.preprocessor.get_token_text(pptoken);
+                let text = pptoken.get_text(self.preprocessor.sm);
                 // Try to parse as integer first, then float, then unknown
                 if let Some((value, suffix, radix)) = literal_parsing::parse_integer_literal(&text) {
                     let lit = LitRef::from_int(value, suffix.unwrap_or(IntSuffix::None), radix);
@@ -786,7 +786,7 @@ impl<'src> Lexer<'src> {
             let mut merged_span = span;
 
             for (i, t) in string_tokens.iter().enumerate() {
-                let text = self.preprocessor.get_token_text(t);
+                let text = t.get_text(self.preprocessor.sm);
                 let (next_prefix, next_content) = Self::extract_literal_parts(&text).unwrap_or(("", &text));
                 if i == 0 || prefix.is_empty() {
                     prefix = next_prefix;

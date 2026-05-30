@@ -345,7 +345,7 @@ fn test_consecutive_splices() {
     let source = "A\\\n\\\nB";
     let mut lexer = create_test_pp_lexer(source);
     let token = lexer.next_token().unwrap();
-    assert_eq!(token.get_text(), "AB");
+    assert_eq!(lexer.get_token_text(&token), "AB");
 }
 
 #[test]

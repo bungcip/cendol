@@ -606,11 +606,6 @@ impl<'src> Preprocessor<'src> {
             || self.macros.contains_key(&symbol)
     }
 
-    /// Get the text associated with a token, de-splicing if necessary
-    pub(crate) fn get_token_text(&self, token: &PPToken) -> std::borrow::Cow<'_, str> {
-        token.get_text_with_sm(self.sm)
-    }
-
     /// Get the current directory of the file at the top of the lexer stack
     pub(super) fn get_current_dir(&self) -> &Path {
         self.lexer_stack
@@ -700,7 +695,7 @@ impl<'src> Preprocessor<'src> {
     pub(super) fn expect_string_literal(&mut self) -> Result<(String, SourceLoc), PPDiag> {
         let token = self.expect_token()?;
         if let PPTokenKind::StringLiteral = token.kind {
-            Ok((self.get_token_text(&token).to_string(), token.location))
+            Ok((token.get_text(self.sm).to_string(), token.location))
         } else {
             self.emit_error(PPError::InvalidDirective, token.location)
         }
@@ -1020,7 +1015,7 @@ impl<'src> Preprocessor<'src> {
                     if (self.pedantic || self.pedantic_errors)
                         && matches!(token.kind, PPTokenKind::Identifier(_) | PPTokenKind::Number)
                     {
-                        let text = self.get_token_text(&token);
+                        let text = token.get_text(self.sm);
                         if text.contains('$') {
                             let err = self.error(PPError::DollarInIdentifier, token.location);
                             if self.pedantic_errors {

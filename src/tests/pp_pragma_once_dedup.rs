@@ -32,7 +32,7 @@ fn test_pragma_once_path_dedup() {
     let mut output = String::new();
     for token in tokens {
         if !matches!(token.kind, PPTokenKind::Eod | PPTokenKind::Eof) {
-            output.push_str(&pp.get_token_text(&token));
+            output.push_str(&token.get_text(pp.sm));
             output.push(' ');
         }
     }

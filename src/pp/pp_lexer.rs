@@ -196,14 +196,6 @@ impl PPToken {
         PPToken::new(kind, PPTokenFlags::empty(), location, 0)
     }
 
-    #[cfg(test)]
-    pub(crate) fn get_text(&self) -> &str {
-        match &self.kind {
-            PPTokenKind::Identifier(sym) => sym.as_str(),
-            _ => self.kind.get_fixed_text().unwrap_or(""),
-        }
-    }
-
     pub(crate) fn get_text_from_buffer<'a>(&self, buffer: &'a [u8]) -> Cow<'a, str> {
         if let PPTokenKind::Identifier(sym) = &self.kind {
             return Cow::Borrowed(sym.as_str());
@@ -224,19 +216,9 @@ impl PPToken {
         self.flags.apply_splices(raw)
     }
 
-    pub(crate) fn get_text_with_sm<'a>(&self, sm: &'a SourceManager) -> Cow<'a, str> {
-        if let Some(buffer) = sm.get_buffer_safe(self.location.source_id()) {
-            self.get_text_from_buffer(buffer)
-        } else {
-            // Fallback for identifiers/fixed text even without buffer
-            if let PPTokenKind::Identifier(sym) = &self.kind {
-                return Cow::Borrowed(sym.as_str());
-            }
-            if let Some(fixed) = self.kind.get_fixed_text() {
-                return Cow::Borrowed(fixed);
-            }
-            Cow::Borrowed("")
-        }
+    pub(crate) fn get_text<'a>(&self, sm: &'a SourceManager) -> Cow<'a, str> {
+        let buffer = sm.get_buffer_safe(self.location.source_id()).unwrap_or(&[]);
+        self.get_text_from_buffer(buffer)
     }
 }
 
@@ -259,21 +241,6 @@ impl PPLexer {
             at_start_of_line: true,
             in_directive_line: false,
             has_splice: false,
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn get_token_text(&self, token: &PPToken) -> &str {
-        if let Some(fixed) = token.kind.get_fixed_text() {
-            return fixed;
-        }
-
-        let start = token.location.offset() as usize;
-        let end = start + token.length as usize;
-        if end <= self.buffer.len() {
-            unsafe { std::str::from_utf8_unchecked(&self.buffer[start..end]) }
-        } else {
-            ""
         }
     }
 
@@ -1391,31 +1358,31 @@ mod tests {
         // "abc" - simple ASCII
         let t1 = lexer.next_token().unwrap();
         assert!(matches!(t1.kind, PPTokenKind::Identifier(_)));
-        assert_eq!(t1.get_text(), "abc");
+        assert_eq!(t1.get_text_from_buffer(&lexer.buffer), "abc");
         assert_eq!(t1.length, 3);
 
         // "_123" - simple ASCII starting with underscore
         let t2 = lexer.next_token().unwrap();
         assert!(matches!(t2.kind, PPTokenKind::Identifier(_)));
-        assert_eq!(t2.get_text(), "_123");
+        assert_eq!(t2.get_text_from_buffer(&lexer.buffer), "_123");
         assert_eq!(t2.length, 4);
 
         // "test_var" - simple ASCII with underscore
         let t3 = lexer.next_token().unwrap();
         assert!(matches!(t3.kind, PPTokenKind::Identifier(_)));
-        assert_eq!(t3.get_text(), "test_var");
+        assert_eq!(t3.get_text_from_buffer(&lexer.buffer), "test_var");
         assert_eq!(t3.length, 8);
 
         // "u8_var" - simple ASCII (not u8")
         let t4 = lexer.next_token().unwrap();
         assert!(matches!(t4.kind, PPTokenKind::Identifier(_)));
-        assert_eq!(t4.get_text(), "u8_var");
+        assert_eq!(t4.get_text_from_buffer(&lexer.buffer), "u8_var");
         assert_eq!(t4.length, 6);
 
         // "\u00E0bcd" - UCN (slow path)
         let t5 = lexer.next_token().unwrap();
         assert!(matches!(t5.kind, PPTokenKind::Identifier(_)));
-        assert_eq!(t5.get_text(), "àbcd"); // \u00E0 is 'à'
+        assert_eq!(t5.get_text_from_buffer(&lexer.buffer), "àbcd"); // \u00E0 is 'à'
         assert_eq!(t5.length, 9); // "\u00E0" (6) + "bcd" (3) = 9
     }
 
@@ -1427,7 +1394,7 @@ mod tests {
 
         let t1 = lexer.next_token().unwrap();
         assert!(matches!(t1.kind, PPTokenKind::Identifier(_)));
-        assert_eq!(t1.get_text(), "abcdef");
+        assert_eq!(t1.get_text_from_buffer(&lexer.buffer), "abcdef");
     }
 
     #[test]
@@ -1472,9 +1439,9 @@ mod tests {
         let t1 = lexer.next_token().unwrap();
         assert_eq!(t1.kind, PPTokenKind::Hash);
         let t2 = lexer.next_token().unwrap();
-        assert_eq!(lexer.get_token_text(&t2), "if");
+        assert_eq!(t2.get_text_from_buffer(&lexer.buffer), "if");
         let t3 = lexer.next_token().unwrap();
-        assert_eq!(lexer.get_token_text(&t3), "0");
+        assert_eq!(t3.get_text_from_buffer(&lexer.buffer), "0");
         let t4 = lexer.next_token().unwrap();
         assert_eq!(t4.kind, PPTokenKind::Eod);
 
@@ -1485,6 +1452,6 @@ mod tests {
         let t5 = lexer.next_token().unwrap();
         assert_eq!(t5.kind, PPTokenKind::Hash);
         let t6 = lexer.next_token().unwrap();
-        assert_eq!(lexer.get_token_text(&t6), "else");
+        assert_eq!(t6.get_text_from_buffer(&lexer.buffer), "else");
     }
 }

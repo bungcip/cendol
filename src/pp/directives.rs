@@ -209,7 +209,7 @@ impl<'src> Preprocessor<'src> {
                     match a.kind {
                         PPTokenKind::Identifier(_) => false, // Already covered by a.kind != b.kind (stores sym)
                         PPTokenKind::Number | PPTokenKind::StringLiteral | PPTokenKind::CharLiteral(_) => {
-                            self.get_token_text(a) != self.get_token_text(b)
+                            a.get_text(self.sm) != b.get_text(self.sm)
                         }
                         _ => false,
                     }
@@ -371,7 +371,7 @@ impl<'src> Preprocessor<'src> {
                 if !allow_extra && tokens.len() > 1 {
                     return self.emit_error(PPError::ExpectedEod, tokens[1].location);
                 }
-                let text = self.get_token_text(first);
+                let text = first.get_text(self.sm);
                 let path = self
                     .extract_literal_content(&text, first.location, PPError::InvalidIncludePath)?
                     .to_string();
@@ -434,7 +434,7 @@ impl<'src> Preprocessor<'src> {
                 if i < tokens.len() && tokens[i].kind == PPTokenKind::LeftParen {
                     i += 1;
                     if i < tokens.len() && tokens[i].kind == PPTokenKind::Number {
-                        let text = self.get_token_text(&tokens[i]);
+                        let text = tokens[i].get_text(self.sm);
                         limit = Some(
                             text.parse::<usize>()
                                 .map_err(|_| self.error(PPError::InvalidDirective, tokens[i].location))?,
@@ -643,7 +643,7 @@ impl<'src> Preprocessor<'src> {
             return self.emit_error(PPError::InvalidLineDirective, first.location);
         };
 
-        let symbol_text = self.get_token_text(first);
+        let symbol_text = first.get_text(self.sm);
         let line_num = symbol_text
             .parse::<u32>()
             .ok()
@@ -656,7 +656,7 @@ impl<'src> Preprocessor<'src> {
                 let PPTokenKind::StringLiteral = t.kind else {
                     return self.emit_error(PPError::InvalidLineDirective, t.location);
                 };
-                let text = self.get_token_text(t);
+                let text = t.get_text(self.sm);
                 Some(
                     self.extract_literal_content(&text, t.location, PPError::InvalidLineDirective)?
                         .to_string(),
@@ -778,7 +778,7 @@ impl<'src> Preprocessor<'src> {
             let PPTokenKind::StringLiteral = t.kind else {
                 return self.emit_error(PPError::InvalidDirective, t.location);
             };
-            acc.push_str(&self.destringize(&self.get_token_text(&t)));
+            acc.push_str(&self.destringize(&t.get_text(self.sm)));
             Ok(acc)
         })
     }
@@ -889,7 +889,7 @@ impl<'src> Preprocessor<'src> {
 
     fn parse_pragma_pack_value(&self, t: &PPToken) -> Result<u8, PPDiag> {
         let text = match t.kind {
-            PPTokenKind::Number => self.get_token_text(t),
+            PPTokenKind::Number => t.get_text(self.sm),
             PPTokenKind::Identifier(sym) => std::borrow::Cow::Borrowed(sym.as_str()),
             _ => return self.emit_error(PPError::UnknownPragma(self.keywords.pack), t.location),
         };

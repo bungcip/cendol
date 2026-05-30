@@ -841,7 +841,7 @@ impl<'src> Preprocessor<'src> {
             && let PPTokenKind::StringLiteral = tokens[i + 2].kind
             && tokens[i + 3].kind == PPTokenKind::RightParen
         {
-            let token_text = self.get_token_text(&tokens[i + 2]);
+            let token_text = tokens[i + 2].get_text(self.sm);
             let content = self.destringize(&token_text).into_owned();
             self.perform_pragma(&content);
             tokens.drain(i..i + 4);
@@ -1227,11 +1227,7 @@ impl<'a> SourceBufferCache<'a> {
     }
 
     fn get_token_text<'b>(&'b mut self, token: &'b PPToken) -> Cow<'b, str> {
-        let sid = token.location.source_id();
-        if let Some(buffer) = self.get_buffer(sid) {
-            token.get_text_from_buffer(buffer)
-        } else {
-            token.get_text_with_sm(self.sm)
-        }
+        let buffer = self.get_buffer(token.location.source_id()).unwrap_or(&[]);
+        token.get_text_from_buffer(buffer)
     }
 }

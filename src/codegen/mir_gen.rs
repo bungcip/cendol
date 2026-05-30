@@ -232,9 +232,7 @@ impl<'a> MirGen<'a> {
         ast: &'a Ast,
         symbol_table: &'a SymbolTable,
         registry: &'a mut TypeRegistry,
-        is_pic: bool,
-        signed_overflow_mode: SignedOverflowMode,
-        visibility: crate::lang_options::Visibility,
+        options: &crate::lang_options::LangOptions,
     ) -> Self {
         Self {
             ast,
@@ -248,9 +246,9 @@ impl<'a> MirGen<'a> {
             keywords: MirGenKeywords::new(),
             current_scope_id: ScopeId::GLOBAL,
             func_state: None,
-            is_pic,
-            signed_overflow_mode,
-            visibility,
+            is_pic: options.fpic,
+            signed_overflow_mode: options.signed_overflow_mode,
+            visibility: options.visibility,
         }
     }
 

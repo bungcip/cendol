@@ -10,7 +10,7 @@ use std::io::Write;
 /// Dumper for preprocessed output
 pub struct PPDumper<'a> {
     tokens: &'a [PPToken],
-    source_manager: &'a SourceManager,
+    sm: &'a SourceManager,
     suppress_line_markers: bool,
 }
 
@@ -26,10 +26,10 @@ struct DumperState<'a> {
 
 impl<'a> PPDumper<'a> {
     /// Create a new preprocessor dumper
-    pub(crate) fn new(tokens: &'a [PPToken], source_manager: &'a SourceManager, suppress_line_markers: bool) -> Self {
+    pub(crate) fn new(tokens: &'a [PPToken], sm: &'a SourceManager, suppress_line_markers: bool) -> Self {
         Self {
             tokens,
-            source_manager,
+            sm,
             suppress_line_markers,
         }
     }
@@ -44,10 +44,10 @@ impl<'a> PPDumper<'a> {
 
         if !self.suppress_line_markers {
             let loc = self.resolve_top_level_loc(self.tokens[0].location);
-            if let Some((_, _, Some(file_name))) = self.source_manager.get_presumed_location(loc) {
+            if let Some((_, _, Some(file_name))) = self.sm.get_presumed_location(loc) {
                 self.print_line_marker(writer, &mut state, 1, file_name)?;
                 state.file_id = loc.source_id();
-                state.buffer = self.source_manager.get_buffer_safe(state.file_id).unwrap_or(&[]);
+                state.buffer = self.sm.get_buffer_safe(state.file_id).unwrap_or(&[]);
             }
         }
 
@@ -58,7 +58,7 @@ impl<'a> PPDumper<'a> {
 
             let loc = self.resolve_top_level_loc(token.location);
             let is_macro = token.flags.contains(PPTokenFlags::MACRO_EXPANDED);
-            let (line, _, file_name) = self.source_manager.get_presumed_location(loc).unwrap_or((1, 1, None));
+            let (line, _, file_name) = self.sm.get_presumed_location(loc).unwrap_or((1, 1, None));
             let file_name_str = file_name.unwrap_or("<unknown>");
 
             if loc.source_id() != state.file_id || state.file_name.as_deref() != Some(file_name_str) {
@@ -118,7 +118,7 @@ impl<'a> PPDumper<'a> {
     ) -> std::io::Result<()> {
         self.print_line_marker(writer, state, line, name)?;
         state.file_id = loc.source_id();
-        state.buffer = self.source_manager.get_buffer_safe(state.file_id).unwrap_or(&[]);
+        state.buffer = self.sm.get_buffer_safe(state.file_id).unwrap_or(&[]);
         state.last_pos = 0;
         Ok(())
     }
@@ -213,7 +213,7 @@ impl<'a> PPDumper<'a> {
         let ends_with_ws = text.chars().last().is_some_and(|c| c.is_whitespace() && c != '\n');
 
         if (starts_with_ws || ends_with_ws) && !state.at_line_start && !has_nl {
-            let next_text = token.get_text_with_sm(self.source_manager);
+            let next_text = token.get_text(self.sm);
             let is_sep = matches!(
                 next_text.chars().next(),
                 Some('(' | ')' | '{' | '}' | '[' | ']' | ';' | ',' | '.')
@@ -292,10 +292,10 @@ impl<'a> PPDumper<'a> {
 
     fn get_token_text<'b>(&'b self, token: &PPToken, is_macro: bool) -> std::borrow::Cow<'b, str> {
         if is_macro {
-            token.get_text_with_sm(self.source_manager)
+            token.get_text(self.sm)
         } else {
             let span = SourceSpan::from_loc_and_length(token.location, token.length as u32);
-            std::borrow::Cow::Borrowed(self.source_manager.get_source_text(span))
+            std::borrow::Cow::Borrowed(self.sm.get_source_text(span))
         }
     }
 
@@ -304,7 +304,7 @@ impl<'a> PPDumper<'a> {
     fn resolve_top_level_loc(&self, loc: SourceLoc) -> SourceLoc {
         let mut current_loc = loc;
         loop {
-            if let Some(file_info) = self.source_manager.get_file_info(current_loc.source_id())
+            if let Some(file_info) = self.sm.get_file_info(current_loc.source_id())
                 && let Some(include_loc) = file_info.include_loc
             {
                 current_loc = include_loc;

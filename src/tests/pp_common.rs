@@ -22,7 +22,7 @@ impl DebugToken {
             name.to_string()
         };
 
-        let text = token.get_text_with_sm(sm).into_owned();
+        let text = token.get_text(sm).into_owned();
 
         DebugToken { kind, text }
     }

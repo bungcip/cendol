@@ -333,16 +333,12 @@ impl PPExpr {
 pub(crate) struct Interpreter<'a> {
     tokens: &'a [PPToken],
     pos: usize,
-    preprocessor: &'a Preprocessor<'a>,
+    pp: &'a Preprocessor<'a>,
 }
 
 impl<'a> Interpreter<'a> {
-    pub(crate) fn new(tokens: &'a [PPToken], preprocessor: &'a Preprocessor<'a>) -> Self {
-        Interpreter {
-            tokens,
-            pos: 0,
-            preprocessor,
-        }
+    pub(crate) fn new(tokens: &'a [PPToken], pp: &'a Preprocessor<'a>) -> Self {
+        Interpreter { tokens, pos: 0, pp }
     }
 
     fn current_span(&self) -> SourceSpan {
@@ -400,7 +396,7 @@ impl<'a> Interpreter<'a> {
 
     pub(crate) fn evaluate(&mut self) -> Result<ExprValue, PPDiag> {
         let expr = self.parse_conditional()?;
-        expr.evaluate(self.preprocessor, self.current_span())
+        expr.evaluate(self.pp, self.current_span())
     }
 
     fn parse_conditional(&mut self) -> Result<PPExpr, PPDiag> {
@@ -508,7 +504,7 @@ impl<'a> Interpreter<'a> {
     fn parse_unary(&mut self) -> Result<PPExpr, PPDiag> {
         let token = self.current()?;
 
-        let keywords = &self.preprocessor.keywords;
+        let keywords = &self.pp.keywords;
 
         // Handle `defined`
         if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == keywords.defined) {
@@ -576,7 +572,7 @@ impl<'a> Interpreter<'a> {
 
         let (path, is_angled) = match &token.kind {
             PPTokenKind::StringLiteral => {
-                let s = self.preprocessor.get_token_text(token);
+                let s = token.get_text(self.pp.sm);
                 if s.starts_with('"') && s.ends_with('"') {
                     self.advance();
                     (s[1..s.len() - 1].to_string(), false)
@@ -596,7 +592,7 @@ impl<'a> Interpreter<'a> {
                         self.advance();
                         break;
                     }
-                    path_str.push_str(&self.preprocessor.get_token_text(t));
+                    path_str.push_str(&t.get_text(self.pp.sm));
                     self.advance();
                 }
                 (path_str, true)
@@ -632,7 +628,7 @@ impl<'a> Interpreter<'a> {
 
         match &token.kind {
             PPTokenKind::Number => {
-                let text = self.preprocessor.get_token_text(token);
+                let text = token.get_text(self.pp.sm);
                 let (val, suffix, _) = literal_parsing::parse_integer_literal(&text).ok_or_else(|| self.error())?;
                 let mut is_unsigned = matches!(suffix, Some(IntSuffix::U | IntSuffix::UL | IntSuffix::ULL));
                 if !is_unsigned && (val as u64) > i64::MAX as u64 {

@@ -2,6 +2,7 @@
 use crate::ast::{Ast, NameId, NodeKind, VarDecl};
 use crate::diagnostic::DiagnosticEngine;
 use crate::driver::artifact::CompilePhase;
+use crate::lang_options::LangOptions;
 use crate::mir::dumper::{MirDumpConfig, MirDumper};
 use crate::semantic::{SymbolKind, SymbolTable, Type, TypeKind, TypeLayout, TypeRegistry};
 use crate::tests::test_utils::run_pipeline;
@@ -44,7 +45,7 @@ pub(crate) fn setup_analysis(source: &str) -> (Ast, TypeRegistry, SymbolTable) {
         &mut diag,
         &symbol_table,
         &mut registry,
-        &crate::lang_options::LangOptions::default(),
+        &LangOptions::default(),
         &driver.sm,
     );
 

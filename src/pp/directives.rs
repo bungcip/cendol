@@ -730,11 +730,11 @@ impl<'src> Preprocessor<'src> {
         } else if symbol == self.keywords.pop_macro {
             self.handle_pop_macro()?;
         } else if symbol == self.keywords.message {
-            self.handle_pragma_message()?;
+            self.handle_pragma_diagnostic_message(DiagnosticLevel::Note)?;
         } else if symbol == self.keywords.warning {
-            self.handle_pragma_warning(DiagnosticLevel::Warning)?;
+            self.handle_pragma_diagnostic_message(DiagnosticLevel::Warning)?;
         } else if symbol == self.keywords.error {
-            self.handle_pragma_error(DiagnosticLevel::Error)?;
+            self.handle_pragma_diagnostic_message(DiagnosticLevel::Error)?;
         } else if symbol == self.keywords.pack {
             return self.handle_pragma_pack();
         } else if symbol == self.keywords.gcc {
@@ -742,8 +742,6 @@ impl<'src> Preprocessor<'src> {
         } else {
             let err = self.error(PPError::UnknownPragma(symbol), token.location);
             self.report_pp_warning(err);
-            self.collect_tokens_until_eod();
-            return Ok(());
         }
 
         self.collect_tokens_until_eod();
@@ -815,21 +813,10 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    fn handle_pragma_message(&mut self) -> Result<(), PPDiag> {
-        self.handle_pragma_diagnostic_message(DiagnosticLevel::Note)
-    }
-
-    fn handle_pragma_warning(&mut self, level: DiagnosticLevel) -> Result<(), PPDiag> {
-        self.handle_pragma_diagnostic_message(level)
-    }
-
-    fn handle_pragma_error(&mut self, level: DiagnosticLevel) -> Result<(), PPDiag> {
-        self.handle_pragma_diagnostic_message(level)
-    }
-
     fn handle_diagnostic_directive(&mut self, is_error: bool) -> Result<(), PPDiag> {
         let directive_location = self.get_current_location();
-        let message = self.read_directive_message();
+        let tokens = self.collect_tokens_until_eod();
+        let message = self.tokens_to_string(&tokens);
 
         let formatted_message = if is_error {
             format!("#error directive: {}", message)
@@ -851,71 +838,71 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn handle_pragma_pack(&mut self) -> Result<(), PPDiag> {
-        let tokens = self.collect_tokens_until_eod();
         let loc = self.get_current_location();
 
-        if tokens.is_empty() {
-            let token = PPToken::new(
-                PPTokenKind::PragmaPack(PragmaPackKind::Set(None)),
-                PPTokenFlags::empty(),
-                loc,
-                0,
-            );
-            self.pending_tokens.push(token);
+        // 1. Get first token
+        let t1 = match self.lex_token() {
+            Some(t) if t.kind != PPTokenKind::Eod => t,
+            _ => {
+                // Empty, e.g. `#pragma pack`
+                // Emit warning for missing '(' after '#pragma pack' and ignore
+                self.report_warning_with_name(loc, "missing '(' after '#pragma pack'".to_string(), "#pragmas");
+                return Ok(());
+            }
+        };
+
+        // 2. Check for optional '('
+        if t1.kind != PPTokenKind::LeftParen {
+            // Missing '(', warn and ignore
+            self.report_warning_with_name(t1.location, "missing '(' after '#pragma pack'".to_string(), "#pragmas");
+            // Consume the remaining tokens on the line
+            while let Some(t) = self.lex_token() {
+                if t.kind == PPTokenKind::Eod {
+                    break;
+                }
+            }
             return Ok(());
         }
 
-        let mut it = tokens.iter().peekable();
+        // We have the left paren!
+        let t2 = self.expect_token()?;
 
-        // Optional '('
-        let has_paren = if let Some(t) = it.peek()
-            && t.kind == PPTokenKind::LeftParen
-        {
-            it.next();
-            true
-        } else {
-            false
-        };
-
-        // If '()', it's Set(None)
-        let kind = if has_paren && it.peek().map(|t| t.kind) == Some(PPTokenKind::RightParen) {
+        // 3. If '()', it's Set(None)
+        let kind = if t2.kind == PPTokenKind::RightParen {
             PragmaPackKind::Set(None)
-        } else if let Some(t) = it.next() {
-            match t.kind {
+        } else {
+            // Process the main argument: t2
+            let parsed_kind = match t2.kind {
                 PPTokenKind::Identifier(sym) if sym == self.keywords.push => {
-                    if it.peek().map(|t| t.kind) == Some(PPTokenKind::Comma) {
-                        it.next(); // consume ','
-                        let val_token = it
-                            .next()
-                            .ok_or_else(|| self.error(PPError::UnknownPragma(self.keywords.pack), t.location))?;
-                        PragmaPackKind::PushSet(self.parse_pragma_pack_value(val_token)?)
+                    // Check if followed by comma
+                    if let Some(t3) = self.lex_token() {
+                        if t3.kind == PPTokenKind::Comma {
+                            let val_token = self.expect_token()?;
+                            PragmaPackKind::PushSet(self.parse_pragma_pack_value(&val_token)?)
+                        } else {
+                            // Put t3 back since it's not a comma (e.g. it could be ')' or Eod)
+                            self.pending_tokens.push(t3);
+                            PragmaPackKind::Push
+                        }
                     } else {
                         PragmaPackKind::Push
                     }
                 }
                 PPTokenKind::Identifier(sym) if sym == self.keywords.pop => PragmaPackKind::Pop,
                 PPTokenKind::Identifier(_) | PPTokenKind::Number => {
-                    PragmaPackKind::Set(Some(self.parse_pragma_pack_value(t)?))
+                    PragmaPackKind::Set(Some(self.parse_pragma_pack_value(&t2)?))
                 }
-                _ => return self.emit_error(PPError::UnknownPragma(self.keywords.pack), t.location),
-            }
-        } else {
-            PragmaPackKind::Set(None)
+                _ => return self.emit_error(PPError::UnknownPragma(self.keywords.pack), t2.location),
+            };
+
+            // We expect a RightParen now
+            self.expect_kind(PPTokenKind::RightParen)?;
+
+            parsed_kind
         };
 
-        if has_paren {
-            if let Some(t) = it.next() {
-                if t.kind != PPTokenKind::RightParen {
-                    return self.emit_error(PPError::UnknownPragma(self.keywords.pack), t.location);
-                }
-            } else {
-                return self.emit_error(PPError::UnknownPragma(self.keywords.pack), loc);
-            }
-        }
-
-        if let Some(t) = it.next() {
-            return self.emit_error(PPError::ExpectedEod, t.location);
-        }
+        // We expect Eod/Eof at the end
+        self.expect_eod()?;
 
         self.pending_tokens.push(PPToken::new(
             PPTokenKind::PragmaPack(kind),
@@ -949,11 +936,6 @@ impl<'src> Preprocessor<'src> {
 
     fn handle_warning(&mut self) -> Result<(), PPDiag> {
         self.handle_diagnostic_directive(false)
-    }
-
-    fn read_directive_message(&mut self) -> String {
-        let tokens = self.collect_tokens_until_eod();
-        self.tokens_to_string(&tokens)
     }
 
     // -------------------------------------------------------------------------
@@ -1015,25 +997,25 @@ impl<'src> Preprocessor<'src> {
 
         // Strip leading "-W" if present
         let warning_name = if let Some(stripped) = flag.strip_prefix("-W") {
-            stripped.to_string()
+            stripped
         } else {
-            flag.to_string()
+            flag
         };
 
         match new_level {
             None => {
                 // "ignored" — add to the disabled set
-                self.diag.disabled_warnings.insert(warning_name);
+                self.diag.disabled_warnings.insert(warning_name.to_string());
             }
             Some(DiagnosticLevel::Warning) => {
                 // "warning" — re-enable (remove from disabled set)
-                self.diag.disabled_warnings.remove(&warning_name);
+                self.diag.disabled_warnings.remove(warning_name);
             }
             Some(_) => {
                 // "error" / "fatal" — re-enable as error-level
                 // For now simply remove from disabled set; full escalation would
                 // require a separate error-upgrade table in DiagnosticEngine.
-                self.diag.disabled_warnings.remove(&warning_name);
+                self.diag.disabled_warnings.remove(warning_name);
             }
         }
 

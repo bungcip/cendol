@@ -9,7 +9,7 @@ use target_lexicon::{DefaultToHost, Triple};
 
 use crate::{
     driver::artifact::CompilePhase,
-    lang_options::{CStandard, SignedOverflowMode},
+    lang_options::{CStandard, LangOptions, SignedOverflowMode},
 };
 
 /// CLI interface using clap
@@ -241,7 +241,7 @@ pub struct CompileConfig {
     pub defines: Vec<(String, Option<String>)>, // NAME -> VALUE
     pub warnings: Vec<String>,
     pub c_standard: CStandard,
-    pub lang_options: crate::lang_options::LangOptions,
+    pub lang_options: LangOptions,
     pub target: DefaultToHost,
 
     pub optimization: Option<String>,

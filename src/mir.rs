@@ -41,7 +41,11 @@ macro_rules! mir_id {
                 (self.0.get() - 1) as usize
             }
         }
+    };
+}
 
+macro_rules! impl_display_for_id {
+    ($name:ident) => {
         impl std::fmt::Display for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 write!(f, "{}", self.0.get())
@@ -51,12 +55,107 @@ macro_rules! mir_id {
 }
 
 mir_id!(GlobalId, "Unique identifier for MIR global variables");
+impl_display_for_id!(GlobalId);
+
 mir_id!(MirFunctionId, "Unique identifier for MIR functions");
+impl_display_for_id!(MirFunctionId);
+
 mir_id!(MirBlockId, "Unique identifier for MIR blocks");
+impl_display_for_id!(MirBlockId);
+
 mir_id!(MirStmtId, "Unique identifier for MIR statements");
+impl_display_for_id!(MirStmtId);
+
 mir_id!(LocalId, "Unique identifier for MIR locals");
+impl_display_for_id!(LocalId);
+
 mir_id!(TypeId, "Unique identifier for MIR types");
+
 mir_id!(ConstValueId, "Unique identifier for MIR constant values");
+impl_display_for_id!(ConstValueId);
+
+use std::cell::Cell;
+
+thread_local! {
+    pub(crate) static ACTIVE_TYPES: Cell<Option<*const [MirType]>> = const { Cell::new(None) };
+}
+
+pub(crate) struct ActiveTypesGuard;
+
+impl ActiveTypesGuard {
+    pub(crate) fn new(types: &[MirType]) -> Self {
+        ACTIVE_TYPES.with(|cell| {
+            cell.set(Some(types as *const [MirType]));
+        });
+        ActiveTypesGuard
+    }
+}
+
+impl Drop for ActiveTypesGuard {
+    fn drop(&mut self) {
+        ACTIVE_TYPES.with(|cell| {
+            cell.set(None);
+        });
+    }
+}
+
+impl std::fmt::Display for TypeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let formatted = ACTIVE_TYPES.with(|types| {
+            if let Some(ptr) = types.get() {
+                // SAFETY: This pointer is only set during validation/formatting in the same thread.
+                let slice = unsafe { &*ptr };
+                if let Some(ty) = slice.get(self.index()) {
+                    return Some(ty.to_string());
+                }
+            }
+            None
+        });
+        if let Some(s) = formatted {
+            write!(f, "{}", s)
+        } else {
+            write!(f, "{}", self.get())
+        }
+    }
+}
+
+impl std::fmt::Display for MirType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MirType::Void => write!(f, "void"),
+            MirType::Bool => write!(f, "_Bool"),
+            MirType::I8 => write!(f, "i8"),
+            MirType::I16 => write!(f, "i16"),
+            MirType::I32 => write!(f, "i32"),
+            MirType::I64 => write!(f, "i64"),
+            MirType::U8 => write!(f, "u8"),
+            MirType::U16 => write!(f, "u16"),
+            MirType::U32 => write!(f, "u32"),
+            MirType::U64 => write!(f, "u64"),
+            MirType::F32 => write!(f, "f32"),
+            MirType::F64 => write!(f, "f64"),
+            MirType::F80 => write!(f, "f80"),
+            MirType::F128 => write!(f, "f128"),
+            MirType::Pointer { pointee } => write!(f, "*{}", pointee),
+            MirType::Array { element, size, .. } => write!(f, "{}[{}]", element, size),
+            MirType::Function {
+                return_type,
+                params,
+                is_variadic,
+            } => {
+                write!(f, "fn(")?;
+                for (i, p) in params.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", p)?;
+                }
+                write!(f, ") -> {}{}", return_type, if *is_variadic { "..." } else { "" })
+            }
+            MirType::Record { name, .. } => write!(f, "struct/union {}", name),
+        }
+    }
+}
 
 /// Function linkage - distinguishes between internal, external, and imported functions
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]

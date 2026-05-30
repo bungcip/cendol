@@ -65,12 +65,25 @@ fn add_type(mir: &mut MirProgram, ty: MirType) -> TypeId {
 fn test_validation_error_display() {
     let local_id = LocalId::new(1).unwrap();
     let type_id = TypeId::new(1).unwrap();
+    let type_id2 = TypeId::new(2).unwrap();
     let global_id = GlobalId::new(1).unwrap();
     let func_id = MirFunctionId::new(1).unwrap();
     let block_id = MirBlockId::new(1).unwrap();
     let stmt_id = MirStmtId::new(1).unwrap();
     let const_id = ConstValueId::new(1).unwrap();
     let name_id = NameId::new("test_func");
+
+    let err = ValidationError::InvalidCast(type_id, type_id2);
+
+    // Without guard, formats using raw integer IDs
+    assert_eq!(format!("{}", err), "Invalid cast from type 1 to type 2");
+
+    // With guard, formats using type names recursively
+    let types = vec![MirType::I32, MirType::Pointer { pointee: type_id }];
+    {
+        let _guard = crate::mir::ActiveTypesGuard::new(&types);
+        assert_eq!(format!("{}", err), "Invalid cast from type i32 to type *i32");
+    }
 
     let errors = vec![
         ValidationError::IllegalOperation("test op".to_string()),
@@ -80,12 +93,12 @@ fn test_validation_error_display() {
         ValidationError::FunctionNotFound(func_id),
         ValidationError::BlockNotFound(block_id),
         ValidationError::StatementNotFound(stmt_id),
-        ValidationError::InvalidCast(type_id, TypeId::new(2).unwrap()),
+        ValidationError::InvalidCast(type_id, type_id2),
         ValidationError::FunctionCallArgTypeMismatch {
             func_name: name_id,
             arg_index: 0,
             expected_type: type_id,
-            actual_type: TypeId::new(2).unwrap(),
+            actual_type: type_id2,
         },
         ValidationError::ConstantValueOutOfRange {
             const_id,

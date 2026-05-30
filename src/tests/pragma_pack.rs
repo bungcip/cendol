@@ -146,3 +146,42 @@ fn test_pragma_pack_in_function() {
     let layout = find_layout(&registry, "S");
     assert_eq!(layout.size, 5);
 }
+
+#[test]
+fn test_pragma_pack_missing_paren_warning() {
+    use crate::driver::artifact::CompilePhase;
+    use crate::tests::test_utils::run_pass_with_diagnostic_message;
+
+    run_pass_with_diagnostic_message(
+        r#"
+        #pragma pack push
+        int main() {
+            return 0;
+        }
+        "#,
+        CompilePhase::Preprocess,
+        "missing '(' after '#pragma pack'",
+    );
+}
+
+#[test]
+fn test_pragma_pack_missing_paren_ignored() {
+    let (_, registry, _) = setup_lowering(
+        r#"
+        #pragma pack(1)
+        #pragma pack(push, 2)
+        #pragma pack push
+        #pragma pack(pop)
+        struct S {
+            char a;
+            int b;
+        };
+        "#,
+    );
+
+    let layout = find_layout(&registry, "S");
+    assert_eq!(
+        layout.size, 5,
+        "S size should be 5 because the invalid push was ignored"
+    );
+}

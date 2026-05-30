@@ -166,7 +166,11 @@ fn parse_function_definition_tail(
     start_loc: SourceLoc,
     dummy: ParsedNodeRef,
 ) -> Result<ParsedNodeRef, ParseDiag> {
-    let scope_id = parser.ast.parsed_types.get_declarator_scope(declarator).unwrap_or(ScopeId::GLOBAL);
+    let scope_id = parser
+        .ast
+        .parsed_types
+        .get_declarator_scope(declarator)
+        .unwrap_or(ScopeId::GLOBAL);
     let old_scope = parser.symbol_table.current_scope();
     parser.symbol_table.set_current_scope(scope_id);
     parser.next_compound_uses_scope = Some(scope_id);

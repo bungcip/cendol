@@ -17,7 +17,7 @@ use crate::ast::literal::{LitKind, LitRef, LitVal, StrPrefix};
 use crate::ast::parsed::{ParsedDecl, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, TypeSpec};
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, DiagnosticLevel};
-use crate::lang_options::{CStandard, Visibility, LangOptions};
+use crate::lang_options::{CStandard, LangOptions, Visibility};
 use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::errors::{SemanticDiag, SemanticError};
 use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
@@ -81,7 +81,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         diag: &'src mut DiagnosticEngine,
         symbol_table: &'a mut SymbolTable,
         registry: &'a mut TypeRegistry,
-        lang_opts: &'a crate::lang_options::LangOptions,
+        lang_opts: &'a LangOptions,
     ) -> Self {
         Self {
             parsed_ast,
@@ -636,7 +636,7 @@ pub(crate) fn visit_ast(
     diag: &mut DiagnosticEngine,
     symbol_table: &mut SymbolTable,
     registry: &mut TypeRegistry,
-    lang_opts: &crate::lang_options::LangOptions,
+    lang_opts: &LangOptions,
 ) {
     symbol_table.clear_parser_symbols();
 
@@ -993,7 +993,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(span, SemanticError::AlignmentNotAllowed { context: "function" });
         }
     }
-
 
     fn visit_function_definition(&mut self, func_def: &ParsedFunctionDef, node: NodeRef, span: SourceSpan) {
         let mut spec_info = self.visit_decl_specs(&func_def.specifiers, span);

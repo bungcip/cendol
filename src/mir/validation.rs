@@ -54,14 +54,14 @@ impl std::fmt::Display for ValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ValidationError::IllegalOperation(op) => write!(f, "Illegal operation: {}", op),
-            ValidationError::TypeNotFound(type_id) => write!(f, "Type {} not found", type_id.get()),
+            ValidationError::TypeNotFound(type_id) => write!(f, "Type {} not found", type_id),
             ValidationError::LocalNotFound(local_id) => write!(f, "Local {} not found", local_id.get()),
             ValidationError::GlobalNotFound(global_id) => write!(f, "Global {} not found", global_id.get()),
             ValidationError::FunctionNotFound(func_id) => write!(f, "Function {} not found", func_id.get()),
             ValidationError::BlockNotFound(block_id) => write!(f, "Block {} not found", block_id.get()),
             ValidationError::StatementNotFound(stmt_id) => write!(f, "Statement {} not found", stmt_id.get()),
             ValidationError::InvalidCast(from, to) => {
-                write!(f, "Invalid cast from type {} to type {}", from.get(), to.get())
+                write!(f, "Invalid cast from type {} to type {}", from, to)
             }
             ValidationError::FunctionCallArgTypeMismatch {
                 func_name,
@@ -72,10 +72,7 @@ impl std::fmt::Display for ValidationError {
                 write!(
                     f,
                     "Function '{}' argument {} type mismatch: expected type {}, got type {}",
-                    func_name,
-                    arg_index,
-                    expected_type.get(),
-                    actual_type.get()
+                    func_name, arg_index, expected_type, actual_type
                 )
             }
             ValidationError::ConstantValueOutOfRange {
@@ -88,7 +85,7 @@ impl std::fmt::Display for ValidationError {
                     "Constant {} value {} is out of range for type {}",
                     const_id.get(),
                     value,
-                    type_id.get()
+                    type_id
                 )
             }
         }
@@ -123,6 +120,7 @@ impl<'a> MirValidator<'a> {
     ///
     /// Returns Ok(()) if validation passes, or Err(Vec<ValidationError>) if errors are found
     pub(crate) fn validate(mut self) -> Result<(), Vec<ValidationError>> {
+        let _guard = crate::mir::ActiveTypesGuard::new(&self.mir.types);
         // eprintln!("VALIDATE: Starting validation");
         self.errors.clear();
 
@@ -241,41 +239,6 @@ impl<'a> MirValidator<'a> {
         }
     }
 
-    fn format_mir_type(&self, id: TypeId) -> String {
-        match self.mir.get_type(id) {
-            MirType::Void => "void".to_string(),
-            MirType::Bool => "_Bool".to_string(),
-            MirType::I8 => "i8".to_string(),
-            MirType::I16 => "i16".to_string(),
-            MirType::I32 => "i32".to_string(),
-            MirType::I64 => "i64".to_string(),
-            MirType::U8 => "u8".to_string(),
-            MirType::U16 => "u16".to_string(),
-            MirType::U32 => "u32".to_string(),
-            MirType::U64 => "u64".to_string(),
-            MirType::F32 => "f32".to_string(),
-            MirType::F64 => "f64".to_string(),
-            MirType::F80 => "f80".to_string(),
-            MirType::F128 => "f128".to_string(),
-            MirType::Pointer { pointee } => format!("*{}", self.format_mir_type(*pointee)),
-            MirType::Array { element, size, .. } => format!("{}[{}]", self.format_mir_type(*element), size),
-            MirType::Function {
-                return_type,
-                params,
-                is_variadic,
-            } => {
-                let params_str: Vec<String> = params.iter().map(|p| self.format_mir_type(*p)).collect();
-                format!(
-                    "fn({}) -> {}{}",
-                    params_str.join(", "),
-                    self.format_mir_type(*return_type),
-                    if *is_variadic { "..." } else { "" }
-                )
-            }
-            MirType::Record { name, .. } => format!("struct/union {}", name),
-        }
-    }
-
     fn validate_statement(&mut self, stmt: &MirStmt) {
         match stmt {
             MirStmt::Assign(place, rvalue) => {
@@ -288,9 +251,7 @@ impl<'a> MirValidator<'a> {
                 {
                     eprintln!(
                         "MIR VALIDATION ERROR: InvalidCast from {} to {} in rvalue {:?}",
-                        self.format_mir_type(from),
-                        self.format_mir_type(to),
-                        rvalue
+                        from, to, rvalue
                     );
                     self.errors.push(ValidationError::InvalidCast(from, to));
                 }

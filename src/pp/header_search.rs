@@ -65,19 +65,19 @@ impl HeaderSearch {
     pub(crate) fn resolve_next_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
         let mut found_current = false;
 
-        let paths_to_search: Vec<&[PathBuf]> = if !is_angled {
-            vec![
+        let paths_to_search: &[&[PathBuf]] = if !is_angled {
+            &[
                 &self.quoted_includes,
                 &self.angled_includes,
                 &self.system_path,
                 &self.framework_path,
             ]
         } else {
-            vec![&self.angled_includes, &self.system_path, &self.framework_path]
+            &[&self.angled_includes, &self.system_path, &self.framework_path]
         };
 
         for path_list in paths_to_search {
-            for path in path_list {
+            for path in *path_list {
                 if !found_current && current_dir.starts_with(path) {
                     found_current = true;
                     continue;

@@ -552,18 +552,15 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     pub(super) fn parse_attributes_lenient(&mut self) -> Vec<crate::ast::parsed::DeclSpec> {
         let mut specs = Vec::new();
         while self.is_token(TokenKind::Attribute) || self.at_c23_attribute_start() {
-            if self.is_token(TokenKind::Attribute) {
-                if let Ok(attrs) = declarations::parse_attribute(self) {
-                    specs.extend(attrs);
-                } else {
-                    break;
-                }
+            let res = if self.is_token(TokenKind::Attribute) {
+                declarations::parse_attribute(self)
             } else {
-                if let Ok(attrs) = declarations::parse_c23_attribute(self) {
-                    specs.extend(attrs);
-                } else {
-                    break;
-                }
+                declarations::parse_c23_attribute(self)
+            };
+            if let Ok(attrs) = res {
+                specs.extend(attrs);
+            } else {
+                break;
             }
         }
         specs

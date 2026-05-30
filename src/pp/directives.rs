@@ -1082,11 +1082,7 @@ impl<'src> Preprocessor<'src> {
 
     /// `#pragma GCC poison ident1 ident2 …`
     fn handle_pragma_gcc_poison(&mut self) -> Result<(), PPDiag> {
-        loop {
-            let tok = match self.lex_token() {
-                Some(t) => t,
-                None => break,
-            };
+        while let Some(tok) = self.lex_token() {
             match tok.kind {
                 PPTokenKind::Eod | PPTokenKind::Eof => break,
                 PPTokenKind::Identifier(sym) => {

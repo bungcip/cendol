@@ -1047,11 +1047,11 @@ impl<'src> Preprocessor<'src> {
     /// Lex the next token
     pub(super) fn lex_token(&mut self) -> Option<PPToken> {
         let token = self.lex_token_internal()?;
-        if let PPTokenKind::Identifier(sym) = token.kind {
-            if self.poisoned_identifiers.contains(&sym) {
-                let err = self.error(PPError::PoisonedIdentifier(sym), token.location);
-                self.report_pp_error(err);
-            }
+        if let PPTokenKind::Identifier(sym) = token.kind
+            && self.poisoned_identifiers.contains(&sym)
+        {
+            let err = self.error(PPError::PoisonedIdentifier(sym), token.location);
+            self.report_pp_error(err);
         }
         Some(token)
     }

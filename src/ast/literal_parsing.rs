@@ -32,13 +32,9 @@ pub(crate) fn parse_integer_literal(text: &str) -> Option<(i64, Option<IntSuffix
         return None;
     }
 
-    let (radix, digits) = if let Some(stripped) = number_part.strip_prefix("0x") {
+    let (radix, digits) = if let Some(stripped) = number_part.strip_prefix("0x").or_else(|| number_part.strip_prefix("0X")) {
         (16, stripped)
-    } else if let Some(stripped) = number_part.strip_prefix("0X") {
-        (16, stripped)
-    } else if let Some(stripped) = number_part.strip_prefix("0b") {
-        (2, stripped)
-    } else if let Some(stripped) = number_part.strip_prefix("0B") {
+    } else if let Some(stripped) = number_part.strip_prefix("0b").or_else(|| number_part.strip_prefix("0B")) {
         (2, stripped)
     } else if let Some(stripped) = number_part.strip_prefix('0') {
         if stripped.is_empty() {

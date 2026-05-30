@@ -2,7 +2,6 @@
 //!
 //! Responsibility
 //! -> VarDecl/RecordDecl/EnumDecl/TypedefDecl, FunctionDef -> Function)
-//! - Scope Construction
 //! - Symbol Insertion to Symbol Table
 //! - Name lookup
 //! - Making Sure Struct with body is is_complete = true
@@ -18,7 +17,7 @@ use crate::ast::literal::{LitKind, LitRef, LitVal, StrPrefix};
 use crate::ast::parsed::{ParsedDecl, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, TypeSpec};
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, DiagnosticLevel};
-use crate::lang_options::{CStandard, Visibility};
+use crate::lang_options::{CStandard, Visibility, LangOptions};
 use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::errors::{SemanticDiag, SemanticError};
 use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
@@ -38,16 +37,13 @@ pub(crate) struct LowerCtx<'a, 'src> {
     pub(crate) diag: &'src mut DiagnosticEngine,
     pub(crate) symbol_table: &'a mut SymbolTable,
     pub(crate) registry: &'a mut TypeRegistry,
-    /// If Some, the next CompoundStatement lowering will use this scope instead of pushing a new one.
-    /// This is used for function bodies to share the parameter scope.
-    pub(crate) next_compound_uses_scope: Option<ScopeId>,
     pub(crate) pragma_pack_stack: Vec<Option<u8>>,
     pub(crate) current_packing: Option<u8>,
     /// Stack for `#pragma GCC visibility push(...)` / `pop`
     pub(crate) visibility_stack: Vec<Visibility>,
     pub(crate) current_visibility: Visibility,
     pub(crate) in_prototype: bool,
-    pub(crate) lang_opts: &'a crate::lang_options::LangOptions,
+    pub(crate) lang_opts: &'a LangOptions,
     pub(crate) anon_counter: u32,
     pub(crate) type_to_tag_sym: HashMap<TypeRef, SymbolRef>,
     pub(crate) keywords: LoweringKeywords,
@@ -93,7 +89,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             diag,
             symbol_table,
             registry,
-            next_compound_uses_scope: None,
             pragma_pack_stack: Vec::new(),
             current_packing: None,
             visibility_stack: Vec::new(),
@@ -643,6 +638,8 @@ pub(crate) fn visit_ast(
     registry: &mut TypeRegistry,
     lang_opts: &crate::lang_options::LangOptions,
 ) {
+    symbol_table.clear_parser_symbols();
+
     // Create lowering context
     let mut lower_ctx = LowerCtx::new(parsed_ast, ast, diag, symbol_table, registry, lang_opts);
 
@@ -667,8 +664,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::TranslationUnit(children) => {
                 smallvec![self.visit_translation_unit(children, span)]
             }
-            ParsedNodeKind::CompoundStmt(stmts) => {
-                smallvec![self.visit_compound_statement(stmts, target_slots, span)]
+            ParsedNodeKind::CompoundStmt(stmts, scope_id) => {
+                smallvec![self.visit_compound_statement(stmts, target_slots, span, *scope_id)]
             }
             ParsedNodeKind::Declaration(decl) => self.visit_declaration(decl, span, target_slots),
             ParsedNodeKind::FunctionDef(func_def) => {
@@ -791,13 +788,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         stmts: &[ParsedNodeRef],
         target_slots: Option<&[NodeRef]>,
         span: SourceSpan,
+        scope_id: ScopeId,
     ) -> NodeRef {
-        let (scope_id, pushed) = if let Some(sid) = self.next_compound_uses_scope.take() {
-            (sid, false)
-        } else {
-            (self.symbol_table.push_scope(), true)
-        };
-
         let node = self.get_or_push_slot(target_slots, span);
 
         let mut total_stmt_nodes = 0;
@@ -828,11 +820,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
         }
 
-        if pushed {
-            self.symbol_table.pop_scope();
-        } else {
-            self.symbol_table.set_current_scope(old_scope);
-        }
+        self.symbol_table.set_current_scope(old_scope);
 
         self.ast.set_kind(
             node,
@@ -1006,6 +994,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
+
     fn visit_function_definition(&mut self, func_def: &ParsedFunctionDef, node: NodeRef, span: SourceSpan) {
         let mut spec_info = self.visit_decl_specs(&func_def.specifiers, span);
         let mut base_qt = spec_info
@@ -1044,10 +1033,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let final_is_noreturn = spec_info.is_noreturn || existing_symbol_is_noreturn;
 
-        let parameters = self.get_definition_params(func_def.declarator).unwrap_or_default();
-
-        // Get parameters calculated earlier
-        let param_len = parameters.len() as u16;
+        // Get parameters count from the function type
+        let param_len = if let TypeKind::Function { parameters, .. } = &self.registry.get(final_qt.ty()).kind {
+            parameters.len() as u16
+        } else {
+            0
+        };
 
         let func_sym = match self.symbol_table.define_function(
             func_name,
@@ -1079,7 +1070,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         };
         self.symbol_table.get_symbol_mut(func_sym).visibility = self.current_visibility;
 
-        let scope_id = self.symbol_table.push_scope();
+        let scope_id = self
+            .parsed_ast
+            .parsed_types
+            .get_declarator_scope(func_def.declarator)
+            .unwrap_or(ScopeId::GLOBAL);
+        let old_scope = self.symbol_table.current_scope();
+        self.symbol_table.set_current_scope(scope_id);
 
         // Implement __func__ (C11 6.4.2.2)
         {
@@ -1201,12 +1198,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         // 2. Visit body directly into the last dummy slot
-        self.next_compound_uses_scope = Some(scope_id);
         let body_dummy = child_dummies[param_len as usize];
         self.visit_single_statement_into(func_def.body, body_dummy);
-        self.next_compound_uses_scope = None;
 
-        self.symbol_table.pop_scope();
+        self.symbol_table.set_current_scope(old_scope);
 
         self.ast.set_kind(
             node,
@@ -1968,7 +1963,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             })),
             ParsedNodeKind::For(stmt) => {
                 let res_node = self.get_or_push_slot(target_slots, span);
-                let scope_id = self.symbol_table.push_scope();
+                let scope_id = stmt.scope_id;
+                let old_scope = self.symbol_table.current_scope();
+                self.symbol_table.set_current_scope(scope_id);
                 let child_start = self.push_dummy(span);
                 let condition_dummy = self.push_dummy(span);
                 let increment_dummy = self.push_dummy(span);
@@ -2018,7 +2015,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         scope_id,
                     }),
                 );
-                self.symbol_table.pop_scope();
+                self.symbol_table.set_current_scope(old_scope);
                 smallvec![res_node]
             }
 
@@ -2985,7 +2982,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let array_qt = self.lower_array_declarator(*inner, size, current_type, span, ctx);
                 self.apply_declarator(array_qt, *inner, span, spec_info, ctx)
             }
-            ParsedDeclarator::Function { params, flags, inner } => {
+            ParsedDeclarator::Function {
+                params,
+                flags,
+                inner,
+                scope_id,
+            } => {
                 if current_type.is_array() {
                     self.report_error(span, SemanticError::FunctionReturningArray);
                 }
@@ -3003,7 +3005,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
 
                 let params_list = self.parsed_ast.parsed_types.get_params(*params);
-                let processed_params = self.visit_function_parameters(params_list, false);
+                let processed_params = self.visit_function_parameters(params_list, false, *scope_id);
                 let is_noreturn = spec_info.as_ref().map(|s| s.is_noreturn).unwrap_or(false);
                 let function_type =
                     self.registry
@@ -3472,12 +3474,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn get_definition_params(&mut self, declarator: DeclaratorRef) -> Option<Vec<FunctionParam>> {
         let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
         match declarator {
-            ParsedDeclarator::Function { inner, params, .. } => {
+            ParsedDeclarator::Function {
+                inner,
+                params,
+                scope_id,
+                ..
+            } => {
                 if let Some(inner_params) = self.get_definition_params(*inner) {
                     Some(inner_params)
                 } else {
                     let params_list = self.parsed_ast.parsed_types.get_params(*params);
-                    Some(self.visit_function_parameters(params_list, true))
+                    Some(self.visit_function_parameters(params_list, true, *scope_id))
                 }
             }
             ParsedDeclarator::Pointer { inner, .. } => self.get_definition_params(*inner),
@@ -3573,7 +3580,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         info
     }
 
-    fn visit_function_parameters(&mut self, params: &[ParsedParam], is_definition: bool) -> Vec<FunctionParam> {
+    fn visit_function_parameters(
+        &mut self,
+        params: &[ParsedParam],
+        is_definition: bool,
+        scope_id: ScopeId,
+    ) -> Vec<FunctionParam> {
         let mut seen_names: HashMap<NameId, SourceSpan> = HashMap::new();
         let mut processed_params = Vec::with_capacity(params.len());
 
@@ -3595,12 +3607,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let old_in_prototype = self.in_prototype;
         self.in_prototype = !is_definition;
 
-        let pushed_scope = if !is_definition || self.symbol_table.current_scope() == ScopeId::GLOBAL {
-            self.symbol_table.push_scope();
-            true
-        } else {
-            false
-        };
+        let old_scope = self.symbol_table.current_scope();
+        self.symbol_table.set_current_scope(scope_id);
 
         for param in params {
             let span = param.span;
@@ -3649,9 +3657,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         decayed_qt,
                         span,
                         Variable {
-                            is_global: self.symbol_table.current_scope() == ScopeId::GLOBAL,
-                            storage: param.storage,
+                            is_global: false,
                             is_thread_local: false,
+                            storage: param.storage,
                             initializer: None,
                             alignment: None,
                             cleanup_func: None,
@@ -3691,10 +3699,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             });
         }
 
-        if pushed_scope {
-            self.symbol_table.pop_scope();
+        if !is_definition {
+            let scope = self.symbol_table.get_scope_mut(scope_id);
+            scope.symbols.clear();
+            scope.tags.clear();
+            scope.labels.clear();
         }
 
+        self.symbol_table.set_current_scope(old_scope);
         self.in_prototype = old_in_prototype;
 
         processed_params

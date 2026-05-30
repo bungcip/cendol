@@ -2,7 +2,7 @@ use crate::{
     ast::{
         BinaryOp, FunctionSpec, NameId, ParsedType, SourceSpan, StorageClass, TypeQualifier, UnaryOp, literal::LitRef,
     },
-    semantic::TypeQualifiers,
+    semantic::{ScopeId, TypeQualifiers},
 };
 use std::num::NonZeroU32;
 use thin_vec::ThinVec;
@@ -111,7 +111,7 @@ pub enum ParsedNodeKind {
     BuiltinConvertVector(ParsedNodeRef, ParsedType),
 
     // --- Statements ---
-    CompoundStmt(Box<[ParsedNodeRef]>),
+    CompoundStmt(Box<[ParsedNodeRef]>, ScopeId),
     If(ParsedIfStmt),
     While(ParsedWhileStmt),
     DoWhile(ParsedNodeRef, ParsedNodeRef),
@@ -173,6 +173,7 @@ pub struct ParsedForStmt {
     pub condition: Option<ParsedNodeRef>,
     pub increment: Option<ParsedNodeRef>,
     pub body: ParsedNodeRef,
+    pub scope_id: ScopeId,
 }
 
 #[derive(Debug, Clone)]
@@ -547,7 +548,7 @@ impl ParsedNodeKind {
                 f(*t);
                 f(*e);
             }
-            ParsedNodeKind::CompoundStmt(stmts) | ParsedNodeKind::TranslationUnit(stmts) => {
+            ParsedNodeKind::CompoundStmt(stmts, _) | ParsedNodeKind::TranslationUnit(stmts) => {
                 for s in stmts.as_ref() {
                     f(*s);
                 }

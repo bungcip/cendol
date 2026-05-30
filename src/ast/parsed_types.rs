@@ -115,6 +115,7 @@ pub enum ParsedDeclarator {
         params: ParsedParamRange,
         flags: FunctionFlags,
         inner: DeclaratorRef,
+        scope_id: crate::semantic::ScopeId,
     },
 
     BitField {
@@ -208,5 +209,17 @@ impl ParsedTypeArena {
         let start = range.start as usize;
         let end = start + range.len as usize;
         &self.enum_constants[start..end]
+    }
+
+    /// Get the scope ID associated with a function declarator (traversing pointers, arrays, etc.)
+    pub(crate) fn get_declarator_scope(&self, decl: DeclaratorRef) -> Option<crate::semantic::ScopeId> {
+        match self.get_decl(decl) {
+            ParsedDeclarator::Function { scope_id, .. } => Some(*scope_id),
+            ParsedDeclarator::Pointer { inner, .. } => self.get_declarator_scope(*inner),
+            ParsedDeclarator::Array { inner, .. } => self.get_declarator_scope(*inner),
+            ParsedDeclarator::BitField { inner, .. } => self.get_declarator_scope(*inner),
+            ParsedDeclarator::Attribute { inner, .. } => self.get_declarator_scope(*inner),
+            _ => None,
+        }
     }
 }

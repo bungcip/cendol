@@ -368,7 +368,7 @@ impl AstDumper {
 
             PNK::GenericSelection(ctrl, assocs) => write!(f, "{}, {:?}", ctrl.get(), assocs)?,
 
-            PNK::CompoundStmt(stmts) => {
+            PNK::CompoundStmt(stmts, _) => {
                 write!(f, "stmts=[")?;
                 Self::write_list(f, stmts)?;
                 write!(f, "]")?

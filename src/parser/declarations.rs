@@ -6,6 +6,7 @@
 
 use crate::ast::*;
 use crate::parser::{ParseDiag, ParseError, Token, TokenKind};
+use crate::semantic::ScopeId;
 use crate::source_manager::{SourceLoc, SourceSpan};
 use thin_vec::ThinVec;
 
@@ -114,7 +115,7 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
             {
                 trx.parser.add_typedef(name);
             } else {
-                trx.parser.type_context.add_non_typedef(name);
+                trx.parser.symbol_table.define_parser_non_typedef(name, span);
             }
         }
 
@@ -165,19 +166,14 @@ fn parse_function_definition_tail(
     start_loc: SourceLoc,
     dummy: ParsedNodeRef,
 ) -> Result<ParsedNodeRef, ParseDiag> {
-    parser.type_context.push_scope();
-
-    if let Some(range) = super::declarator::get_declarator_params(&parser.ast.parsed_types, declarator) {
-        for param in parser.ast.parsed_types.get_params(range) {
-            if let Some(name) = param.name {
-                parser.type_context.add_non_typedef(name);
-            }
-        }
-    }
+    let scope_id = parser.ast.parsed_types.get_declarator_scope(declarator).unwrap_or(ScopeId::GLOBAL);
+    let old_scope = parser.symbol_table.current_scope();
+    parser.symbol_table.set_current_scope(scope_id);
+    parser.next_compound_uses_scope = Some(scope_id);
 
     let res = super::statements::parse_compound_statement(parser);
 
-    parser.type_context.pop_scope();
+    parser.symbol_table.set_current_scope(old_scope);
 
     let (body, body_end_loc) = res?;
 

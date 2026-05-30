@@ -166,27 +166,30 @@ impl CompilerDriver {
 
         // 3. Parsing
         let t2 = Instant::now();
-        let mut parsed_ast = ParsedAst::new();
-        Parser::new(&mut lexer, &mut parsed_ast, &self.config.lang_options)
-            .parse_translation_unit()
-            .map_err(|e| {
-                for diag in e.into_diagnostic() {
-                    self.de.report_streaming(diag, &self.sm);
-                }
-                PipelineError::Fatal
-            })?;
+        let mut symbol_table = SymbolTable::new();
+        let mut parser = Parser::new(&mut lexer, &mut symbol_table, &self.config.lang_options);
+        let parse_result = parser.parse_translation_unit();
+        let parsed_ast = parser.take_ast();
+
+        parse_result.map_err(|e| {
+            for diag in e.into_diagnostic() {
+                self.de.report_streaming(diag, &self.sm);
+            }
+            PipelineError::Fatal
+        })?;
 
         if timing_enabled {
             eprintln!("[TIMING] Parser: {:?}", t2.elapsed());
         }
         if stop_after == CompilePhase::Parse {
             out.parsed_ast = Some(parsed_ast);
+            out.symbol_table = Some(symbol_table); // parser also produces symbol table
             return Ok(out);
         }
 
         // 4. Semantic Lowering
         let t3 = Instant::now();
-        let (ast, symbol_table, registry) = self.visit_parsed_ast(parsed_ast)?;
+        let (ast, symbol_table, registry) = self.visit_parsed_ast(parsed_ast, symbol_table)?;
         if timing_enabled {
             eprintln!("[TIMING] Semantic Lowering: {:?}", t3.elapsed());
         }
@@ -230,8 +233,11 @@ impl CompilerDriver {
         Ok(out)
     }
 
-    fn visit_parsed_ast(&mut self, parsed_ast: ParsedAst) -> Result<(Ast, SymbolTable, TypeRegistry), PipelineError> {
-        let mut symbol_table = SymbolTable::new();
+    fn visit_parsed_ast(
+        &mut self,
+        parsed_ast: ParsedAst,
+        mut symbol_table: SymbolTable,
+    ) -> Result<(Ast, SymbolTable, TypeRegistry), PipelineError> {
         // Use the target triple from configuration to initialize TypeRegistry
         let mut registry = TypeRegistry::new(self.config.target.0.clone());
         let mut ast = Ast::new();

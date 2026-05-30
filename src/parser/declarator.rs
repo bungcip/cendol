@@ -203,12 +203,13 @@ fn parse_trailing_declarators(
             TokenKind::LeftParen => {
                 parser.advance();
                 validate_declarator(&parser.ast.parsed_types, base, DeclaratorKind::Function, token.span)?;
-                let (param_range, is_variadic) = parse_function_parameters(parser)?;
+                let (param_range, is_variadic, scope_id) = parse_function_parameters(parser)?;
                 parser.expect(TokenKind::RightParen)?;
                 base = parser.alloc_decl(ParsedDeclarator::Function {
                     inner: base,
                     params: param_range,
                     flags: FunctionFlags { is_variadic },
+                    scope_id,
                 });
             }
             TokenKind::Colon if allow_bitfield => {
@@ -251,17 +252,22 @@ fn reconstruct_declarator_chain(
     base
 }
 
-fn parse_function_parameters(parser: &mut Parser) -> Result<(ParsedParamRange, bool), ParseDiag> {
+fn parse_function_parameters(
+    parser: &mut Parser,
+) -> Result<(ParsedParamRange, bool, crate::semantic::ScopeId), ParseDiag> {
+    let scope_id = parser.symbol_table.push_scope();
     let mut params = Vec::new();
     let mut is_variadic = false;
 
     if parser.is_token(TokenKind::RightParen) {
-        return Ok((parser.alloc_params(params), is_variadic));
+        parser.symbol_table.pop_scope();
+        return Ok((parser.alloc_params(params), is_variadic, scope_id));
     }
 
     if parser.is_token(TokenKind::Void) && parser.peek_token(0).is_some_and(|t| t.kind == TokenKind::RightParen) {
         parser.advance();
-        return Ok((parser.alloc_params(params), is_variadic));
+        parser.symbol_table.pop_scope();
+        return Ok((parser.alloc_params(params), is_variadic, scope_id));
     }
 
     while !parser.at_eof() && !parser.is_token(TokenKind::RightParen) {
@@ -324,6 +330,10 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ParsedParamRange, b
             }
         }
 
+        if let Some(name_id) = name {
+            parser.symbol_table.define_parser_non_typedef(name_id, span);
+        }
+
         params.push(ParsedParam {
             name,
             ty: param_parsed_type,
@@ -339,7 +349,8 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ParsedParamRange, b
         }
     }
 
-    Ok((parser.alloc_params(params), is_variadic))
+    parser.symbol_table.pop_scope();
+    Ok((parser.alloc_params(params), is_variadic, scope_id))
 }
 
 /// Check if current token starts an abstract declarator
@@ -362,25 +373,6 @@ pub(crate) fn get_declarator_name(arena: &ParsedTypeArena, declarator: Declarato
         ParsedDeclarator::Function { inner, .. } => get_declarator_name(arena, *inner),
         ParsedDeclarator::BitField { inner, .. } => get_declarator_name(arena, *inner),
         ParsedDeclarator::Attribute { inner, .. } => get_declarator_name(arena, *inner),
-    }
-}
-
-/// Extract the parameters from a function declarator, if any
-pub(super) fn get_declarator_params(arena: &ParsedTypeArena, declarator: DeclaratorRef) -> Option<ParsedParamRange> {
-    let declarator = arena.get_decl(declarator);
-    match declarator {
-        ParsedDeclarator::Function { inner, params, .. } => {
-            if let Some(inner_params) = get_declarator_params(arena, *inner) {
-                Some(inner_params)
-            } else {
-                Some(*params)
-            }
-        }
-        ParsedDeclarator::Pointer { inner, .. } => get_declarator_params(arena, *inner),
-        ParsedDeclarator::Array { inner, .. } => get_declarator_params(arena, *inner),
-        ParsedDeclarator::BitField { inner, .. } => get_declarator_params(arena, *inner),
-        ParsedDeclarator::Attribute { inner, .. } => get_declarator_params(arena, *inner),
-        _ => None,
     }
 }
 

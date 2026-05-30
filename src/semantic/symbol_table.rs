@@ -378,7 +378,7 @@ pub enum Namespace {
 }
 
 /// Scope information
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Scope {
     pub parent: Option<ScopeId>,
     pub symbols: HashMap<NameId, SymbolRef>, // Ordinary identifiers
@@ -430,9 +430,6 @@ impl SymbolTable {
         // Initialize global scope
         table.scopes.push(Scope::default());
 
-        // ⚡ Bolt: Add a dummy poison symbol at index 0 (SymbolRef 1).
-        // This ensures that SymbolRef::new(1) which is often used as a placeholder
-        // for error/undeclared symbols doesn't cause out-of-bounds panics if entries is empty.
         table.entries.push(Symbol {
             name: NameId::new(""),
             kind: SymbolKind::Label,
@@ -443,7 +440,6 @@ impl SymbolTable {
             is_completed: false,
             visibility: crate::lang_options::Visibility::Default,
         });
-
         table
     }
 
@@ -477,7 +473,7 @@ impl SymbolTable {
         self.current_scope_id
     }
 
-    pub(super) fn set_current_scope(&mut self, scope_id: ScopeId) {
+    pub(crate) fn set_current_scope(&mut self, scope_id: ScopeId) {
         self.current_scope_id = scope_id;
     }
 
@@ -485,7 +481,7 @@ impl SymbolTable {
         &self.scopes[scope_id.get() as usize - 1]
     }
 
-    fn get_scope_mut(&mut self, scope_id: ScopeId) -> &mut Scope {
+    pub(crate) fn get_scope_mut(&mut self, scope_id: ScopeId) -> &mut Scope {
         &mut self.scopes[scope_id.get() as usize - 1]
     }
 
@@ -607,6 +603,30 @@ impl SymbolTable {
             is_completed: true,
             visibility: crate::lang_options::Visibility::Default,
         }
+    }
+
+    /// Define a typedef in the parser (used for type disambiguation).
+    pub(crate) fn define_parser_typedef(&mut self, name: NameId, span: SourceSpan) {
+        let ty = QualType::unqualified(TypeRef::dummy());
+        let symbol = self.create_symbol(name, SymbolKind::Typedef { aliased_type: ty }, ty, span);
+        let sym_ref = self.push_symbol(symbol);
+        self.get_scope_mut(self.current_scope_id).symbols.insert(name, sym_ref);
+    }
+
+    /// Define a non-typedef in the parser (used for type disambiguation).
+    pub(crate) fn define_parser_non_typedef(&mut self, name: NameId, span: SourceSpan) {
+        let ty = QualType::unqualified(TypeRef::dummy());
+        let var = Variable {
+            is_global: self.current_scope_id == ScopeId::GLOBAL,
+            is_thread_local: false,
+            storage: None,
+            initializer: None,
+            alignment: None,
+            cleanup_func: None,
+        };
+        let symbol = self.create_symbol(name, SymbolKind::Variable(var), ty, span);
+        let sym_ref = self.push_symbol(symbol);
+        self.get_scope_mut(self.current_scope_id).symbols.insert(name, sym_ref);
     }
 
     /// Define a new variable in the current scope.
@@ -845,4 +865,38 @@ impl SymbolTable {
 
         Ok(sym)
     }
+
+    pub(crate) fn save_state(&self) -> SymbolTableState {
+        SymbolTableState {
+            entries_len: self.entries.len(),
+            scopes: self.scopes.clone(),
+            current_scope_id: self.current_scope_id,
+            next_scope_id: self.next_scope_id,
+        }
+    }
+
+    pub(crate) fn restore_state(&mut self, state: SymbolTableState) {
+        self.entries.truncate(state.entries_len);
+        self.scopes = state.scopes;
+        self.current_scope_id = state.current_scope_id;
+        self.next_scope_id = state.next_scope_id;
+    }
+
+    pub(crate) fn clear_parser_symbols(&mut self) {
+        self.entries.truncate(1);
+        for scope in self.scopes.iter_mut() {
+            scope.symbols.clear();
+            scope.tags.clear();
+            scope.labels.clear();
+        }
+        self.current_scope_id = ScopeId::GLOBAL;
+    }
+}
+
+#[derive(Clone)]
+pub struct SymbolTableState {
+    entries_len: usize,
+    scopes: Vec<Scope>,
+    current_scope_id: ScopeId,
+    next_scope_id: u32,
 }

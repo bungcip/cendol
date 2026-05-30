@@ -7,6 +7,7 @@ use super::Parser;
 use crate::ast::*;
 use crate::parser::utils::parse_parenthesized_expr;
 use crate::parser::{ParseDiag, TokenKind};
+use crate::semantic::ScopeId;
 use crate::source_manager::SourceLoc;
 
 pub(crate) fn parse_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
@@ -49,13 +50,29 @@ pub(crate) fn parse_statement(parser: &mut Parser) -> Result<ParsedNodeRef, Pars
 }
 
 pub(crate) fn parse_compound_statement(parser: &mut Parser) -> Result<(ParsedNodeRef, SourceLoc), ParseDiag> {
-    parser.type_context.push_scope();
-    let res = parse_compound_statement_inner(parser);
-    parser.type_context.pop_scope();
+    let (scope_id, pushed) = if let Some(sid) = parser.next_compound_uses_scope.take() {
+        (sid, false)
+    } else {
+        (parser.symbol_table.push_scope(), true)
+    };
+
+    let old_scope = parser.symbol_table.current_scope();
+    parser.symbol_table.set_current_scope(scope_id);
+
+    let res = parse_compound_statement_inner(parser, scope_id);
+
+    if pushed {
+        parser.symbol_table.pop_scope();
+    } else {
+        parser.symbol_table.set_current_scope(old_scope);
+    }
     res
 }
 
-fn parse_compound_statement_inner(parser: &mut Parser) -> Result<(ParsedNodeRef, SourceLoc), ParseDiag> {
+fn parse_compound_statement_inner(
+    parser: &mut Parser,
+    scope_id: ScopeId,
+) -> Result<(ParsedNodeRef, SourceLoc), ParseDiag> {
     let start = parser.expect(TokenKind::LeftBrace)?.span;
     let dummy = parser.push_dummy();
     let mut items = Vec::new();
@@ -103,7 +120,11 @@ fn parse_compound_statement_inner(parser: &mut Parser) -> Result<(ParsedNodeRef,
 
     let end = parser.expect(TokenKind::RightBrace)?.span;
     let span = start.merge(end);
-    let node = parser.replace_node(dummy, ParsedNodeKind::CompoundStmt(items.into_boxed_slice()), span);
+    let node = parser.replace_node(
+        dummy,
+        ParsedNodeKind::CompoundStmt(items.into_boxed_slice(), scope_id),
+        span,
+    );
     Ok((node, end.end()))
 }
 
@@ -163,6 +184,8 @@ fn parse_for_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> 
 
     parser.expect(TokenKind::LeftParen)?;
 
+    let scope_id = parser.symbol_table.push_scope();
+
     let init = if parser.accept(TokenKind::Semicolon).is_some() {
         None
     } else if parser.starts_declaration() {
@@ -190,6 +213,9 @@ fn parse_for_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> 
     };
 
     let body = parse_statement(parser)?;
+
+    parser.symbol_table.pop_scope();
+
     let span = start.merge(parser.ast.get_node(body).span);
     Ok(parser.replace_node(
         dummy,
@@ -198,6 +224,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> 
             condition,
             increment,
             body,
+            scope_id,
         }),
         span,
     ))

@@ -363,7 +363,7 @@ fn extract_last_expr_from_compound_stmt(parser: &mut Parser, compound_stmt: Pars
     // Get the compound statement node
     let compound_stmt_node = parser.ast.get_node(compound_stmt);
 
-    if let ParsedNodeKind::CompoundStmt(statements) = &compound_stmt_node.kind {
+    if let ParsedNodeKind::CompoundStmt(statements, _) = &compound_stmt_node.kind {
         // Find the last expression statement in the compound statement
         for &stmt in statements.iter().rev() {
             let stmt = parser.ast.get_node(stmt);

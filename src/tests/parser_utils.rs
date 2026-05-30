@@ -298,7 +298,7 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
         ParsedNodeKind::ExpressionStmt(expr) => {
             ResolvedNodeKind::ExpressionStatement(expr.map(|e| Box::new(resolve_node(ast, e))))
         }
-        ParsedNodeKind::CompoundStmt(statements) => {
+        ParsedNodeKind::CompoundStmt(statements, _) => {
             ResolvedNodeKind::CompoundStatement(statements.iter().map(|&stmt| resolve_node(ast, stmt)).collect())
         }
         ParsedNodeKind::GnuStatementExpr(compound_stmt, result_expr) => ResolvedNodeKind::GnuStatementExpression(
@@ -581,10 +581,11 @@ where
     preprocessor.start_processing(source_id);
     let mut lexer = Lexer::new(&mut preprocessor, config.lang_options.c_standard);
 
-    let mut ast = ParsedAst::new();
-    let result = {
-        let mut parser = Parser::new(&mut lexer, &mut ast, &config.lang_options);
-        parse_fn(&mut parser)
+    let mut symbol_table = crate::semantic::SymbolTable::new();
+    let (ast, result) = {
+        let mut parser = Parser::new(&mut lexer, &mut symbol_table, &config.lang_options);
+        let res = parse_fn(&mut parser);
+        (parser.take_ast(), res)
     };
 
     assert!(

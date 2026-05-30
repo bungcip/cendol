@@ -7,7 +7,7 @@
 use crate::ast::literal::{LitKind, LitRef};
 use crate::ast::*;
 use crate::diagnostic::DiagnosticEngine;
-use crate::lang_options::CStandard;
+use crate::lang_options::{CStandard, LangOptions};
 
 use crate::source_manager::SourceSpan;
 
@@ -29,108 +29,28 @@ pub(crate) use expressions::BindingPower;
 use expressions::parse_expression;
 pub(crate) use lexer::{Lexer, Token, TokenKind};
 
-/// Type context for tracking typedef names and other type-related state
-/// Bolt ⚡: Optimized with a HashMap and shadow stacks for O(1) lookup.
-/// Shadowing is handled by storing a stack of (bool) for each identifier.
-#[derive(Debug)]
-pub(crate) struct TypeDefContext {
-    /// Stack of scopes, each containing a list of names modified in that scope.
-    /// This is used to unwind the `map` when popping or truncating scopes.
-    scopes: Vec<Vec<NameId>>,
-    /// Fast lookup table: NameId -> Stack of (is_typedef) values.
-    /// SmallVec[1] ensures that common, non-shadowed names don't allocate on the heap.
-    map: hashbrown::HashMap<NameId, smallvec::SmallVec<[bool; 1]>>,
-}
+use crate::semantic::{ScopeId, SymbolKind, SymbolTable};
 
-impl TypeDefContext {
-    /// Create a new type context with builtin typedefs
-    fn new() -> Self {
-        let mut ctx = TypeDefContext {
-            scopes: vec![Vec::new()],
-            map: hashbrown::HashMap::new(),
-        };
-
-        let globals = [
-            "int8_t", "int16_t", "int32_t", "int64_t", "uint8_t", "uint16_t", "uint32_t", "uint64_t",
-        ];
-
-        for name in globals {
-            ctx.add_typedef(NameId::new(name));
-        }
-
-        ctx
-    }
-
-    /// Check if a symbol is a typedef name
-    #[inline]
-    fn is_type_name(&self, symbol: NameId) -> bool {
-        self.map.get(&symbol).is_some_and(|stack| *stack.last().unwrap())
-    }
-
-    /// Add a typedef name
-    fn add_typedef(&mut self, symbol: NameId) {
-        self.scopes.last_mut().unwrap().push(symbol);
-        self.map.entry(symbol).or_default().push(true);
-    }
-
-    /// Add a non-typedef name (e.g. variable or function) that shadows outer typedefs
-    fn add_non_typedef(&mut self, symbol: NameId) {
-        self.scopes.last_mut().unwrap().push(symbol);
-        self.map.entry(symbol).or_default().push(false);
-    }
-
-    fn push_scope(&mut self) {
-        self.scopes.push(Vec::new());
-    }
-
-    fn pop_scope(&mut self) {
-        let names = self.scopes.pop().expect("pop_scope on empty TypeDefContext");
-        for name in names {
-            let stack = self.map.get_mut(&name).unwrap();
-            stack.pop();
-            if stack.is_empty() {
-                self.map.remove(&name);
-            }
-        }
-    }
-
-    fn get_last_scope_len(&self) -> usize {
-        self.scopes.last().map(|s| s.len()).unwrap_or(0)
-    }
-
-    fn truncate_last_scope(&mut self, len: usize) {
-        if let Some(scope) = self.scopes.last_mut() {
-            while scope.len() > len {
-                let name = scope.pop().unwrap();
-                let stack = self.map.get_mut(&name).unwrap();
-                stack.pop();
-                if stack.is_empty() {
-                    self.map.remove(&name);
-                }
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct ParserState {
     current_idx: usize,
     diag_len: usize,
-    type_context_last_scope_len: usize,
+    symbol_table_state: crate::semantic::symbol_table::SymbolTableState,
 }
 
 /// Main parser structure
 pub struct Parser<'arena, 'src, 'lexer> {
     pub(crate) lexer: &'lexer mut Lexer<'src>,
     pub(crate) current_idx: usize,
-    pub(crate) ast: &'arena mut ParsedAst,
+    pub(crate) ast: ParsedAst,
     pub(crate) lang_opts: &'src crate::lang_options::LangOptions,
 
     // Token caching for lookahead and backtracking
     pub(crate) token_cache: Vec<Token>,
 
-    // Type context for typedef tracking
-    pub(crate) type_context: TypeDefContext,
+    // Symbol table for scope and typedef tracking
+    pub(crate) symbol_table: &'arena mut SymbolTable,
+    pub(crate) next_compound_uses_scope: Option<ScopeId>,
     pub(crate) keywords: ParserKeywords,
 
     /// Flag to indicate if we are parsing an enum's underlying type
@@ -172,19 +92,24 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     /// Create a new parser
     pub(crate) fn new(
         lexer: &'lexer mut Lexer<'src>,
-        ast: &'arena mut ParsedAst,
-        lang_opts: &'src crate::lang_options::LangOptions,
+        symbol_table: &'arena mut SymbolTable,
+        lang_opts: &'src LangOptions,
     ) -> Self {
         Parser {
             lexer,
             current_idx: 0,
-            ast,
+            ast: ParsedAst::new(),
             lang_opts,
             token_cache: Vec::new(),
-            type_context: TypeDefContext::new(),
+            symbol_table,
+            next_compound_uses_scope: None,
             keywords: ParserKeywords::new(),
             in_enum_underlying_type: false,
         }
+    }
+
+    pub(crate) fn take_ast(self) -> ParsedAst {
+        self.ast
     }
 
     /// Access the diagnostic engine via the lexer
@@ -424,10 +349,12 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
         declarations::parse_translation_unit(self)
     }
 
-    /// Disambiguates between a type name and an identifier in ambiguous contexts.
-    /// This is crucial for parsing C's "declaration-specifier-list" vs "expression" ambiguity.
     fn is_type_name(&self, symbol: NameId) -> bool {
-        self.type_context.is_type_name(symbol)
+        if let Some(sym_ref) = self.symbol_table.lookup_symbol(symbol) {
+            matches!(self.symbol_table.get_symbol(sym_ref).kind, SymbolKind::Typedef { .. })
+        } else {
+            false
+        }
     }
 
     /// Check if the given token can start a type name.
@@ -496,7 +423,8 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
 
     /// Add a typedef name to the type context
     pub(super) fn add_typedef(&mut self, symbol: NameId) {
-        self.type_context.add_typedef(symbol);
+        let span = self.current_token_span_or_empty();
+        self.symbol_table.define_parser_typedef(symbol, span);
     }
 
     fn save_state(&mut self) -> ParserState {
@@ -504,14 +432,14 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
         ParserState {
             current_idx: self.current_idx,
             diag_len,
-            type_context_last_scope_len: self.type_context.get_last_scope_len(),
+            symbol_table_state: self.symbol_table.save_state(),
         }
     }
 
     fn restore_state(&mut self, state: ParserState) {
         self.current_idx = state.current_idx;
         self.diag().diagnostics.truncate(state.diag_len);
-        self.type_context.truncate_last_scope(state.type_context_last_scope_len);
+        self.symbol_table.restore_state(state.symbol_table_state);
     }
 
     pub(crate) fn start_transaction(&mut self) -> utils::ParserTransaction<'_, 'arena, 'src, 'lexer> {

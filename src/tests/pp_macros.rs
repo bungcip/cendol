@@ -13,18 +13,12 @@ fn test_simple_macro_definition_and_expansion() {
 
 #[test]
 fn test_parameter_macro_definition_and_expansion() {
-    assert_pp(
-        "#define ADD(a,b) ( (a) + (b) )\nADD(1, 2)",
-        "( (1) + ( 2) )",
-    );
+    assert_pp("#define ADD(a,b) ( (a) + (b) )\nADD(1, 2)", "( (1) + ( 2) )");
 }
 
 #[test]
 fn test_complex_macro_expansion_and_recursion_limit() {
-    assert_pp(
-        "#define ID(x) x\n#define A ID(ID(ID(1)))\nA",
-        "1",
-    );
+    assert_pp("#define ID(x) x\n#define A ID(ID(ID(1)))\nA", "1");
 }
 
 #[test]
@@ -42,44 +36,29 @@ EXPAND(EXPAND(BAR()))"#,
 
 #[test]
 fn test_function_like_macro_not_expanded_when_not_followed_by_paren() {
-    assert_pp(
-        "#define x(y) ((y) + 1)\nint x = x(0);",
-        "int x = ((0) + 1);",
-    );
+    assert_pp("#define x(y) ((y) + 1)\nint x = x(0);", "int x = ((0) + 1);");
 }
 
 // Stringification (#)
 #[test]
 fn test_stringification_whitespace_handling() {
-    assert_pp(
-        "#define STR(x) #x\nSTR(a + b)",
-        r#""a + b""#,
-    );
+    assert_pp("#define STR(x) #x\nSTR(a + b)", r#""a + b""#);
 }
 
 #[test]
 fn test_va_args_stringification() {
-    assert_pp(
-        "#define STR(...) #__VA_ARGS__\nSTR(a, b, c)",
-        r#""a, b, c""#,
-    );
+    assert_pp("#define STR(...) #__VA_ARGS__\nSTR(a, b, c)", r#""a, b, c""#);
 }
 
 // Token Pasting (##)
 #[test]
 fn test_paste_numbers() {
-    assert_pp(
-        "#define PASTE(a,b) a ## b\nPASTE(1, 2)",
-        "12",
-    );
+    assert_pp("#define PASTE(a,b) a ## b\nPASTE(1, 2)", "12");
 }
 
 #[test]
 fn test_paste_va_args() {
-    assert_pp(
-        "#define PASTE(...) prefix ## __VA_ARGS__\nPASTE(a, b)",
-        "prefixa\n, b",
-    );
+    assert_pp("#define PASTE(...) prefix ## __VA_ARGS__\nPASTE(a, b)", "prefixa\n, b");
 }
 
 // Built-in Macros
@@ -108,10 +87,7 @@ fn test_file_macro() {
 
 #[test]
 fn test_counter_macro() {
-    assert_pp(
-        "__COUNTER__\n__COUNTER__\n__COUNTER__",
-        "0\n1\n2",
-    );
+    assert_pp("__COUNTER__\n__COUNTER__\n__COUNTER__", "0\n1\n2");
 }
 
 // Macro Argument Parsing
@@ -127,27 +103,18 @@ CNT({1, 2})
 
 #[test]
 fn test_paren_comma_protection() {
-    assert_pp(
-        "#define ID(x) x\n#if 1\n(ID((1, 2)))\nOK\n#endif",
-        "((1, 2))\nOK",
-    );
+    assert_pp("#define ID(x) x\n#if 1\n(ID((1, 2)))\nOK\n#endif", "((1, 2))\nOK");
 }
 
 // GNU Extensions
 #[test]
 fn test_gnu_named_variadic_macros() {
-    assert_pp(
-        "#define M(a, args...) args\nM(1, 2, 3, 4)",
-        "2, 3, 4",
-    );
+    assert_pp("#define M(a, args...) args\nM(1, 2, 3, 4)", "2, 3, 4");
 }
 
 #[test]
 fn test_gnu_comma_swallowing() {
-    assert_pp(
-        "#define M(a, args...) a, ## args\nM(1)",
-        "1",
-    );
+    assert_pp("#define M(a, args...) a, ## args\nM(1)", "1");
 }
 
 #[test]
@@ -170,10 +137,7 @@ fn test_recursive_macro_expansion_regression() {
 // Magic Macros
 #[test]
 fn test_magic_macros() {
-    assert_pp(
-        "__LINE__\n__FILE__\n__COUNTER__\n__COUNTER__",
-        "1\n\"<test>\"\n0\n1",
-    );
+    assert_pp("__LINE__\n__FILE__\n__COUNTER__\n__COUNTER__", "1\n\"<test>\"\n0\n1");
 }
 
 // Placemarkers
@@ -195,10 +159,7 @@ fn test_placemarker_concatenation_chained() {
 // GCC Compatibility
 #[test]
 fn test_gcc_version_macros() {
-    assert_pp(
-        "__GNUC__\n__GNUC_MINOR__\n__GNUC_PATCHLEVEL__",
-        "4\n2\n1",
-    );
+    assert_pp("__GNUC__\n__GNUC_MINOR__\n__GNUC_PATCHLEVEL__", "4\n2\n1");
 }
 
 // Regression Tests for TinyExpr Fixes
@@ -343,10 +304,7 @@ uintmax_t u;
 
 #[test]
 fn test_macro_expansion_chain_not_blocked() {
-    assert_pp(
-        "#define foo(X) 1 bar\n#define bar(X) 2 foo\nfoo(X)(Y)(Z)",
-        "1 2 1 bar",
-    );
+    assert_pp("#define foo(X) 1 bar\n#define bar(X) 2 foo\nfoo(X)(Y)(Z)", "1 2 1 bar");
 }
 
 // Regression test for nested macro expansion with self-referential macros
@@ -357,10 +315,7 @@ fn test_macro_expansion_chain_not_blocked() {
 // handling tokens that came from macro expansions.
 #[test]
 fn test_nested_macro_expansion_self_referential() {
-    assert_pp(
-        "#define f(a) a\n#define z z[0]\nf(f(z))",
-        "z[0]",
-    );
+    assert_pp("#define f(a) a\n#define z z[0]\nf(f(z))", "z[0]");
 }
 
 #[test]
@@ -408,9 +363,21 @@ char *s2 = STR("quote");
 char *s3 = STR(  a  \n  b  );"#,
     );
     let trimmed = output.trim().replace("\n\n", "\n");
-    assert!(trimmed.contains(r#""a b""#), "s1 should stringify with normalized whitespace: {}", trimmed);
-    assert!(trimmed.contains(r#""\"quote\"""#), "s2 should escape quotes: {}", trimmed);
-    assert!(trimmed.contains(r#""a \n b""#), "s3 should preserve backslash-n: {}", trimmed);
+    assert!(
+        trimmed.contains(r#""a b""#),
+        "s1 should stringify with normalized whitespace: {}",
+        trimmed
+    );
+    assert!(
+        trimmed.contains(r#""\"quote\"""#),
+        "s2 should escape quotes: {}",
+        trimmed
+    );
+    assert!(
+        trimmed.contains(r#""a \n b""#),
+        "s3 should preserve backslash-n: {}",
+        trimmed
+    );
 }
 
 #[test]
@@ -459,10 +426,7 @@ fn test_va_opt_empty() {
 // no variadic arguments are provided.  An explicit empty arg preserves it.
 #[test]
 fn test_gnu_comma_elision_with_empty_variadic_arg() {
-    assert_pp(
-        "#define M(x,y,...) x y ,##__VA_ARGS__\nM(a,b,)\nM(a,b)",
-        "a b ,\na b",
-    );
+    assert_pp("#define M(x,y,...) x y ,##__VA_ARGS__\nM(a,b,)\nM(a,b)", "a b ,\na b");
 }
 
 #[test]
@@ -560,7 +524,11 @@ int my_array[] = BUILD_ARRAY(
     );
     let trimmed = output.trim().replace("\n\n", "\n");
     // The output preserves original spacing; just check the key tokens are present
-    assert!(trimmed.contains("int my_array[]"), "should have declaration: {}", trimmed);
+    assert!(
+        trimmed.contains("int my_array[]"),
+        "should have declaration: {}",
+        trimmed
+    );
     assert!(trimmed.contains("10,"), "should have first arg: {}", trimmed);
     assert!(trimmed.contains("20,"), "should have conditional arg: {}", trimmed);
     assert!(trimmed.contains("30"), "should have third arg: {}", trimmed);

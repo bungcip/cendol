@@ -1,4 +1,4 @@
-use crate::tests::pp_common::{assert_pp, DebugToken};
+use crate::tests::pp_common::{DebugToken, assert_pp};
 
 #[test]
 fn test_has_builtin() {
@@ -40,10 +40,7 @@ fn test_has_feature() {
     no_non_existent
 #endif
 "#;
-    assert_pp(
-        src,
-        "has_static_assert\nhas_generic_selection\nno_non_existent",
-    );
+    assert_pp(src, "has_static_assert\nhas_generic_selection\nno_non_existent");
 }
 
 #[test]

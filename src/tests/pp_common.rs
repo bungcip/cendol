@@ -33,6 +33,53 @@ pub(crate) fn setup_pp_snapshot(src: &str) -> Vec<DebugToken> {
     tokens
 }
 
+pub(crate) fn preprocess_to_str(src: &str) -> String {
+    let (mut sm, mut diag) = setup_sm_and_de();
+    let config = PPConfig {
+        max_include_depth: 100,
+        ..Default::default()
+    };
+    let source_id = sm.add_buffer(src.as_bytes().to_vec(), "<test>", None, FileKind::Real);
+
+    let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
+    let tokens = pp.process(source_id, &config).unwrap();
+
+    let significant_tokens: Vec<_> = tokens
+        .into_iter()
+        .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
+        .collect();
+
+    let mut buffer = Vec::new();
+    dumper::PPDumper::new(&significant_tokens, &sm, true)
+        .dump(&mut buffer)
+        .unwrap();
+
+    String::from_utf8(buffer).unwrap()
+}
+
+/// Assert that preprocessing `src` produces exactly `expected` output.
+///
+/// Both sides are trimmed and double-newlines are collapsed so that tests
+/// don't break on blank lines introduced by directive processing.
+pub(crate) fn assert_pp(src: &str, expected: &str) {
+    let output = preprocess_to_str(src);
+    assert_eq!(
+        output.trim().replace("\n\n", "\n"),
+        expected.trim().replace("\n\n", "\n")
+    );
+}
+
+/// Assert that preprocessing `src` produces at least one diagnostic whose
+/// rendered text contains `expected`.
+pub(crate) fn check_diag(src: &str, expected: &str) {
+    let (_, diags) = setup_pp_snapshot_with_diags(src);
+    assert!(!diags.is_empty(), "Expected diagnostics for: {src}");
+    assert!(
+        diags.iter().any(|d| d.contains(expected)),
+        "Expected '{expected}' in {diags:?}"
+    );
+}
+
 pub(crate) fn setup_pp_snapshot_with_diags(src: &str) -> (Vec<DebugToken>, Vec<String>) {
     setup_pp_snapshot_with_diags_and_config(src, None)
 }

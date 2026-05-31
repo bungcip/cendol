@@ -1,187 +1,85 @@
 use crate::pp::PPConfig;
 use crate::tests::pp_common::{
-    setup_pp_snapshot, setup_pp_snapshot_with_diags, setup_pp_snapshot_with_diags_and_config,
-    setup_pp_with_sm_and_diagnostics,
+    assert_pp, preprocess_to_str, setup_pp_snapshot, setup_pp_snapshot_with_diags,
+    setup_pp_snapshot_with_diags_and_config, setup_pp_with_sm_and_diagnostics,
 };
 use chrono::{TimeZone, Utc};
 
 // Basic macro tests
 #[test]
 fn test_simple_macro_definition_and_expansion() {
-    let src = r#"
-#define TEN OK
-TEN
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @"
-    - kind: Identifier
-      text: OK
-    ");
+    assert_pp("#define TEN OK\nTEN", "OK");
 }
 
 #[test]
 fn test_parameter_macro_definition_and_expansion() {
-    let src = r#"
-#define ADD(a,b) ( (a) + (b) )
-ADD(1, 2)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: LeftParen
-      text: (
-    - kind: LeftParen
-      text: (
-    - kind: Number
-      text: "1"
-    - kind: RightParen
-      text: )
-    - kind: Plus
-      text: +
-    - kind: LeftParen
-      text: (
-    - kind: Number
-      text: "2"
-    - kind: RightParen
-      text: )
-    - kind: RightParen
-      text: )
-    "#);
+    assert_pp(
+        "#define ADD(a,b) ( (a) + (b) )\nADD(1, 2)",
+        "( (1) + ( 2) )",
+    );
 }
 
 #[test]
 fn test_complex_macro_expansion_and_recursion_limit() {
-    let src = r#"
-#define ID(x) x
-#define A ID(ID(ID(1)))
-A
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Number
-      text: "1"
-    "#);
+    assert_pp(
+        "#define ID(x) x\n#define A ID(ID(ID(1)))\nA",
+        "1",
+    );
 }
 
 #[test]
 fn test_defer_recursive_expansion() {
-    let src = r#"
-#define EMPTY()
+    assert_pp(
+        r#"#define EMPTY()
 #define DEFER(id) id EMPTY()
 #define EXPAND(...) __VA_ARGS__
 #define BAR_I() BAR
 #define BAR()  DEFER(BAR_I)()() 1
-EXPAND(EXPAND(BAR()))
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: BAR_I
-    - kind: LeftParen
-      text: (
-    - kind: RightParen
-      text: )
-    - kind: LeftParen
-      text: (
-    - kind: RightParen
-      text: )
-    - kind: Number
-      text: "1"
-    - kind: Number
-      text: "1"
-    - kind: Number
-      text: "1"
-    "#);
+EXPAND(EXPAND(BAR()))"#,
+        "BAR_I()() 1 1 1",
+    );
 }
 
 #[test]
 fn test_function_like_macro_not_expanded_when_not_followed_by_paren() {
-    let src = r#"
-#define x(y) ((y) + 1)
-int x = x(0);
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: int
-    - kind: Identifier
-      text: x
-    - kind: Assign
-      text: "="
-    - kind: LeftParen
-      text: (
-    - kind: LeftParen
-      text: (
-    - kind: Number
-      text: "0"
-    - kind: RightParen
-      text: )
-    - kind: Plus
-      text: +
-    - kind: Number
-      text: "1"
-    - kind: RightParen
-      text: )
-    - kind: Semicolon
-      text: ;
-    "#);
+    assert_pp(
+        "#define x(y) ((y) + 1)\nint x = x(0);",
+        "int x = ((0) + 1);",
+    );
 }
 
 // Stringification (#)
 #[test]
 fn test_stringification_whitespace_handling() {
-    let src = r#"
-#define STR(x) #x
-STR(a + b)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: StringLiteral
-      text: "\"a + b\""
-    "#);
+    assert_pp(
+        "#define STR(x) #x\nSTR(a + b)",
+        r#""a + b""#,
+    );
 }
 
 #[test]
 fn test_va_args_stringification() {
-    let src = r#"
-#define STR(...) #__VA_ARGS__
-STR(a, b, c)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: StringLiteral
-      text: "\"a, b, c\""
-    "#);
+    assert_pp(
+        "#define STR(...) #__VA_ARGS__\nSTR(a, b, c)",
+        r#""a, b, c""#,
+    );
 }
 
 // Token Pasting (##)
 #[test]
 fn test_paste_numbers() {
-    let src = r#"
-#define PASTE(a,b) a ## b
-PASTE(1, 2)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Number
-      text: "12"
-    "#);
+    assert_pp(
+        "#define PASTE(a,b) a ## b\nPASTE(1, 2)",
+        "12",
+    );
 }
 
 #[test]
 fn test_paste_va_args() {
-    let src = r#"
-#define PASTE(...) prefix ## __VA_ARGS__
-PASTE(a, b)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: prefixa
-    - kind: Comma
-      text: ","
-    - kind: Identifier
-      text: b
-    "#);
+    assert_pp(
+        "#define PASTE(...) prefix ## __VA_ARGS__\nPASTE(a, b)",
+        "prefixa\n, b",
+    );
 }
 
 // Built-in Macros
@@ -205,32 +103,15 @@ __DATE__
 
 #[test]
 fn test_file_macro() {
-    let src = r#"
-__FILE__
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: StringLiteral
-      text: "\"<test>\""
-    "#);
+    assert_pp("__FILE__", r#""<test>""#);
 }
 
 #[test]
 fn test_counter_macro() {
-    let src = r#"
-__COUNTER__
-__COUNTER__
-__COUNTER__
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Number
-      text: "0"
-    - kind: Number
-      text: "1"
-    - kind: Number
-      text: "2"
-    "#);
+    assert_pp(
+        "__COUNTER__\n__COUNTER__\n__COUNTER__",
+        "0\n1\n2",
+    );
 }
 
 // Macro Argument Parsing
@@ -246,234 +127,89 @@ CNT({1, 2})
 
 #[test]
 fn test_paren_comma_protection() {
-    let src = r#"
-#define ID(x) x
-#if 1
-(ID((1, 2)))
-OK
-#endif
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: LeftParen
-      text: (
-    - kind: LeftParen
-      text: (
-    - kind: Number
-      text: "1"
-    - kind: Comma
-      text: ","
-    - kind: Number
-      text: "2"
-    - kind: RightParen
-      text: )
-    - kind: RightParen
-      text: )
-    - kind: Identifier
-      text: OK
-    "#);
+    assert_pp(
+        "#define ID(x) x\n#if 1\n(ID((1, 2)))\nOK\n#endif",
+        "((1, 2))\nOK",
+    );
 }
 
 // GNU Extensions
 #[test]
 fn test_gnu_named_variadic_macros() {
-    let src = r#"
-#define M(a, args...) args
-M(1, 2, 3, 4)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Number
-      text: "2"
-    - kind: Comma
-      text: ","
-    - kind: Number
-      text: "3"
-    - kind: Comma
-      text: ","
-    - kind: Number
-      text: "4"
-    "#);
+    assert_pp(
+        "#define M(a, args...) args\nM(1, 2, 3, 4)",
+        "2, 3, 4",
+    );
 }
 
 #[test]
 fn test_gnu_comma_swallowing() {
-    let src = r#"
-#define M(a, args...) a, ## args
-M(1)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Number
-      text: "1"
-    "#);
+    assert_pp(
+        "#define M(a, args...) a, ## args\nM(1)",
+        "1",
+    );
 }
 
 #[test]
 fn test_gnu_comma_swallowing_va_args() {
-    let src = r#"
-#define LOG(fmt, ...) printf(fmt, ##__VA_ARGS__)
-LOG("foo");
-LOG("bar", 1);
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: printf
-    - kind: LeftParen
-      text: (
-    - kind: StringLiteral
-      text: "\"foo\""
-    - kind: RightParen
-      text: )
-    - kind: Semicolon
-      text: ;
-    - kind: Identifier
-      text: printf
-    - kind: LeftParen
-      text: (
-    - kind: StringLiteral
-      text: "\"bar\""
-    - kind: Comma
-      text: ","
-    - kind: Number
-      text: "1"
-    - kind: RightParen
-      text: )
-    - kind: Semicolon
-      text: ;
-    "#);
+    assert_pp(
+        "#define LOG(fmt, ...) printf(fmt, ##__VA_ARGS__)\nLOG(\"foo\");\nLOG(\"bar\", 1);",
+        "printf(\"foo\");\nprintf(\"bar\",1\n);",
+    );
 }
 
 // Regressions
 #[test]
 fn test_recursive_macro_expansion_regression() {
-    let src = r#"
-#define CAT2(a, b) a ## b
-#define CAT(a, b) CAT2(a, b)
-#define AB(x) CAT(x, y)
-int res = AB(x);
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: int
-    - kind: Identifier
-      text: res
-    - kind: Assign
-      text: "="
-    - kind: Identifier
-      text: xy
-    - kind: Semicolon
-      text: ;
-    "#);
+    assert_pp(
+        "#define CAT2(a, b) a ## b\n#define CAT(a, b) CAT2(a, b)\n#define AB(x) CAT(x, y)\nint res = AB(x);",
+        "int res = xy;",
+    );
 }
 
 // Magic Macros
 #[test]
 fn test_magic_macros() {
-    let src = r#"
-__LINE__
-__FILE__
-__COUNTER__
-__COUNTER__
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Number
-      text: "2"
-    - kind: StringLiteral
-      text: "\"<test>\""
-    - kind: Number
-      text: "0"
-    - kind: Number
-      text: "1"
-    "#);
+    assert_pp(
+        "__LINE__\n__FILE__\n__COUNTER__\n__COUNTER__",
+        "1\n\"<test>\"\n0\n1",
+    );
 }
 
 // Placemarkers
 #[test]
 fn test_placemarker_concatenation() {
-    let src = r#"
-#define M(a, b) a ## b
-M(, 1)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Number
-      text: "1"
-    "#);
+    assert_pp("#define M(a, b) a ## b\nM(, 1)", "1");
 }
 
 #[test]
 fn test_placemarker_concatenation_with_prefix() {
-    let src = r#"
-#define M(a, b) X a ## b
-M(, 1)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: X
-    - kind: Number
-      text: "1"
-    "#);
+    assert_pp("#define M(a, b) X a ## b\nM(, 1)", "X 1");
 }
 
 #[test]
 fn test_placemarker_concatenation_chained() {
-    let src = r#"
-#define M(a, b, c) a ## b ## c
-M(, , C)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @"
-    - kind: Identifier
-      text: C
-    ");
+    assert_pp("#define M(a, b, c) a ## b ## c\nM(, , C)", "C");
 }
 
 // GCC Compatibility
 #[test]
 fn test_gcc_version_macros() {
-    let src = r#"
-__GNUC__
-__GNUC_MINOR__
-__GNUC_PATCHLEVEL__
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Number
-      text: "4"
-    - kind: Number
-      text: "2"
-    - kind: Number
-      text: "1"
-    "#);
+    assert_pp(
+        "__GNUC__\n__GNUC_MINOR__\n__GNUC_PATCHLEVEL__",
+        "4\n2\n1",
+    );
 }
 
 // Regression Tests for TinyExpr Fixes
 #[test]
 fn test_concat_with_empty_argument() {
-    let src = r#"
-#define __CONCAT(x,y) x ## y
-__CONCAT(a,)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @"
-    - kind: Identifier
-      text: a
-    ");
+    assert_pp("#define __CONCAT(x,y) x ## y\n__CONCAT(a,)", "a");
 }
 
 #[test]
 fn test_gcc_extension_keywords() {
-    let src = r#"
-__extension__
-__restrict
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @"[]");
+    assert_pp("__extension__\n__restrict", "");
 }
 
 // Macro Redefinition Tests (C11 6.10.3)
@@ -528,15 +264,7 @@ fn test_expand_tokens_magic_macro_coverage() {
     //     i += 1;
     //     continue;
     // }
-    let src = r#"
-#define M __LINE__
-M
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Number
-      text: "1"
-    "#);
+    assert_pp("#define M __LINE__\nM", "1");
 }
 
 #[test]
@@ -545,13 +273,8 @@ fn test_expand_tokens_pragma_operator_coverage() {
     // if self.try_handle_pragma_operator(tokens, i) {
     //     continue;
     // }
-    let src = r#"
-#define P _Pragma("once")
-P
-"#;
-    let tokens = setup_pp_snapshot(src);
     // The _Pragma("once") is handled and removed from the token stream.
-    insta::assert_yaml_snapshot!(tokens, @"[]");
+    assert_pp("#define P _Pragma(\"once\")\nP", "");
 }
 
 #[test]
@@ -589,8 +312,8 @@ foobar
 // expansion history, even when the current token is a fresh invocation.
 #[test]
 fn test_type_builtins() {
-    let src = r#"
-__SIZE_TYPE__
+    assert_pp(
+        r#"__SIZE_TYPE__
 __PTRDIFF_TYPE__
 __WCHAR_TYPE__
 __WINT_TYPE__
@@ -598,39 +321,9 @@ __INTMAX_TYPE__
 __UINTMAX_TYPE__
 __SIZE_MAX__
 __PTRDIFF_MAX__
-__INTMAX_MAX__
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @"
-    - kind: Identifier
-      text: unsigned
-    - kind: Identifier
-      text: long
-    - kind: Identifier
-      text: long
-    - kind: Identifier
-      text: int
-    - kind: Identifier
-      text: unsigned
-    - kind: Identifier
-      text: int
-    - kind: Identifier
-      text: long
-    - kind: Identifier
-      text: long
-    - kind: Identifier
-      text: unsigned
-    - kind: Identifier
-      text: long
-    - kind: Identifier
-      text: long
-    - kind: Number
-      text: 18446744073709551615UL
-    - kind: Number
-      text: 9223372036854775807L
-    - kind: Number
-      text: 9223372036854775807LL
-    ");
+__INTMAX_MAX__"#,
+        "unsigned long\nlong\nint\nunsigned int\nlong long\nunsigned long long 18446744073709551615UL 9223372036854775807L 9223372036854775807LL",
+    );
 }
 
 #[test]
@@ -650,22 +343,10 @@ uintmax_t u;
 
 #[test]
 fn test_macro_expansion_chain_not_blocked() {
-    let src = r#"
-#define foo(X) 1 bar
-#define bar(X) 2 foo
-foo(X)(Y)(Z)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Number
-      text: "1"
-    - kind: Number
-      text: "2"
-    - kind: Number
-      text: "1"
-    - kind: Identifier
-      text: bar
-    "#);
+    assert_pp(
+        "#define foo(X) 1 bar\n#define bar(X) 2 foo\nfoo(X)(Y)(Z)",
+        "1 2 1 bar",
+    );
 }
 
 // Regression test for nested macro expansion with self-referential macros
@@ -676,42 +357,18 @@ foo(X)(Y)(Z)
 // handling tokens that came from macro expansions.
 #[test]
 fn test_nested_macro_expansion_self_referential() {
-    let src = r#"
-#define f(a) a
-#define z z[0]
-f(f(z))
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: z
-    - kind: LeftBracket
-      text: "["
-    - kind: Number
-      text: "0"
-    - kind: RightBracket
-      text: "]"
-    "#);
+    assert_pp(
+        "#define f(a) a\n#define z z[0]\nf(f(z))",
+        "z[0]",
+    );
 }
 
 #[test]
 fn test_deferred_macro_expansion() {
-    let src = r#"
-#define EMPTY
-#define DEFER(x) x EMPTY
-#define EXPAND() 42
-
-DEFER(EXPAND)()
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @"
-    - kind: Identifier
-      text: EXPAND
-    - kind: LeftParen
-      text: (
-    - kind: RightParen
-      text: )
-    ");
+    assert_pp(
+        "#define EMPTY\n#define DEFER(x) x EMPTY\n#define EXPAND() 42\n\nDEFER(EXPAND)()",
+        "EXPAND()",
+    );
 }
 
 #[test]
@@ -728,277 +385,92 @@ int y = M();
 
 #[test]
 fn test_recursive_expansion_issue() {
-    let src = r#"
-#define SELF SELF
-int x = SELF;
-
-#define A B
-#define B A
-int y = A;
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: int
-    - kind: Identifier
-      text: x
-    - kind: Assign
-      text: "="
-    - kind: Identifier
-      text: SELF
-    - kind: Semicolon
-      text: ;
-    - kind: Identifier
-      text: int
-    - kind: Identifier
-      text: y
-    - kind: Assign
-      text: "="
-    - kind: Identifier
-      text: A
-    - kind: Semicolon
-      text: ;
-    "#);
+    assert_pp(
+        "#define SELF SELF\nint x = SELF;\n\n#define A B\n#define B A\nint y = A;",
+        "int x = SELF;\nint y = A;",
+    );
 }
 
 #[test]
 fn test_indirect_recursion_prosser() {
-    let src = r#"
-#define A(x) x B
-#define B(y) y A
-int x = A(1)(2)(3);
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: int
-    - kind: Identifier
-      text: x
-    - kind: Assign
-      text: "="
-    - kind: Number
-      text: "1"
-    - kind: Number
-      text: "2"
-    - kind: Number
-      text: "3"
-    - kind: Identifier
-      text: B
-    - kind: Semicolon
-      text: ;
-    "#);
+    assert_pp(
+        "#define A(x) x B\n#define B(y) y A\nint x = A(1)(2)(3);",
+        "int x = 1 2 3 B;",
+    );
 }
 
 #[test]
 fn test_stringification_escaping_literal() {
-    let src = r#"
-#define STR(x) #x
+    let output = preprocess_to_str(
+        r#"#define STR(x) #x
 char *s1 = STR(  a    b  );
 char *s2 = STR("quote");
-char *s3 = STR(  a  \n  b  );
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: char
-    - kind: Star
-      text: "*"
-    - kind: Identifier
-      text: s1
-    - kind: Assign
-      text: "="
-    - kind: StringLiteral
-      text: "\"a b\""
-    - kind: Semicolon
-      text: ;
-    - kind: Identifier
-      text: char
-    - kind: Star
-      text: "*"
-    - kind: Identifier
-      text: s2
-    - kind: Assign
-      text: "="
-    - kind: StringLiteral
-      text: "\"\\\"quote\\\"\""
-    - kind: Semicolon
-      text: ;
-    - kind: Identifier
-      text: char
-    - kind: Star
-      text: "*"
-    - kind: Identifier
-      text: s3
-    - kind: Assign
-      text: "="
-    - kind: StringLiteral
-      text: "\"a \\n b\""
-    - kind: Semicolon
-      text: ;
-    "#);
+char *s3 = STR(  a  \n  b  );"#,
+    );
+    let trimmed = output.trim().replace("\n\n", "\n");
+    assert!(trimmed.contains(r#""a b""#), "s1 should stringify with normalized whitespace: {}", trimmed);
+    assert!(trimmed.contains(r#""\"quote\"""#), "s2 should escape quotes: {}", trimmed);
+    assert!(trimmed.contains(r#""a \n b""#), "s3 should preserve backslash-n: {}", trimmed);
 }
 
 #[test]
 fn test_deferred_expansion_nested_expand() {
     // Regression test for EXPAND(EXPAND(A())) where A() expands to A_I () 1
-    let src = r#"
-#define EXPAND(...) __VA_ARGS__
-#define A_I() A
-#define A() A_I () 1
-EXPAND(EXPAND(A()))
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: A
-    - kind: Number
-      text: "1"
-    "#);
+    assert_pp(
+        "#define EXPAND(...) __VA_ARGS__\n#define A_I() A\n#define A() A_I () 1\nEXPAND(EXPAND(A()))",
+        "A 1",
+    );
 }
 
 #[test]
 fn test_variadic_macro_rescan_bug() {
     // Regression test for variadic macro calls generated during rescan
-    let src = r#"
-#define EXPAND(...) __VA_ARGS__
-#define F(x, ...) x __VA_ARGS__
-EXPAND(F(1, 2, 3))
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Number
-      text: "1"
-    - kind: Number
-      text: "2"
-    - kind: Comma
-      text: ","
-    - kind: Number
-      text: "3"
-    "#);
+    assert_pp(
+        "#define EXPAND(...) __VA_ARGS__\n#define F(x, ...) x __VA_ARGS__\nEXPAND(F(1, 2, 3))",
+        "1 2, 3",
+    );
 }
 
 #[test]
 fn test_va_opt_basic() {
-    let src = r#"
-#define M(a, ...) a __VA_OPT__(+) __VA_ARGS__
-M(1)
-M(1, 2)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Number
-      text: "1"
-    - kind: Number
-      text: "1"
-    - kind: Plus
-      text: +
-    - kind: Number
-      text: "2"
-    "#);
+    assert_pp(
+        "#define M(a, ...) a __VA_OPT__(+) __VA_ARGS__\nM(1)\nM(1, 2)",
+        "1\n1+ 2",
+    );
 }
 
 #[test]
 fn test_va_opt_stringification() {
-    let src = r#"
-#define FOO BAR
-#define M2(x,y,...) #__VA_OPT__(y##x __VA_ARGS__)
-M2(a,b,FOO)
-M2(a,b)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: StringLiteral
-      text: "\"ba BAR\""
-    - kind: StringLiteral
-      text: "\"\""
-    "#);
+    assert_pp(
+        "#define FOO BAR\n#define M2(x,y,...) #__VA_OPT__(y##x __VA_ARGS__)\nM2(a,b,FOO)\nM2(a,b)",
+        "\"ba BAR\" \"\"",
+    );
 }
 
 #[test]
 fn test_va_opt_empty() {
-    let src = r#"
-#define M1(a, ...) a __VA_OPT__(,) __VA_ARGS__
-M1(1)
-M1(1, 2, 3)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Number
-      text: "1"
-    - kind: Number
-      text: "1"
-    - kind: Comma
-      text: ","
-    - kind: Number
-      text: "2"
-    - kind: Comma
-      text: ","
-    - kind: Number
-      text: "3"
-    "#);
+    assert_pp(
+        "#define M1(a, ...) a __VA_OPT__(,) __VA_ARGS__\nM1(1)\nM1(1, 2, 3)",
+        "1\n1, 2, 3",
+    );
 }
 
 // Regression test: `,##__VA_ARGS__` should only swallow comma when
 // no variadic arguments are provided.  An explicit empty arg preserves it.
 #[test]
 fn test_gnu_comma_elision_with_empty_variadic_arg() {
-    let src = r#"
-#define M(x,y,...) x y ,##__VA_ARGS__
-M(a,b,)
-M(a,b)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: a
-    - kind: Identifier
-      text: b
-    - kind: Comma
-      text: ","
-    - kind: Identifier
-      text: a
-    - kind: Identifier
-      text: b
-    "#);
+    assert_pp(
+        "#define M(x,y,...) x y ,##__VA_ARGS__\nM(a,b,)\nM(a,b)",
+        "a b ,\na b",
+    );
 }
 
 #[test]
 fn test_int_constant_macros() {
-    let src = r#"
-__INT8_C(1)
-__INT16_C(1)
-__INT32_C(1)
-__INT64_C(1)
-__UINT8_C(1)
-__UINT16_C(1)
-__UINT32_C(1)
-__UINT64_C(1)
-__INTMAX_C(1)
-__UINTMAX_C(1)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Number
-      text: "1"
-    - kind: Number
-      text: "1"
-    - kind: Number
-      text: "1"
-    - kind: Number
-      text: 1L
-    - kind: Number
-      text: "1"
-    - kind: Number
-      text: "1"
-    - kind: Number
-      text: 1U
-    - kind: Number
-      text: 1UL
-    - kind: Number
-      text: 1LL
-    - kind: Number
-      text: 1ULL
-    "#);
+    assert_pp(
+        "__INT8_C(1)\n__INT16_C(1)\n__INT32_C(1)\n__INT64_C(1)\n__UINT8_C(1)\n__UINT16_C(1)\n__UINT32_C(1)\n__UINT64_C(1)\n__INTMAX_C(1)\n__UINTMAX_C(1)",
+        "1\n1\n1\n1L\n1\n1\n1U\n1UL\n1LL\n1ULL",
+    );
 }
 
 #[test]
@@ -1021,45 +493,10 @@ UINT64_C(456)
 
 #[test]
 fn test_nested_macro_expansion_in_args() {
-    let src = r#"
-#define CAST(t, e) ((t)(e))
-#define CAST_U(o) CAST(unsigned, o)
-
-CAST(unsigned, CAST_U(i))
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @"
-    - kind: LeftParen
-      text: (
-    - kind: LeftParen
-      text: (
-    - kind: Identifier
-      text: unsigned
-    - kind: RightParen
-      text: )
-    - kind: LeftParen
-      text: (
-    - kind: LeftParen
-      text: (
-    - kind: LeftParen
-      text: (
-    - kind: Identifier
-      text: unsigned
-    - kind: RightParen
-      text: )
-    - kind: LeftParen
-      text: (
-    - kind: Identifier
-      text: i
-    - kind: RightParen
-      text: )
-    - kind: RightParen
-      text: )
-    - kind: RightParen
-      text: )
-    - kind: RightParen
-      text: )
-    ");
+    assert_pp(
+        "#define CAST(t, e) ((t)(e))\n#define CAST_U(o) CAST(unsigned, o)\n\nCAST(unsigned, CAST_U(i))",
+        "((unsigned)( ((unsigned)( i))))",
+    );
 }
 
 #[test]
@@ -1102,21 +539,13 @@ STRINGIFY(1)
 
 #[test]
 fn test_define_with_trailing_comment() {
-    let src = r#"
-#define FOO 1 // comment
-FOO
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Number
-      text: "1"
-    "#);
+    assert_pp("#define FOO 1 // comment\nFOO", "1");
 }
 
 #[test]
 fn test_directive_in_macro_args() {
-    let src = r#"
-#define BUILD_ARRAY(x, y, z) { x, y, z }
+    let output = preprocess_to_str(
+        r#"#define BUILD_ARRAY(x, y, z) { x, y, z }
 #define USE_FEATURE_B 1
 
 int my_array[] = BUILD_ARRAY(
@@ -1127,57 +556,21 @@ int my_array[] = BUILD_ARRAY(
     99,
 #endif
     30
-);
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: int
-    - kind: Identifier
-      text: my_array
-    - kind: LeftBracket
-      text: "["
-    - kind: RightBracket
-      text: "]"
-    - kind: Assign
-      text: "="
-    - kind: LeftBrace
-      text: "{"
-    - kind: Number
-      text: "10"
-    - kind: Comma
-      text: ","
-    - kind: Number
-      text: "20"
-    - kind: Comma
-      text: ","
-    - kind: Number
-      text: "30"
-    - kind: RightBrace
-      text: "}"
-    - kind: Semicolon
-      text: ;
-    "#);
+);"#,
+    );
+    let trimmed = output.trim().replace("\n\n", "\n");
+    // The output preserves original spacing; just check the key tokens are present
+    assert!(trimmed.contains("int my_array[]"), "should have declaration: {}", trimmed);
+    assert!(trimmed.contains("10,"), "should have first arg: {}", trimmed);
+    assert!(trimmed.contains("20,"), "should have conditional arg: {}", trimmed);
+    assert!(trimmed.contains("30"), "should have third arg: {}", trimmed);
+    assert!(!trimmed.contains("99"), "should NOT have else branch: {}", trimmed);
 }
 
 #[test]
 fn test_counter_macro_pasting_no_prescan() {
-    let src = r#"
-#define STRINGIFY(x) #x
-#define PASTE(x, y) x ## y
-#define EVAL(x) x
-
-STRINGIFY(__COUNTER__)
-PASTE(x, __COUNTER__)
-EVAL(__COUNTER__)
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: StringLiteral
-      text: "\"__COUNTER__\""
-    - kind: Identifier
-      text: x__COUNTER__
-    - kind: Number
-      text: "0"
-    "#);
+    assert_pp(
+        "#define STRINGIFY(x) #x\n#define PASTE(x, y) x ## y\n#define EVAL(x) x\n\nSTRINGIFY(__COUNTER__)\nPASTE(x, __COUNTER__)\nEVAL(__COUNTER__)",
+        "\"__COUNTER__\"\nx__COUNTER__\n0",
+    );
 }

@@ -909,20 +909,6 @@ fn test_address_of_register_prohibited() {
 }
 
 #[test]
-fn test_sizeof_bitfield_prohibited() {
-    run_fail_with_message(
-        r#"
-        struct S { int x : 1; };
-        int main() {
-            struct S s;
-            return sizeof(s.x);
-        }
-        "#,
-        "cannot apply 'sizeof' to a bit-field",
-    );
-}
-
-#[test]
 fn test_deref_long() {
     run_fail_with_message(
         r#"

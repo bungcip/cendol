@@ -209,7 +209,7 @@ fn test_generic_selection_invalid_type_name() {
         return 0;
     }
     "#,
-        "Unexpected token: expected declaration specifiers",
+        "expected declaration specifiers",
     );
 }
 

@@ -115,6 +115,19 @@ fn test_unsigned_int() {
     run_pass(code, CompilePhase::Mir);
 }
 
+#[test]
+fn test_typedef_unsigned_long_comparison() {
+    let source = r#"
+        typedef unsigned long size_t;
+        int main() {
+            size_t l1 = 1;
+            size_t l2 = 2;
+            return l1 > l2;
+        }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
 // Semantic validation tests for incomplete types.
 #[test]
 fn rejects_sizeof_on_incomplete_struct() {

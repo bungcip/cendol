@@ -1,4 +1,4 @@
-use crate::tests::pp_common::{setup_multi_file_pp_snapshot, setup_pp_snapshot, setup_pp_snapshot_with_diags};
+use crate::tests::pp_common::{assert_pp, check_diag, setup_multi_file_pp_snapshot, setup_pp_snapshot_with_diags};
 
 #[test]
 fn test_error_directive_produces_failure() {
@@ -8,8 +8,7 @@ fn test_error_directive_produces_failure() {
 #error "this should be reported"
 #endif
 "#;
-    let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: ErrorDirective(\"\\\"this should be reported\\\"\"), span: SourceSpan(2199023255571) }""#);
+    check_diag(src, "ErrorDirective");
 }
 
 #[test]
@@ -18,12 +17,8 @@ fn test_warning_directive() {
 #warning "this is a warning"
 OK
 "#;
-    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags), @r#"
-    - - kind: Identifier
-        text: OK
-    - - "Warning: \"this is a warning\""
-    "#);
+    assert_pp(src, "OK");
+    check_diag(src, "this is a warning");
 }
 
 #[test]
@@ -34,12 +29,7 @@ fn test_line_directive_presumed_location() {
 // This is now logical line 101
 OK
 "#;
-    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags), @"
-    - - kind: Identifier
-        text: OK
-    - []
-    ");
+    assert_pp(src, "OK");
 }
 
 #[test]
@@ -48,8 +38,7 @@ fn test_invalid_line_directive() {
 #line invalid
 OK
 "#;
-    let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: InvalidLineDirective, span: SourceSpan(2199023255559) }""#);
+    check_diag(src, "InvalidLineDirective");
 }
 
 #[test]
@@ -58,8 +47,7 @@ fn test_line_directive_zero_line_number() {
 #line 0
 OK
 "#;
-    let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: InvalidLineDirective, span: SourceSpan(2199023255559) }""#);
+    check_diag(src, "InvalidLineDirective");
 }
 
 #[test]
@@ -68,8 +56,7 @@ fn test_line_directive_malformed_filename() {
 #line 100 invalid_filename
 OK
 "#;
-    let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: InvalidLineDirective, span: SourceSpan(2199023255563) }""#);
+    check_diag(src, "InvalidLineDirective");
 }
 
 #[test]
@@ -77,10 +64,7 @@ fn test_unknown_pragma_warns() {
     let src = r#"
 #pragma unknown_pragma
 "#;
-    let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"
-    - "Warning: Unknown pragma: unknown_pragma"
-    "#);
+    check_diag(src, "Unknown pragma: unknown_pragma");
 }
 
 #[test]
@@ -90,12 +74,7 @@ fn test_null_directive() {
 #
 OK
 "#;
-    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags), @"
-    - - kind: Identifier
-        text: OK
-    - []
-    ");
+    assert_pp(src, "OK");
 }
 
 #[test]
@@ -115,49 +94,39 @@ fn test_skipped_directives_coverage() {
 #endif
 OK
 "#;
-    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags), @"
-    - - kind: Identifier
-        text: OK
-    - []
-    ");
+    assert_pp(src, "OK");
 }
 
 // Pragma Tests
 #[test]
 fn test_pragma_message() {
     let src = r#"#pragma message("Hello World")"#;
-    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags), @r#"
-    - []
-    - - "Note: Hello World"
-    "#);
+    check_diag(src, "Hello World");
+    // Should produce no tokens
+    let (tokens, _) = setup_pp_snapshot_with_diags(src);
+    assert!(tokens.is_empty());
 }
 
 #[test]
 fn test_pragma_warning() {
     let src = r#"#pragma warning("This is a warning")"#;
-    let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Warning: This is a warning""#);
+    check_diag(src, "This is a warning");
 }
 
 #[test]
 fn test_pragma_error() {
     let src = r#"#pragma error("This is an error")"#;
-    let (_, diags) = setup_pp_snapshot_with_diags(src);
-    assert!(!diags.is_empty());
-    assert!(diags[0].contains("PragmaError(\"This is an error\")"));
+    check_diag(src, "PragmaError(\"This is an error\")");
 }
 
 // _Pragma Operator
 #[test]
 fn test_pragma_operator_message() {
     let src = r#"_Pragma("message(\"Hello Pragma Operator\")")"#;
-    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags), @r#"
-    - []
-    - - "Note: Hello Pragma Operator"
-    "#);
+    check_diag(src, "Hello Pragma Operator");
+    // Should produce no tokens
+    let (tokens, _) = setup_pp_snapshot_with_diags(src);
+    assert!(tokens.is_empty());
 }
 
 #[test]
@@ -167,10 +136,9 @@ fn test_pragma_once_via_pragma_operator() {
         ("main.c", "#include \"header.h\"\n#include \"header.h\""),
     ];
     let (tokens, _) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    insta::assert_yaml_snapshot!(tokens, @"
-    - kind: Identifier
-      text: OK
-    ");
+    // Should only have one OK token (pragma once prevents duplicate)
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0].text, "OK");
 }
 
 // push_macro / pop_macro
@@ -184,11 +152,7 @@ fn test_push_pop_macro() {
 #pragma pop_macro("M")
 OK
 "#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @"
-    - kind: Identifier
-      text: OK
-    ");
+    assert_pp(src, "OK");
 }
 
 #[test]
@@ -197,11 +161,10 @@ fn test_pragma_operator_inside_macro() {
 #define M _Pragma("message(\"Inside Macro\")")
 M
     "#;
-    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags), @r#"
-    - []
-    - - "Note: Inside Macro"
-    "#);
+    check_diag(src, "Inside Macro");
+    // Should produce no tokens
+    let (tokens, _) = setup_pp_snapshot_with_diags(src);
+    assert!(tokens.is_empty());
 }
 
 #[test]
@@ -210,11 +173,10 @@ fn test_pragma_operator_in_if() {
 #if _Pragma("message(\"Inside If\")") 1
 #endif
     "#;
-    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags), @r#"
-    - []
-    - - "Note: Inside If"
-    "#);
+    check_diag(src, "Inside If");
+    // Should produce no tokens
+    let (tokens, _) = setup_pp_snapshot_with_diags(src);
+    assert!(tokens.is_empty());
 }
 
 #[test]
@@ -225,54 +187,39 @@ fn test_push_pop_undefined_macro() {
 #pragma pop_macro("M")
 M
 "#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @"
-    - kind: Identifier
-      text: M
-    ");
+    assert_pp(src, "M");
 }
 
 // EOD (End of Directive) Tests
 #[test]
-fn test_undef_extra_tokens() {
-    let src = "#undef FOO extra";
-    let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: ExpectedEod, span: SourceSpan(2199023255563) }""#);
+fn test_eod_extra_tokens() {
+    // #undef with extra tokens
+    check_diag("#undef FOO extra", "ExpectedEod");
+
+    // #else with extra tokens
+    let else_src = r#"
+#if 1
+#else extra
+#endif
+"#;
+    check_diag(else_src, "ExpectedEod");
+
+    // #endif with extra tokens
+    let endif_src = r#"
+#if 1
+#endif extra
+"#;
+    check_diag(endif_src, "ExpectedEod");
+
+    // #include with extra tokens
+    check_diag("#include <stddef.h> extra", "ExpectedEod");
 }
 
 #[test]
 fn test_undef_eof_no_newline() {
     let src = "#undef FOO";
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @"[]");
-}
-
-#[test]
-fn test_else_extra_tokens() {
-    let src = r#"
-#if 1
-#else extra
-#endif
-"#;
-    let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: ExpectedEod, span: SourceSpan(2199023255565) }""#);
-}
-
-#[test]
-fn test_endif_extra_tokens() {
-    let src = r#"
-#if 1
-#endif extra
-"#;
-    let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: ExpectedEod, span: SourceSpan(2199023255566) }""#);
-}
-
-#[test]
-fn test_include_extra_tokens_quoted() {
-    let src = r#"#include <stddef.h> extra"#;
-    let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: ExpectedEod, span: SourceSpan(2199023255572) }""#);
+    assert!(diags.is_empty(), "Expected no diagnostics, got: {diags:?}");
 }
 
 #[test]

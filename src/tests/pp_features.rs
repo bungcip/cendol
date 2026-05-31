@@ -1,5 +1,4 @@
-use super::pp_common::*;
-use insta::assert_yaml_snapshot;
+use crate::tests::pp_common::{assert_pp, DebugToken};
 
 #[test]
 fn test_has_builtin() {
@@ -21,15 +20,7 @@ fn test_has_builtin() {
     has_expect_macro
 #endif
 "#;
-    assert_yaml_snapshot!(setup_pp_snapshot(src), 
-    @"
-    - kind: Identifier
-      text: has_expect
-    - kind: Identifier
-      text: no_non_existent
-    - kind: Identifier
-      text: has_expect_macro
-    ");
+    assert_pp(src, "has_expect\nno_non_existent\nhas_expect_macro");
 }
 
 #[test]
@@ -49,14 +40,10 @@ fn test_has_feature() {
     no_non_existent
 #endif
 "#;
-    assert_yaml_snapshot!(setup_pp_snapshot(src), @"
-    - kind: Identifier
-      text: has_static_assert
-    - kind: Identifier
-      text: has_generic_selection
-    - kind: Identifier
-      text: no_non_existent
-    ");
+    assert_pp(
+        src,
+        "has_static_assert\nhas_generic_selection\nno_non_existent",
+    );
 }
 
 #[test]
@@ -80,16 +67,10 @@ fn test_has_c_attribute() {
     has_unsequenced_value
 #endif
 "#;
-    assert_yaml_snapshot!(setup_pp_snapshot(src), @"
-    - kind: Identifier
-      text: has_nodiscard
-    - kind: Identifier
-      text: no_non_existent
-    - kind: Identifier
-      text: has_nodiscard_value
-    - kind: Identifier
-      text: has_unsequenced_value
-    ");
+    assert_pp(
+        src,
+        "has_nodiscard\nno_non_existent\nhas_nodiscard_value\nhas_unsequenced_value",
+    );
 }
 
 #[test]
@@ -101,10 +82,7 @@ fn test_has_attribute() {
     no_aligned
 #endif
 "#;
-    assert_yaml_snapshot!(setup_pp_snapshot(src), @"
-    - kind: Identifier
-      text: no_aligned
-    ");
+    assert_pp(src, "no_aligned");
 }
 
 #[test]
@@ -160,10 +138,7 @@ fn test_has_include_next() {
         .map(|t| DebugToken::from_token(t, &sm))
         .collect();
 
-    assert_yaml_snapshot!(debug_tokens, @"
-    - kind: Identifier
-      text: found_next
-    - kind: Identifier
-      text: final_header
-    ");
+    assert_eq!(debug_tokens.len(), 2);
+    assert_eq!(debug_tokens[0].text, "found_next");
+    assert_eq!(debug_tokens[1].text, "final_header");
 }

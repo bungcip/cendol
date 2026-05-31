@@ -1,4 +1,7 @@
+use crate::driver::artifact::CompilePhase;
+use crate::lang_options::CStandard;
 use crate::tests::parser_utils::{setup_declaration, setup_translation_unit, setup_translation_unit_with_std};
+use crate::tests::test_utils::{run_pass, run_pass_with_std};
 
 #[test]
 fn test_peek_past_attribute_exhaustive() {
@@ -235,4 +238,161 @@ fn test_get_declarator_params_coverage() {
 
     // Hits line 354 in get_declarator_params (Array of function pointers / function returning pointer to array)
     let _ = setup_translation_unit("int (*g())[5] { return 0; }");
+}
+
+#[test]
+fn test_type_qualifiers_atomic_restrict() {
+    let decl = setup_declaration("int * restrict _Atomic p;");
+    insta::assert_yaml_snapshot!(&decl, @"
+    Declaration:
+      specifiers:
+        - int
+      init_declarators:
+        - name: p
+          kind: pointer
+    ");
+}
+
+#[test]
+fn test_vla_star_size() {
+    let decl = setup_translation_unit("void foo(int a[*]);");
+    insta::assert_yaml_snapshot!(&decl, @"
+    TranslationUnit:
+      - Declaration:
+          specifiers:
+            - void
+          init_declarators:
+            - name: foo
+              kind: function(int array) -> int
+    ");
+}
+
+#[test]
+fn test_abstract_declarator_in_declarator() {
+    let decl = setup_translation_unit("void foo(int (*));");
+    insta::assert_yaml_snapshot!(&decl, @"
+    TranslationUnit:
+      - Declaration:
+          specifiers:
+            - void
+          init_declarators:
+            - name: foo
+              kind: function(int pointer) -> int
+    ");
+}
+
+#[test]
+fn test_array_size_qualifiers() {
+    let decl = setup_translation_unit("void foo(int a[static restrict 5]);");
+    insta::assert_yaml_snapshot!(&decl, @"
+    TranslationUnit:
+      - Declaration:
+          specifiers:
+            - void
+          init_declarators:
+            - name: foo
+              kind: function(int array) -> int
+    ");
+}
+
+#[test]
+fn test_complex_abstract_declarators_trailing() {
+    let decl1 = setup_translation_unit("void f(int [10]);");
+    insta::assert_yaml_snapshot!(&decl1, @"
+    TranslationUnit:
+      - Declaration:
+          specifiers:
+            - void
+          init_declarators:
+            - name: f
+              kind: function(int array) -> int
+    ");
+
+    let decl2 = setup_translation_unit("void f(int (int));");
+    insta::assert_yaml_snapshot!(&decl2, @"
+    TranslationUnit:
+      - Declaration:
+          specifiers:
+            - void
+          init_declarators:
+            - name: f
+              kind: function(int function(int) -> int) -> int
+    ");
+
+    let _ = setup_translation_unit("void f(int (*)(int)[10]);");
+}
+
+#[test]
+fn test_abstract_declarator_left_paren_gaps() {
+    let decl1 = setup_translation_unit("void f(int ());");
+    insta::assert_yaml_snapshot!(&decl1, @"
+    TranslationUnit:
+      - Declaration:
+          specifiers:
+            - void
+          init_declarators:
+            - name: f
+              kind: function(int function(void) -> int) -> int
+    ");
+
+    let decl2 = setup_translation_unit("void f(int (*)(...));");
+    insta::assert_yaml_snapshot!(&decl2, @"
+    TranslationUnit:
+      - Declaration:
+          specifiers:
+            - void
+          init_declarators:
+            - name: f
+              kind: function(int function(...) -> pointer) -> int
+    ");
+}
+
+#[test]
+fn test_pointer_qualifier_abstract() {
+    let decl = setup_translation_unit("void f(int * restrict);");
+    insta::assert_yaml_snapshot!(&decl, @"
+    TranslationUnit:
+      - Declaration:
+          specifiers:
+            - void
+          init_declarators:
+            - name: f
+              kind: function(int pointer) -> int
+    ");
+}
+
+#[test]
+fn test_abstract_declarator_dead_arms_attempt() {
+    let _ = setup_translation_unit("void f(int (* int));");
+    let _ = setup_translation_unit("typedef int my_int; void f(int (* my_int));");
+    let _ = setup_translation_unit("typedef int my_int; void f(int (* my_int p));");
+}
+
+#[test]
+fn test_abstract_declarator_builder_coverage() {
+    run_pass(
+        r#"
+        int main() {
+            int sz1 = sizeof(int *);           // Abstract pointer
+            int sz2 = sizeof(int [5]);         // Abstract array
+            int sz3 = sizeof(int (*)(void));   // Abstract function pointer
+            int x = (int)3.14;                 // Cast
+            return 0;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_is_type_name_start_c23_attr() {
+    run_pass_with_std(
+        r#"
+        void foo() {
+            int x = ([[maybe_unused]] int)1;
+        }
+        "#,
+        CompilePhase::Parse,
+        CStandard::C23,
+    );
 }

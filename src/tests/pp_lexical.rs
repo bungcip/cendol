@@ -2,7 +2,7 @@ use crate::ast::StringId;
 use crate::pp::{PPConfig, PPTokenFlags, PPTokenKind, Preprocessor, dumper::PPDumper};
 use crate::source_manager::FileKind;
 use crate::test_tokens;
-use crate::tests::pp_common::{create_test_pp_lexer, setup_pp_snapshot, setup_pp_with_sm_and_diagnostics};
+use crate::tests::pp_common::{assert_pp, create_test_pp_lexer, setup_pp_with_sm_and_diagnostics};
 use crate::tests::test_utils::setup_sm_and_de;
 
 // Lexer basic tests
@@ -322,13 +322,7 @@ OK
 OK
 #endif
 "#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @"
-    - kind: Identifier
-      text: OK
-    - kind: Identifier
-      text: OK
-    ");
+    assert_pp(src, "OK\nOK");
 }
 
 // Line Splicing
@@ -372,11 +366,7 @@ OK
 FAIL
 #endif
 "#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @"
-    - kind: Identifier
-      text: OK
-    ");
+    assert_pp(src, "OK");
 }
 
 #[test]
@@ -394,13 +384,7 @@ OK_UCN
 FAIL_UCN
 #endif
 "#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @"
-    - kind: Identifier
-      text: OK_WIDE
-    - kind: Identifier
-      text: OK_UCN
-    ");
+    assert_pp(src, "OK_WIDE\nOK_UCN");
 }
 
 #[test]

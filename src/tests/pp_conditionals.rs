@@ -95,6 +95,10 @@ fn test_constant_expressions() {
     assert_pp("#if (2 + 3) * 4 == 20\nOK\n#endif", "OK");
     // macro expansion
     assert_pp("#define VAL 5\n#if VAL == 5\nOK\n#endif", "OK");
+    // magic macros
+    assert_pp("#if defined(__LINE__)\nOK_LINE\n#endif", "OK_LINE");
+    assert_pp("#if defined(__FILE__)\nOK_FILE\n#endif", "OK_FILE");
+    assert_pp("#if defined(__COUNTER__)\nOK_COUNTER\n#endif", "OK_COUNTER");
     // hex/octal
     assert_pp("#if 0x10 == 16\nOK\n#endif", "OK");
     assert_pp("#if 010 == 8\nOK\n#endif", "OK");

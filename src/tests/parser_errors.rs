@@ -263,3 +263,15 @@ fn test_is_type_name_start_c23_attr() {
         CStandard::C23,
     );
 }
+
+#[test]
+fn test_parse_diag_display_and_eof() {
+    use crate::parser::{ParseDiag, ParseError};
+    use crate::source_manager::SourceSpan;
+
+    let diag = ParseDiag {
+        span: SourceSpan::default(),
+        kind: ParseError::UnexpectedEof,
+    };
+    assert_eq!(diag.to_string(), "Unexpected End of File");
+}

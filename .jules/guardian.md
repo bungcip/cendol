@@ -260,3 +260,7 @@ Action: When testing semantic constraints involving complex derived types (like 
 2024-05-25 - [Block-scope Thread-Local Validation]
 
 Learning: C11 §6.7.1p3 requires that `_Thread_local` variables in block scope must also be specified with either `static` or `extern` storage-class specifiers. Without explicitly testing this invariant, the compiler could easily accept automatic `_Thread_local` variables, breaking compilation or runtime assumptions as thread-local semantics do not apply to automatic storage. Action: Ensure storage class modifier combinations are robustly checked, especially for nested scopes and specific thread-local semantics.
+
+2024-05-31 - [Nested Pointer Qualifiers]
+
+Learning: C11 6.5.16.1p1 requires that operands for assignment are pointers to qualified or unqualified versions of compatible types. For nested pointers, `int **` and `const int **` are NOT compatible types. The compiler correctly prevents implicit conversion for these assignments and returns a type mismatch rather than just emitting a "discards qualifiers" warning. We need to test to ensure we don't accidentally enable this type conversion implicitly because the outer qualifiers would silently be added, which breaks C11 safety assumptions around pointer aliasing. Action: Add tests specifically verifying that type conversions fail outright for incompatible nested pointers like `int **` assigned to `const int **`.

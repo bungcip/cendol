@@ -156,3 +156,4 @@ pub mod regr_struct_bitfield;
 
 // Test Helpers
 pub mod test_utils;
+pub mod guardian_pointer_assignment_nested_qualifiers;

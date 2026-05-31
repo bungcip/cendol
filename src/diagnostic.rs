@@ -189,12 +189,7 @@ impl DiagnosticEngine {
         }
     }
 
-    fn print_location<W: std::fmt::Write>(
-        &self,
-        diag: &Diagnostic,
-        sm: &SourceManager,
-        f: &mut W,
-    ) -> std::fmt::Result {
+    fn print_location<W: std::fmt::Write>(&self, diag: &Diagnostic, sm: &SourceManager, f: &mut W) -> std::fmt::Result {
         let path = sm
             .get_file_info(diag.span.source_id())
             .map(|fi| fi.path.to_str().unwrap_or("<unknown>"))

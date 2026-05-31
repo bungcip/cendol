@@ -18,10 +18,7 @@ fn assert_warning_formatting(source: &str, warning_name: &'static str, expected_
 
     for warning in warnings {
         let mut formatted = String::new();
-        driver
-            .de
-            .print_single(warning, &driver.sm, &mut formatted)
-            .unwrap();
+        driver.de.print_single(warning, &driver.sm, &mut formatted).unwrap();
         assert!(
             formatted.contains(expected_tag),
             "Formatted output should contain {}",

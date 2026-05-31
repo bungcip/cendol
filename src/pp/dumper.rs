@@ -40,7 +40,15 @@ impl<'a> PPDumper<'a> {
             return Ok(());
         }
 
-        let mut state = self.init_state();
+        let mut state = DumperState {
+            file_id: SourceId(std::num::NonZeroU32::MAX),
+            file_name: None,
+            current_line: 0,
+            buffer: &[],
+            last_pos: 0,
+            at_line_start: true,
+            last_was_open_paren: false,
+        };
 
         if !self.suppress_line_markers {
             let loc = self.resolve_top_level_loc(self.tokens[0].location);
@@ -62,7 +70,10 @@ impl<'a> PPDumper<'a> {
             let file_name_str = file_name.unwrap_or("<unknown>");
 
             if loc.source_id() != state.file_id || state.file_name.as_deref() != Some(file_name_str) {
-                self.handle_file_transition(writer, &mut state, loc, line, file_name_str)?;
+                self.print_line_marker(writer, &mut state, line, file_name_str)?;
+                state.file_id = loc.source_id();
+                state.buffer = self.sm.get_buffer_safe(state.file_id).unwrap_or(&[]);
+                state.last_pos = 0;
             }
 
             let mut token_start = loc.offset();
@@ -77,9 +88,16 @@ impl<'a> PPDumper<'a> {
                 self.print_line_marker(writer, &mut state, line, file_name_str)?;
             }
 
-            self.handle_leading_space(writer, &state, token, gap_printed_space)?;
+            if token.flags.contains(PPTokenFlags::LEADING_SPACE) && !gap_printed_space && !state.at_line_start {
+                write!(writer, " ")?;
+            }
 
-            let text = self.get_token_text(token, is_macro);
+            let text = if is_macro {
+                token.get_text(self.sm)
+            } else {
+                let span = SourceSpan::from_loc_and_length(token.location, token.length as u32);
+                std::borrow::Cow::Borrowed(self.sm.get_source_text(span))
+            };
             write!(writer, "{}", text)?;
 
             state.at_line_start = false;
@@ -93,33 +111,6 @@ impl<'a> PPDumper<'a> {
         }
 
         writeln!(writer)?;
-        Ok(())
-    }
-
-    fn init_state(&self) -> DumperState<'_> {
-        DumperState {
-            file_id: SourceId(std::num::NonZeroU32::MAX),
-            file_name: None,
-            current_line: 0,
-            buffer: &[],
-            last_pos: 0,
-            at_line_start: true,
-            last_was_open_paren: false,
-        }
-    }
-
-    fn handle_file_transition(
-        &self,
-        writer: &mut impl Write,
-        state: &mut DumperState<'a>,
-        loc: SourceLoc,
-        line: u32,
-        name: &str,
-    ) -> std::io::Result<()> {
-        self.print_line_marker(writer, state, line, name)?;
-        state.file_id = loc.source_id();
-        state.buffer = self.sm.get_buffer_safe(state.file_id).unwrap_or(&[]);
-        state.last_pos = 0;
         Ok(())
     }
 
@@ -150,12 +141,11 @@ impl<'a> PPDumper<'a> {
     }
 
     fn get_display_name(&self, path: &str) -> String {
-        if let Ok(cwd) = std::env::current_dir()
-            && let Ok(rel) = std::path::Path::new(path).strip_prefix(cwd)
-        {
-            return rel.to_string_lossy().into_owned();
-        }
-        path.to_string()
+        std::env::current_dir()
+            .ok()
+            .and_then(|cwd| std::path::Path::new(path).strip_prefix(cwd).ok())
+            .map(|rel| rel.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.to_string())
     }
 
     fn handle_gap(
@@ -175,11 +165,9 @@ impl<'a> PPDumper<'a> {
         let is_macro = token.flags.contains(PPTokenFlags::MACRO_EXPANDED);
 
         if is_macro {
-            // ⚡ Bolt: Macro tokens should only trigger newlines from the gap if the gap is pure whitespace.
-            // If the gap contains text (like a macro call), it should be collapsed in -P mode.
             if has_nl {
                 if self.suppress_line_markers && !text.chars().all(|c| c.is_whitespace()) {
-                    return Ok((0, true)); // Suppress newline and prevent follow-up space
+                    return Ok((0, true));
                 }
                 let (newlines, space) = self.handle_whitespace_and_newlines(writer, state, text, true, true)?;
                 return Ok((newlines, space));
@@ -248,22 +236,18 @@ impl<'a> PPDumper<'a> {
 
         if has_nl {
             if !self.suppress_line_markers {
-                for _ in 0..text.chars().filter(|&c| c == '\n').count() {
+                newlines = text.chars().filter(|&c| c == '\n').count() as u32;
+                for _ in 0..newlines {
                     writeln!(writer)?;
-                    newlines += 1;
                 }
             } else if !state.at_line_start {
                 writeln!(writer)?;
                 newlines = 1;
             }
             state.at_line_start = true;
-        }
 
-        if let Some(last_nl) = text.rfind('\n')
-            && has_nl
-        {
-            let indent = &text[last_nl + 1..];
-            if !indent.is_empty() {
+            let last_nl = text.rfind('\n').unwrap();
+            if !text[last_nl + 1..].is_empty() {
                 write!(writer, " ")?;
                 state.at_line_start = false;
                 printed_space = true;
@@ -277,41 +261,16 @@ impl<'a> PPDumper<'a> {
         Ok((newlines, printed_space))
     }
 
-    fn handle_leading_space(
-        &self,
-        writer: &mut impl Write,
-        state: &DumperState<'a>,
-        token: &PPToken,
-        gap_printed_space: bool,
-    ) -> std::io::Result<()> {
-        if token.flags.contains(PPTokenFlags::LEADING_SPACE) && !gap_printed_space && !state.at_line_start {
-            write!(writer, " ")?;
-        }
-        Ok(())
-    }
-
-    fn get_token_text<'b>(&'b self, token: &PPToken, is_macro: bool) -> std::borrow::Cow<'b, str> {
-        if is_macro {
-            token.get_text(self.sm)
-        } else {
-            let span = SourceSpan::from_loc_and_length(token.location, token.length as u32);
-            std::borrow::Cow::Borrowed(self.sm.get_source_text(span))
-        }
-    }
-
     /// Resolve a location back to its top-level source file (Real).
     /// This follows the include_loc chain up to the physical source file.
     fn resolve_top_level_loc(&self, loc: SourceLoc) -> SourceLoc {
         let mut current_loc = loc;
-        loop {
-            if let Some(file_info) = self.sm.get_file_info(current_loc.source_id())
-                && let Some(include_loc) = file_info.include_loc
-            {
-                current_loc = include_loc;
-                continue;
-            }
-            return current_loc;
+        while let Some(file_info) = self.sm.get_file_info(current_loc.source_id())
+            && let Some(include_loc) = file_info.include_loc
+        {
+            current_loc = include_loc;
         }
+        current_loc
     }
 }
 

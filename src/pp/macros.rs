@@ -111,18 +111,6 @@ impl<'src> Preprocessor<'src> {
         result
     }
 
-    /// Helper to create a virtual buffer for macro expansion.
-    /// Does NOT rescan — the caller is responsible for rescanning.
-    /// This prevents double-rescan bugs (e.g. deferred macro patterns).
-    fn expand_virtual_buffer(
-        &mut self,
-        tokens: &[PPToken],
-        name: StringId,
-        location: SourceLoc,
-    ) -> Result<Vec<PPToken>, PPDiag> {
-        Ok(self.create_virtual_buffer_tokens(tokens, name, location))
-    }
-
     /// Expand an object-like macro
     fn expand_object_macro(
         &mut self,
@@ -146,7 +134,7 @@ impl<'src> Preprocessor<'src> {
             },
         )?;
 
-        self.expand_virtual_buffer(&substituted, symbol, token.location)
+        Ok(self.create_virtual_buffer_tokens(&substituted, symbol, token.location))
     }
 
     /// Expand a function-like macro
@@ -197,9 +185,7 @@ impl<'src> Preprocessor<'src> {
             is_va_missing,
         })?;
 
-        // No DISABLED flag needed — is_recursive_expansion() detects self-reference
-        // via the virtual buffer's source location (<macro_NAME>).
-        self.expand_virtual_buffer(&substituted, symbol, token.location)
+        Ok(self.create_virtual_buffer_tokens(&substituted, symbol, token.location))
     }
 
     /// Parse macro arguments from the current lexer
@@ -367,19 +353,17 @@ impl<'src> Preprocessor<'src> {
                     && macro_info.tokens[i + 2].kind == PPTokenKind::LeftParen
                     && let Some(rparen_idx) = Self::find_balanced_paren_range(&macro_info.tokens, i + 2)
                 {
-                    if !is_empty {
+                    let substituted = if !is_empty {
                         let content = &macro_info.tokens[i + 3..rparen_idx - 1];
                         let mut content_ctx = *ctx;
                         content_ctx.is_va_missing = false; // __VA_OPT__ content substitution doesn't use GNU comma swallowing
-                        let substituted = self.substitute_tokens_slice(content, &content_ctx)?;
-                        let mut stringified = self.stringify_tokens(&substituted, token.location)?;
-                        stringified.hide_set = token.hide_set;
-                        resolved.push(stringified);
+                        self.substitute_tokens_slice(content, &content_ctx)?
                     } else {
-                        let mut stringified = self.stringify_tokens(&[], token.location)?;
-                        stringified.hide_set = token.hide_set;
-                        resolved.push(stringified);
-                    }
+                        Vec::new()
+                    };
+                    let mut stringified = self.stringify_tokens(&substituted, token.location)?;
+                    stringified.hide_set = token.hide_set;
+                    resolved.push(stringified);
                     i = rparen_idx;
                     continue;
                 }
@@ -786,20 +770,19 @@ impl<'src> Preprocessor<'src> {
             && !self.macros.contains_key(&sym)
         {
             let next = i + 1;
-            if let Some(PPTokenKind::LeftParen) = tokens.get(next).map(|t| &t.kind) {
-                let arg_start = next + 1;
-                if let Some(arg_t) = tokens.get(arg_start)
-                    && let Some(arg_end) = Self::find_balanced_paren_range(tokens, next)
-                {
-                    match arg_t.kind {
-                        PPTokenKind::Less | PPTokenKind::StringLiteral => {
-                            return Ok(Some(arg_end));
-                        }
-                        _ => {
-                            // Computed form: __has_include(MACRO)
-                            let next_i = self.expand_range_and_splice(tokens, arg_start, arg_end - 1, true)?;
-                            return Ok(Some(next_i + 1));
-                        }
+            if let Some(PPTokenKind::LeftParen) = tokens.get(next).map(|t| &t.kind)
+                && let arg_start = next + 1
+                && let Some(arg_t) = tokens.get(arg_start)
+                && let Some(arg_end) = Self::find_balanced_paren_range(tokens, next)
+            {
+                match arg_t.kind {
+                    PPTokenKind::Less | PPTokenKind::StringLiteral => {
+                        return Ok(Some(arg_end));
+                    }
+                    _ => {
+                        // Computed form: __has_include(MACRO)
+                        let next_i = self.expand_range_and_splice(tokens, arg_start, arg_end - 1, true)?;
+                        return Ok(Some(next_i + 1));
                     }
                 }
             }
@@ -875,8 +858,14 @@ impl<'src> Preprocessor<'src> {
 
             if let Some(task) = self.try_get_expansion_task(tokens, i) {
                 match task {
-                    ExpansionTask::Function { end_idx, .. } => {
-                        let mut expanded = self.do_function_expansion(task, tokens, i, in_conditional)?;
+                    ExpansionTask::Function {
+                        info,
+                        symbol,
+                        end_idx,
+                        args,
+                    } => {
+                        let mut expanded =
+                            self.do_function_expansion(info, symbol, end_idx, args, tokens, i, in_conditional)?;
                         if !expanded.is_empty() {
                             if tokens[i].flags.contains(PPTokenFlags::LEADING_SPACE) {
                                 expanded[0].flags |= PPTokenFlags::LEADING_SPACE;
@@ -893,8 +882,8 @@ impl<'src> Preprocessor<'src> {
                             continue;
                         }
                     }
-                    ExpansionTask::Object { .. } => {
-                        let mut expanded = self.do_object_expansion(task, tokens, i)?;
+                    ExpansionTask::Object { info, symbol } => {
+                        let mut expanded = self.do_object_expansion(info, symbol, tokens, i)?;
                         if !expanded.is_empty() {
                             if tokens[i].flags.contains(PPTokenFlags::LEADING_SPACE) {
                                 expanded[0].flags |= PPTokenFlags::LEADING_SPACE;
@@ -983,21 +972,14 @@ impl<'src> Preprocessor<'src> {
 
     fn do_function_expansion(
         &mut self,
-        task: ExpansionTask,
+        info: MacroInfo,
+        symbol: StringId,
+        end_idx: usize,
+        mut args: Vec<Vec<PPToken>>,
         tokens: &[PPToken],
         i: usize,
         in_conditional: bool,
     ) -> Result<Vec<PPToken>, PPDiag> {
-        let ExpansionTask::Function {
-            info,
-            symbol,
-            end_idx,
-            mut args,
-        } = task
-        else {
-            unreachable!("ICE: Expected function task");
-        };
-
         let (is_variadic_empty, is_va_missing) = self.precalculate_variadic_args(&info, &mut args);
 
         // Pre-expand arguments (prescan)
@@ -1034,14 +1016,11 @@ impl<'src> Preprocessor<'src> {
 
     fn do_object_expansion(
         &mut self,
-        task: ExpansionTask,
+        info: MacroInfo,
+        symbol: StringId,
         tokens: &[PPToken],
         i: usize,
     ) -> Result<Vec<PPToken>, PPDiag> {
-        let ExpansionTask::Object { info, symbol } = task else {
-            unreachable!("ICE: Expected object task");
-        };
-
         let new_hs = self.hide_sets.insert(tokens[i].hide_set, symbol);
         let substituted = self.substitute_tokens_slice(
             &info.tokens,

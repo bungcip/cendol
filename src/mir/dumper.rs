@@ -85,27 +85,24 @@ impl<'a> MirDumper<'a> {
         write!(output, "{} {}(", fn_keyword, func.name)?;
 
         // Dump parameters
-        for (i, &param_id) in func.params.iter().enumerate() {
-            if i > 0 {
-                write!(output, ", ")?;
-            }
+        self.write_joined(output, &func.params, |out, &param_id| {
             if let Some(param) = self.mir.locals.get(param_id.index()) {
-                write!(output, "%")?;
+                write!(out, "%")?;
                 if let Some(name) = &param.name {
-                    write!(output, "{}", name)?;
+                    write!(out, "{}", name)?;
                 } else {
-                    write!(output, "unnamed")?;
+                    write!(out, "unnamed")?;
                 }
-                write!(output, ": ")?;
-                self.write_type(output, param.type_id)?;
+                write!(out, ": ")?;
+                self.write_type(out, param.type_id)
             } else {
-                write!(output, "%param{}: ?", param_id.get())?;
+                write!(out, "%param{}: ?", param_id.get())
             }
-        }
+        })?;
 
         if func.is_variadic {
             if !func.params.is_empty() {
-                write!(output, ", ")?;
+                self.write_comma(output)?;
             }
             write!(output, "...")?;
         }
@@ -130,12 +127,7 @@ impl<'a> MirDumper<'a> {
             for &local_id in &func.locals {
                 if let Some(local) = self.mir.locals.get(local_id.index()) {
                     write!(output, "    ")?;
-                    write!(output, "%")?;
-                    if let Some(name) = &local.name {
-                        write!(output, "{}", name)?;
-                    } else {
-                        write!(output, "{}", local_id.get())?;
-                    }
+                    self.write_local(output, local_id)?;
                     write!(output, ": ")?;
                     self.write_type(output, local.type_id)?;
                     writeln!(output)?;
@@ -214,20 +206,17 @@ impl<'a> MirDumper<'a> {
                 is_variadic,
             } => {
                 write!(output, "fn(")?;
-                for (i, &p) in params.iter().enumerate() {
-                    if i > 0 {
-                        write!(output, ", ")?;
-                    }
+                self.write_joined(output, params, |out, &p| {
                     if is_definition {
                         let index = self.get_type_index_from_type_id(p);
-                        write!(output, "%t{}", index)?;
+                        write!(out, "%t{}", index)
                     } else {
-                        self.write_type(output, p)?;
+                        self.write_type(out, p)
                     }
-                }
+                })?;
                 if *is_variadic {
                     if !params.is_empty() {
-                        write!(output, ", ")?;
+                        self.write_comma(output)?;
                     }
                     write!(output, "...")?;
                 }
@@ -249,13 +238,11 @@ impl<'a> MirDumper<'a> {
                 if is_definition {
                     let kind = if *is_union { "union" } else { "struct" };
                     write!(output, "{} {} {{ ", kind, name)?;
-                    for (i, (fname, fid)) in field_names.iter().zip(field_types.iter()).enumerate() {
-                        if i > 0 {
-                            write!(output, ", ")?;
-                        }
-                        let index = self.get_type_index_from_type_id(*fid);
-                        write!(output, "{}: %t{}", fname, index)?;
-                    }
+                    let fields = field_names.iter().zip(field_types.iter());
+                    self.write_joined(output, fields, |out, (fname, &fid)| {
+                        let index = self.get_type_index_from_type_id(fid);
+                        write!(out, "{}: %t{}", fname, index)
+                    })?;
                     write!(output, " }}")
                 } else {
                     let index = self.get_type_index_from_type_id(type_id);
@@ -326,45 +313,38 @@ impl<'a> MirDumper<'a> {
                 write!(output, "call ")?;
                 self.write_call_target(output, target)?;
                 write!(output, "(")?;
-                for (i, operand) in args.iter().enumerate() {
-                    if i > 0 {
-                        write!(output, ", ")?;
-                    }
-                    self.write_operand(output, operand)?;
-                }
+                self.write_joined(output, args, |out, operand| self.write_operand(out, operand))?;
                 write!(output, ")")
             }
-            MirStmt::BuiltinVaStart(ap, last) => {
-                write!(output, "va_start(")?;
-                self.write_place(output, ap)?;
-                write!(output, ", ")?;
-                self.write_operand(output, last)?;
-                write!(output, ")")
-            }
-            MirStmt::BuiltinVaEnd(ap) => {
-                write!(output, "va_end(")?;
-                self.write_place(output, ap)?;
-                write!(output, ")")
-            }
-            MirStmt::BuiltinVaCopy(dst, src) => {
-                write!(output, "va_copy(")?;
-                self.write_place(output, dst)?;
-                write!(output, ", ")?;
-                self.write_place(output, src)?;
-                write!(output, ")")
-            }
-            MirStmt::AtomicStore(ptr, val, order) => {
-                write!(output, "atomic_store(")?;
-                self.write_operand(output, ptr)?;
-                write!(output, ", ")?;
-                self.write_operand(output, val)?;
-                write!(output, ", {:?})", order)
-            }
-            MirStmt::BuiltinPrefetch { addr, rw, locality } => {
-                write!(output, "prefetch(")?;
-                self.write_operand(output, addr)?;
-                write!(output, ", {}, {})", rw, locality)
-            }
+            MirStmt::BuiltinVaStart(ap, last) => self.write_call(
+                output,
+                "va_start",
+                &[&|out| self.write_place(out, ap), &|out| self.write_operand(out, last)],
+            ),
+            MirStmt::BuiltinVaEnd(ap) => self.write_call(output, "va_end", &[&|out| self.write_place(out, ap)]),
+            MirStmt::BuiltinVaCopy(dst, src) => self.write_call(
+                output,
+                "va_copy",
+                &[&|out| self.write_place(out, dst), &|out| self.write_place(out, src)],
+            ),
+            MirStmt::AtomicStore(ptr, val, order) => self.write_call(
+                output,
+                "atomic_store",
+                &[
+                    &|out| self.write_operand(out, ptr),
+                    &|out| self.write_operand(out, val),
+                    &|out| write!(out, "{:?}", order),
+                ],
+            ),
+            MirStmt::BuiltinPrefetch { addr, rw, locality } => self.write_call(
+                output,
+                "prefetch",
+                &[
+                    &|out| self.write_operand(out, addr),
+                    &|out| write!(out, "{}", rw),
+                    &|out| write!(out, "{}", locality),
+                ],
+            ),
         }
     }
 
@@ -378,9 +358,9 @@ impl<'a> MirDumper<'a> {
             Terminator::If(cond, then_block, else_block) => {
                 write!(output, "cond_br ")?;
                 self.write_operand(output, cond)?;
-                write!(output, ", ")?;
+                self.write_comma(output)?;
                 self.write_block(output, *then_block)?;
-                write!(output, ", ")?;
+                self.write_comma(output)?;
                 self.write_block(output, *else_block)
             }
             Terminator::Return(operand) => {
@@ -405,13 +385,54 @@ impl<'a> MirDumper<'a> {
         }
     }
 
+    /// Write a comma separator
+    fn write_comma<W: fmt::Write>(&self, output: &mut W) -> fmt::Result {
+        write!(output, ", ")
+    }
+
+    /// Write a call-style instruction formatting (e.g. instruction(arg1, arg2))
+    fn write_call<W: fmt::Write>(
+        &self,
+        output: &mut W,
+        name: &str,
+        args: &[&dyn Fn(&mut W) -> fmt::Result],
+    ) -> fmt::Result {
+        write!(output, "{}(", name)?;
+        for (i, arg) in args.iter().enumerate() {
+            if i > 0 {
+                self.write_comma(output)?;
+            }
+            arg(output)?;
+        }
+        write!(output, ")")
+    }
+
+    /// Write an iterator of items joined by commas
+    fn write_joined<W: fmt::Write, I, F>(&self, output: &mut W, items: I, mut format_item: F) -> fmt::Result
+    where
+        I: IntoIterator,
+        F: FnMut(&mut W, I::Item) -> fmt::Result,
+    {
+        let mut first = true;
+        for item in items {
+            if !first {
+                self.write_comma(output)?;
+            }
+            first = false;
+            format_item(output, item)?;
+        }
+        Ok(())
+    }
+
     /// Convert local ID to string representation
     fn write_local<W: fmt::Write>(&self, output: &mut W, local_id: LocalId) -> fmt::Result {
         write!(output, "%")?;
-        let local = self.mir.locals.get(local_id.index());
-        match local {
-            Some(local) if local.name.is_some() => write!(output, "{}", local.name.as_ref().unwrap()),
-            _ => write!(output, "{}", local_id.get()),
+        if let Some(local) = self.mir.locals.get(local_id.index())
+            && let Some(name) = &local.name
+        {
+            write!(output, "{}", name)
+        } else {
+            write!(output, "{}", local_id.get())
         }
     }
 
@@ -453,99 +474,84 @@ impl<'a> MirDumper<'a> {
     fn write_string_literal_if_possible<W: fmt::Write>(
         &self,
         output: &mut W,
-        global_name: &str,
+        name: &str,
         const_id: ConstValueId,
     ) -> Result<bool, fmt::Error> {
-        if !global_name.starts_with(".L.str") {
+        if !name.starts_with(".L.str") {
             return Ok(false);
         }
 
-        if let Some(const_value) = self.mir.constants.get(const_id.index())
-            && let ConstValueKind::ArrayLiteral(elements) = &const_value.kind
-        {
-            // First, check if all elements are integers (bytes)
-            for &element_id in elements {
-                let element = self.mir.constants.get(element_id.index()).unwrap();
-                if !matches!(element.kind, ConstValueKind::Int(_)) {
-                    return Ok(false);
-                }
-            }
+        let Some(const_value) = self.mir.constants.get(const_id.index()) else {
+            return Ok(false);
+        };
+        let ConstValueKind::ArrayLiteral(elements) = &const_value.kind else {
+            return Ok(false);
+        };
 
-            write!(output, "const \"")?;
-            for &element_id in elements {
-                let element = self.mir.constants.get(element_id.index()).unwrap();
-                if let ConstValueKind::Int(byte) = &element.kind {
-                    let byte = *byte as u8;
-                    if byte == 0 {
-                        break;
-                    }
-
-                    match byte {
-                        b'\n' => write!(output, "\\n")?,
-                        b'\r' => write!(output, "\\r")?,
-                        b'\t' => write!(output, "\\t")?,
-                        b'\\' => write!(output, "\\\\")?,
-                        b'"' => write!(output, "\\\"")?,
-                        b if (32..=126).contains(&b) => write!(output, "{}", byte as char)?,
-                        _ => write!(output, "\\x{:02x}", byte)?,
-                    }
-                }
+        let mut bytes = Vec::with_capacity(elements.len());
+        for &id in elements {
+            match self.mir.constants.get(id.index()).map(|c| &c.kind) {
+                Some(ConstValueKind::Int(val)) => bytes.push(*val as u8),
+                _ => return Ok(false),
             }
-            write!(output, "\"")?;
-            return Ok(true);
         }
 
-        Ok(false)
+        write!(output, "const \"")?;
+        for &byte in &bytes {
+            if byte == 0 {
+                break;
+            }
+            match byte {
+                b'\n' => write!(output, "\\n")?,
+                b'\r' => write!(output, "\\r")?,
+                b'\t' => write!(output, "\\t")?,
+                b'\\' => write!(output, "\\\\")?,
+                b'"' => write!(output, "\\\"")?,
+                32..=126 => write!(output, "{}", byte as char)?,
+                _ => write!(output, "\\x{:02x}", byte)?,
+            }
+        }
+        write!(output, "\"")?;
+        Ok(true)
     }
 
     /// Convert constant ID to string representation
     fn write_const<W: fmt::Write>(&self, output: &mut W, const_id: ConstValueId) -> fmt::Result {
-        if let Some(const_value) = self.mir.constants.get(const_id.index()) {
-            match &const_value.kind {
-                ConstValueKind::Int(val) => write!(output, "const {}", val),
-                ConstValueKind::Float(val) => write!(output, "const {}", val),
-                ConstValueKind::Bool(val) => write!(output, "const {}", val),
-                ConstValueKind::Null => write!(output, "const null"),
-                ConstValueKind::Zero => write!(output, "const zero"),
-                ConstValueKind::StructLiteral(fields) => {
-                    // Expand struct literal to show field contents
-                    write!(output, "const struct_literal {{ ")?;
-                    for (i, (field_idx, field_const_id)) in fields.iter().enumerate() {
-                        if i > 0 {
-                            write!(output, ", ")?;
-                        }
-                        write!(output, "{}: ", field_idx)?;
-                        self.write_const(output, *field_const_id)?;
-                    }
-                    write!(output, " }}")
-                }
-                ConstValueKind::ArrayLiteral(elements) => {
-                    // Expand array literal to show element contents
-                    write!(output, "const array_literal [")?;
-                    for (i, element_const_id) in elements.iter().enumerate() {
-                        if i > 0 {
-                            write!(output, ", ")?;
-                        }
-                        self.write_const(output, *element_const_id)?;
-                    }
-                    write!(output, "]")
-                }
-                ConstValueKind::GlobalAddress(global_id, addend) => {
-                    write!(output, "const ")?;
-                    self.write_global(output, *global_id)?;
-                    if *addend != 0 {
-                        write!(output, "+{}", addend)
-                    } else {
-                        Ok(())
-                    }
-                }
-                ConstValueKind::FunctionAddress(func_id) => {
-                    write!(output, "const ")?;
-                    self.write_function_name(output, *func_id)
+        let Some(const_value) = self.mir.constants.get(const_id.index()) else {
+            return write!(output, "const unknown_{}", const_id.get());
+        };
+
+        write!(output, "const ")?;
+        match &const_value.kind {
+            ConstValueKind::Int(val) => write!(output, "{}", val),
+            ConstValueKind::Float(val) => write!(output, "{}", val),
+            ConstValueKind::Bool(val) => write!(output, "{}", val),
+            ConstValueKind::Null => write!(output, "null"),
+            ConstValueKind::Zero => write!(output, "zero"),
+            ConstValueKind::StructLiteral(fields) => {
+                write!(output, "struct_literal {{ ")?;
+                self.write_joined(output, fields, |out, (field_idx, field_const_id)| {
+                    write!(out, "{}: ", field_idx)?;
+                    self.write_const(out, *field_const_id)
+                })?;
+                write!(output, " }}")
+            }
+            ConstValueKind::ArrayLiteral(elements) => {
+                write!(output, "array_literal [")?;
+                self.write_joined(output, elements, |out, &element_const_id| {
+                    self.write_const(out, element_const_id)
+                })?;
+                write!(output, "]")
+            }
+            ConstValueKind::GlobalAddress(global_id, addend) => {
+                self.write_global(output, *global_id)?;
+                if *addend != 0 {
+                    write!(output, "+{}", addend)
+                } else {
+                    Ok(())
                 }
             }
-        } else {
-            write!(output, "const unknown_{}", const_id.get())
+            ConstValueKind::FunctionAddress(func_id) => self.write_function_name(output, *func_id),
         }
     }
 
@@ -553,11 +559,7 @@ impl<'a> MirDumper<'a> {
     fn write_place<W: fmt::Write>(&self, output: &mut W, place: &Place) -> fmt::Result {
         match place {
             Place::Local(local_id) => self.write_local(output, *local_id),
-            Place::Deref(operand) => {
-                write!(output, "deref(")?;
-                self.write_operand(output, operand)?;
-                write!(output, ")")
-            }
+            Place::Deref(operand) => self.write_call(output, "deref", &[&|out| self.write_operand(out, operand)]),
             Place::Global(global_id) => self.write_global(output, *global_id),
             Place::StructField(base_place, field_idx, bit_info) => {
                 self.write_place(output, base_place)?;
@@ -581,11 +583,7 @@ impl<'a> MirDumper<'a> {
         match operand {
             Operand::Copy(place) => self.write_place(output, place),
             Operand::Constant(const_id) => self.write_const(output, *const_id),
-            Operand::AddressOf(place) => {
-                write!(output, "addr_of(")?;
-                self.write_place(output, place)?;
-                write!(output, ")")
-            }
+            Operand::AddressOf(place) => self.write_call(output, "addr_of", &[&|out| self.write_place(out, place)]),
             Operand::Cast(type_id, operand) => {
                 write!(output, "cast<")?;
                 self.write_type(output, *type_id)?;
@@ -618,83 +616,85 @@ impl<'a> MirDumper<'a> {
                 write!(output, "{} ", self.unary_float_op_to_string(op))?;
                 self.write_operand(output, operand)
             }
-            Rvalue::PtrAdd(base, offset) => {
-                write!(output, "ptradd(")?;
-                self.write_operand(output, base)?;
-                write!(output, ", ")?;
-                self.write_operand(output, offset)?;
-                write!(output, ")")
-            }
-            Rvalue::PtrSub(base, offset) => {
-                write!(output, "ptrsub(")?;
-                self.write_operand(output, base)?;
-                write!(output, ", ")?;
-                self.write_operand(output, offset)?;
-                write!(output, ")")
-            }
-            Rvalue::PtrDiff(left, right) => {
-                write!(output, "ptrdiff(")?;
-                self.write_operand(output, left)?;
-                write!(output, ", ")?;
-                self.write_operand(output, right)?;
-                write!(output, ")")
-            }
+            Rvalue::PtrAdd(base, offset) => self.write_call(
+                output,
+                "ptradd",
+                &[&|out| self.write_operand(out, base), &|out| {
+                    self.write_operand(out, offset)
+                }],
+            ),
+            Rvalue::PtrSub(base, offset) => self.write_call(
+                output,
+                "ptrsub",
+                &[&|out| self.write_operand(out, base), &|out| {
+                    self.write_operand(out, offset)
+                }],
+            ),
+            Rvalue::PtrDiff(left, right) => self.write_call(
+                output,
+                "ptrdiff",
+                &[&|out| self.write_operand(out, left), &|out| {
+                    self.write_operand(out, right)
+                }],
+            ),
             Rvalue::StructLiteral(fields) => {
                 write!(output, "struct{{")?;
-                for (i, (idx, op)) in fields.iter().enumerate() {
-                    if i > 0 {
-                        write!(output, ", ")?;
-                    }
-                    write!(output, "{}: ", idx)?;
-                    self.write_operand(output, op)?;
-                }
+                self.write_joined(output, fields, |out, (idx, op)| {
+                    write!(out, "{}: ", idx)?;
+                    self.write_operand(out, op)
+                })?;
                 write!(output, "}}")
             }
             Rvalue::ArrayLiteral(elements) => {
                 write!(output, "[")?;
-                for (i, op) in elements.iter().enumerate() {
-                    if i > 0 {
-                        write!(output, ", ")?;
-                    }
-                    self.write_operand(output, op)?;
-                }
+                self.write_joined(output, elements, |out, op| self.write_operand(out, op))?;
                 write!(output, "]")
             }
-            Rvalue::BuiltinVaArg(ap, ty) => {
-                write!(output, "va_arg(")?;
-                self.write_place(output, ap)?;
-                write!(output, ", ")?;
-                self.write_type(output, *ty)?;
-                write!(output, ")")
+            Rvalue::BuiltinVaArg(ap, ty) => self.write_call(
+                output,
+                "va_arg",
+                &[&|out| self.write_place(out, ap), &|out| self.write_type(out, *ty)],
+            ),
+            Rvalue::BuiltinFrameAddress(level) => {
+                self.write_call(output, "frame_address", &[&|out| write!(out, "{}", level)])
             }
-            Rvalue::BuiltinFrameAddress(level) => write!(output, "frame_address({})", level),
-            Rvalue::AtomicLoad(ptr, order) => {
-                write!(output, "atomic_load(")?;
-                self.write_operand(output, ptr)?;
-                write!(output, ", {:?})", order)
-            }
-            Rvalue::AtomicExchange(ptr, val, order) => {
-                write!(output, "atomic_xchg(")?;
-                self.write_operand(output, ptr)?;
-                write!(output, ", ")?;
-                self.write_operand(output, val)?;
-                write!(output, ", {:?})", order)
-            }
-            Rvalue::AtomicCompareExchange(ptr, expected, desired, weak, success, failure) => {
-                write!(output, "atomic_cmpxchg(")?;
-                self.write_operand(output, ptr)?;
-                write!(output, ", ")?;
-                self.write_operand(output, expected)?;
-                write!(output, ", ")?;
-                self.write_operand(output, desired)?;
-                write!(output, ", {}, {:?}, {:?})", weak, success, failure)
-            }
+            Rvalue::AtomicLoad(ptr, order) => self.write_call(
+                output,
+                "atomic_load",
+                &[&|out| self.write_operand(out, ptr), &|out| write!(out, "{:?}", order)],
+            ),
+            Rvalue::AtomicExchange(ptr, val, order) => self.write_call(
+                output,
+                "atomic_xchg",
+                &[
+                    &|out| self.write_operand(out, ptr),
+                    &|out| self.write_operand(out, val),
+                    &|out| write!(out, "{:?}", order),
+                ],
+            ),
+            Rvalue::AtomicCompareExchange(ptr, expected, desired, weak, success, failure) => self.write_call(
+                output,
+                "atomic_cmpxchg",
+                &[
+                    &|out| self.write_operand(out, ptr),
+                    &|out| self.write_operand(out, expected),
+                    &|out| self.write_operand(out, desired),
+                    &|out| write!(out, "{}", weak),
+                    &|out| write!(out, "{:?}", success),
+                    &|out| write!(out, "{:?}", failure),
+                ],
+            ),
             Rvalue::AtomicFetchOp(op, ptr, val, order) => {
-                write!(output, "atomic_fetch_{}(", self.binary_int_op_to_string(op))?;
-                self.write_operand(output, ptr)?;
-                write!(output, ", ")?;
-                self.write_operand(output, val)?;
-                write!(output, ", {:?})", order)
+                let name = format!("atomic_fetch_{}", self.binary_int_op_to_string(op));
+                self.write_call(
+                    output,
+                    &name,
+                    &[
+                        &|out| self.write_operand(out, ptr),
+                        &|out| self.write_operand(out, val),
+                        &|out| write!(out, "{:?}", order),
+                    ],
+                )
             }
         }
     }

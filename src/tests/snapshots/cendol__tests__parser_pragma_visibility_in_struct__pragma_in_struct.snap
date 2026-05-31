@@ -1,0 +1,10 @@
+---
+source: src/tests/parser_pragma_visibility_in_struct.rs
+expression: result
+---
+Declaration {
+    specifiers: [
+        "struct S { PragmaVisibilityStmt(\"Push(Hidden)\"), Declaration { specifiers: [\"int\"], init_declarators: [ResolvedInitDeclarator { name: \"a\", kind: None, initializer: None }] }, PragmaVisibilityStmt(\"Pop\"), PragmaPackStmt(\"PushSet(1)\"), Declaration { specifiers: [\"int\"], init_declarators: [ResolvedInitDeclarator { name: \"b\", kind: None, initializer: None }] }, PragmaPackStmt(\"Pop\"), Declaration { specifiers: [\"int\"], init_declarators: [ResolvedInitDeclarator { name: \"c\", kind: None, initializer: None }] }, }",
+    ],
+    init_declarators: [],
+}

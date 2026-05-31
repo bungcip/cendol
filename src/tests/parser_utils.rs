@@ -80,6 +80,7 @@ pub(crate) enum ResolvedNodeKind {
     Empty, // Empty statement
     // Add more as needed for tests
     PragmaPackStmt(String),
+    PragmaVisibilityStmt(String),
 }
 
 /// Simplified resolved generic association for testing
@@ -152,7 +153,16 @@ fn resolve_specs(ast: &ParsedAst, specifiers: &[DeclSpec]) -> Vec<String> {
                         s.push_str(tag.as_str());
                     }
                     if has_body {
-                        s.push_str(" { ... }");
+                        if let Some(nodes) = def {
+                            let resolved_nodes: Vec<_> = nodes.iter().map(|n| resolve_node(ast, *n)).collect();
+                            s.push_str(" { ");
+                            for node in resolved_nodes {
+                                s.push_str(&format!("{:?}, ", node));
+                            }
+                            s.push_str("}");
+                        } else {
+                            s.push_str(" { ... }");
+                        }
                     }
                     s
                 }
@@ -410,6 +420,7 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
         }
         ParsedNodeKind::EmptyStmt | ParsedNodeKind::Dummy => ResolvedNodeKind::Empty,
         ParsedNodeKind::PragmaPack(kind) => ResolvedNodeKind::PragmaPackStmt(format!("{:?}", kind)),
+        ParsedNodeKind::PragmaVisibility(kind) => ResolvedNodeKind::PragmaVisibilityStmt(format!("{:?}", kind)),
         // Add more cases as needed for other ParsedNodeKind variants used in tests
         _ => panic!("Unsupported ParsedNodeKind for resolution: {:?}", node.kind),
     }

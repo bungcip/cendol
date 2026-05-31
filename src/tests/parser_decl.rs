@@ -21,7 +21,7 @@ fn test_struct_declaration_with_body() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "struct Point { ... }"
+        - "struct Point { Declaration { specifiers: [\"int\"], init_declarators: [ResolvedInitDeclarator { name: \"x\", kind: None, initializer: None }] }, Declaration { specifiers: [\"int\"], init_declarators: [ResolvedInitDeclarator { name: \"y\", kind: None, initializer: None }] }, }"
       init_declarators: []
     "#);
 }
@@ -44,7 +44,7 @@ fn test_struct_definition_and_variable() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "struct Point { ... }"
+        - "struct Point { Declaration { specifiers: [\"int\"], init_declarators: [ResolvedInitDeclarator { name: \"x\", kind: None, initializer: None }] }, }"
       init_declarators:
         - name: p
     "#);
@@ -56,7 +56,7 @@ fn test_anonymous_struct_declaration() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "struct { ... }"
+        - "struct { Declaration { specifiers: [\"int\"], init_declarators: [ResolvedInitDeclarator { name: \"x\", kind: None, initializer: None }] }, }"
       init_declarators:
         - name: p
     "#);
@@ -443,7 +443,7 @@ fn test_struct_member_multiple_declarators() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "struct flowi6 { ... }"
+        - "struct flowi6 { Declaration { specifiers: [\"struct in6_addr\"], init_declarators: [ResolvedInitDeclarator { name: \"saddr\", kind: None, initializer: None }, ResolvedInitDeclarator { name: \"daddr\", kind: None, initializer: None }] }, }"
       init_declarators: []
     "#);
 }
@@ -454,7 +454,7 @@ fn test_bitfield_declaration() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "struct Test { ... }"
+        - "struct Test { Declaration { specifiers: [\"int\"], init_declarators: [ResolvedInitDeclarator { name: \"x\", kind: Some(\"bitfield identifier\"), initializer: None }] }, Declaration { specifiers: [\"unsigned\"], init_declarators: [ResolvedInitDeclarator { name: \"y\", kind: Some(\"bitfield identifier\"), initializer: None }] }, }"
       init_declarators: []
     "#);
 }
@@ -487,7 +487,7 @@ fn test_bitfield_with_mixed_members() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "struct Mixed { ... }"
+        - "struct Mixed { Declaration { specifiers: [\"int\"], init_declarators: [ResolvedInitDeclarator { name: \"regular\", kind: None, initializer: None }] }, Declaration { specifiers: [\"int\"], init_declarators: [ResolvedInitDeclarator { name: \"bitfield\", kind: Some(\"bitfield identifier\"), initializer: None }] }, Declaration { specifiers: [\"int\"], init_declarators: [ResolvedInitDeclarator { name: \"another_regular\", kind: None, initializer: None }] }, Declaration { specifiers: [\"unsigned\"], init_declarators: [ResolvedInitDeclarator { name: \"flag\", kind: Some(\"bitfield identifier\"), initializer: None }] }, }"
       init_declarators: []
     "#);
 }
@@ -498,7 +498,7 @@ fn test_bitfield_with_large_width() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "struct LargeBitfield { ... }"
+        - "struct LargeBitfield { Declaration { specifiers: [\"unsigned\", \"long\"], init_declarators: [ResolvedInitDeclarator { name: \"value\", kind: Some(\"bitfield identifier\"), initializer: None }] }, }"
       init_declarators: []
     "#);
 }
@@ -592,7 +592,7 @@ fn test_designated_initializer_struct_with_range() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "struct T { ... }"
+        - "struct T { Declaration { specifiers: [\"int\"], init_declarators: [ResolvedInitDeclarator { name: \"s\", kind: Some(\"array\"), initializer: None }] }, Declaration { specifiers: [\"int\"], init_declarators: [ResolvedInitDeclarator { name: \"a\", kind: None, initializer: None }] }, }"
       init_declarators:
         - name: lt2
           initializer:
@@ -849,7 +849,7 @@ fn test_parse_bitfield() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "struct S { ... }"
+        - "struct S { Declaration { specifiers: [\"int\"], init_declarators: [ResolvedInitDeclarator { name: \"a\", kind: Some(\"bitfield identifier\"), initializer: None }] }, Declaration { specifiers: [\"unsigned\"], init_declarators: [ResolvedInitDeclarator { name: \"b\", kind: Some(\"bitfield identifier\"), initializer: None }] }, }"
       init_declarators: []
     "#);
 }

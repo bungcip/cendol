@@ -78,9 +78,7 @@ fn test_unknown_pragma_warns() {
 #pragma unknown_pragma
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"
-    - "Warning: Unknown pragma: unknown_pragma"
-    "#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Warning: Unknown pragma: unknown_pragma""#);
 }
 
 #[test]

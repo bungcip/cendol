@@ -107,7 +107,7 @@ fn test_get_declarator_name_bitfield() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "struct S { ... }"
+        - "struct S { Declaration { specifiers: [\"int\"], init_declarators: [ResolvedInitDeclarator { name: \"x\", kind: Some(\"bitfield identifier\"), initializer: None }] }, }"
       init_declarators:
         - name: s
     "#);
@@ -197,7 +197,7 @@ fn test_bitfield_exhaustive() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "struct S { ... }"
+        - "struct S { Declaration { specifiers: [\"int\"], init_declarators: [ResolvedInitDeclarator { name: \"<unnamed>\", kind: Some(\"bitfield abstract\"), initializer: None }] }, }"
       init_declarators:
         - name: s
     "#);

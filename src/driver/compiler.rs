@@ -551,8 +551,7 @@ __cendol_vararg_trampoline:
 
     /// Print accumulated diagnostics without returning an error
     pub(crate) fn print_diagnostics(&self) {
-        self.de
-            .print_diagnostics_filtered(&self.sm, self.config.suppress_warnings);
+        self.de.print(&self.sm, self.config.suppress_warnings);
     }
 }
 

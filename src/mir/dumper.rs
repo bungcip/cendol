@@ -150,7 +150,7 @@ impl<'a> MirDumper<'a> {
     fn dump_types(&self, output: &mut String) -> fmt::Result {
         for (i, mir_type) in self.mir.module.types.iter().enumerate() {
             let type_id = TypeId::new((i + 1) as u32).unwrap();
-            let type_index = self.get_type_index_from_type_id(type_id);
+            let type_index = self.get_type_index(type_id);
             write!(output, "type %t{} = ", type_index)?;
             self.write_type_inner(output, type_id, mir_type, true)?;
             writeln!(output)?;
@@ -167,23 +167,9 @@ impl<'a> MirDumper<'a> {
         is_definition: bool,
     ) -> fmt::Result {
         match mir_type {
-            MirType::Void => write!(output, "void"),
-            MirType::Bool => write!(output, "bool"),
-            MirType::I8 => write!(output, "i8"),
-            MirType::I16 => write!(output, "i16"),
-            MirType::I32 => write!(output, "i32"),
-            MirType::I64 => write!(output, "i64"),
-            MirType::U8 => write!(output, "u8"),
-            MirType::U16 => write!(output, "u16"),
-            MirType::U32 => write!(output, "u32"),
-            MirType::U64 => write!(output, "u64"),
-            MirType::F32 => write!(output, "f32"),
-            MirType::F64 => write!(output, "f64"),
-            MirType::F80 => write!(output, "f80"),
-            MirType::F128 => write!(output, "f128"),
             MirType::Pointer { pointee } => {
                 if is_definition {
-                    let index = self.get_type_index_from_type_id(*pointee);
+                    let index = self.get_type_index(*pointee);
                     write!(output, "ptr<%t{}>", index)
                 } else {
                     write!(output, "ptr<")?;
@@ -193,7 +179,7 @@ impl<'a> MirDumper<'a> {
             }
             MirType::Array { element, size, .. } => {
                 if is_definition {
-                    let index = self.get_type_index_from_type_id(*element);
+                    let index = self.get_type_index(*element);
                     write!(output, "[{}]%t{}", size, index)
                 } else {
                     write!(output, "[{}]", size)?;
@@ -208,7 +194,7 @@ impl<'a> MirDumper<'a> {
                 write!(output, "fn(")?;
                 self.write_joined(output, params, |out, &p| {
                     if is_definition {
-                        let index = self.get_type_index_from_type_id(p);
+                        let index = self.get_type_index(p);
                         write!(out, "%t{}", index)
                     } else {
                         self.write_type(out, p)
@@ -222,7 +208,7 @@ impl<'a> MirDumper<'a> {
                 }
                 write!(output, ") -> ")?;
                 if is_definition {
-                    let index = self.get_type_index_from_type_id(*return_type);
+                    let index = self.get_type_index(*return_type);
                     write!(output, "%t{}", index)
                 } else {
                     self.write_type(output, *return_type)
@@ -240,20 +226,21 @@ impl<'a> MirDumper<'a> {
                     write!(output, "{} {} {{ ", kind, name)?;
                     let fields = field_names.iter().zip(field_types.iter());
                     self.write_joined(output, fields, |out, (fname, &fid)| {
-                        let index = self.get_type_index_from_type_id(fid);
+                        let index = self.get_type_index(fid);
                         write!(out, "{}: %t{}", fname, index)
                     })?;
                     write!(output, " }}")
                 } else {
-                    let index = self.get_type_index_from_type_id(type_id);
+                    let index = self.get_type_index(type_id);
                     write!(output, "%t{}", index)
                 }
             }
+            _ => write!(output, "{}", mir_type),
         }
     }
 
     /// Helper function to get type index from TypeId
-    fn get_type_index_from_type_id(&self, type_id: TypeId) -> usize {
+    fn get_type_index(&self, type_id: TypeId) -> usize {
         // Fallback: assume sequential mapping
         (type_id.get() - 1) as usize
     }

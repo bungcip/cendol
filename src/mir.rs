@@ -123,7 +123,7 @@ impl std::fmt::Display for MirType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             MirType::Void => write!(f, "void"),
-            MirType::Bool => write!(f, "_Bool"),
+            MirType::Bool => write!(f, "bool"),
             MirType::I8 => write!(f, "i8"),
             MirType::I16 => write!(f, "i16"),
             MirType::I32 => write!(f, "i32"),

@@ -1,7 +1,7 @@
 use crate::semantic::{QualType, TypeRef, TypeRegistry};
 use crate::source_manager::{FileKind, SourceManager, SourceSpan};
 use hashbrown::HashSet;
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Write};
 
 use annotate_snippets::renderer::DecorStyle;
 use annotate_snippets::{AnnotationKind, Level, Renderer, Snippet};
@@ -42,6 +42,7 @@ pub(crate) struct DiagnosticEngine {
     pub(crate) disabled_warnings: HashSet<String>,
     pub(crate) diagnostic_stack: Vec<HashSet<String>>,
     pub(crate) renderer: Renderer,
+    pub(crate) writer: std::sync::Mutex<Box<dyn std::io::Write + Send>>,
 }
 
 impl Default for DiagnosticEngine {
@@ -64,6 +65,7 @@ impl Default for DiagnosticEngine {
             disabled_warnings: HashSet::new(),
             diagnostic_stack: Vec::new(),
             renderer,
+            writer: std::sync::Mutex::new(Box::new(std::io::stderr())),
         }
     }
 }
@@ -77,24 +79,16 @@ impl DiagnosticEngine {
             }
         }
 
-        let use_colors = std::io::stderr().is_terminal();
-        let renderer = if use_colors {
-            Renderer::styled().decor_style(DecorStyle::Unicode)
-        } else {
-            Renderer::plain()
-        };
-
         Self {
-            diagnostics: Vec::new(),
-            error_count: 0,
-            error_limit: None,
-            warning_count: 0,
-            warning_limit: None,
-            error_limit_reached: false,
-            warning_limit_reached: false,
             disabled_warnings,
-            diagnostic_stack: Vec::new(),
-            renderer,
+            ..Default::default()
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_writer(&self, writer: Box<dyn std::io::Write + Send>) {
+        if let Ok(mut w) = self.writer.lock() {
+            *w = writer;
         }
     }
 
@@ -125,40 +119,42 @@ impl DiagnosticEngine {
             return;
         }
 
-        if diagnostic.level == DiagnosticLevel::Error {
-            if let Some(limit) = self.error_limit
-                && self.error_count >= limit
-            {
-                if self.error_limit_reached == false {
-                    // Report that we reached the limit
-                    // Use the span of the current error to avoid <unknown> source if possible
-                    self.diagnostics.push(Diagnostic {
-                        level: DiagnosticLevel::Note,
-                        message: format!("too many errors emitted, stopping after {} errors", limit),
-                        span: diagnostic.span,
-                        ..Default::default()
-                    });
-                    self.error_limit_reached = true;
+        match diagnostic.level {
+            DiagnosticLevel::Error => {
+                if let Some(limit) = self.error_limit
+                    && self.error_count >= limit
+                {
+                    if !self.error_limit_reached {
+                        self.diagnostics.push(Diagnostic {
+                            level: DiagnosticLevel::Note,
+                            message: format!("too many errors emitted, stopping after {} errors", limit),
+                            span: diagnostic.span,
+                            ..Default::default()
+                        });
+                        self.error_limit_reached = true;
+                    }
+                    return;
                 }
-                return;
+                self.error_count += 1;
             }
-            self.error_count += 1;
-        } else if diagnostic.level == DiagnosticLevel::Warning {
-            if let Some(limit) = self.warning_limit
-                && self.warning_count >= limit
-            {
-                if !self.warning_limit_reached {
-                    self.diagnostics.push(Diagnostic {
-                        level: DiagnosticLevel::Note,
-                        message: format!("too many warnings emitted, stopping after {} warnings", limit),
-                        span: diagnostic.span,
-                        ..Default::default()
-                    });
-                    self.warning_limit_reached = true;
+            DiagnosticLevel::Warning => {
+                if let Some(limit) = self.warning_limit
+                    && self.warning_count >= limit
+                {
+                    if !self.warning_limit_reached {
+                        self.diagnostics.push(Diagnostic {
+                            level: DiagnosticLevel::Note,
+                            message: format!("too many warnings emitted, stopping after {} warnings", limit),
+                            span: diagnostic.span,
+                            ..Default::default()
+                        });
+                        self.warning_limit_reached = true;
+                    }
+                    return;
                 }
-                return;
+                self.warning_count += 1;
             }
-            self.warning_count += 1;
+            DiagnosticLevel::Note => {}
         }
 
         self.diagnostics.push(diagnostic);
@@ -168,14 +164,17 @@ impl DiagnosticEngine {
         self.error_count > 0
     }
 
-    pub(crate) fn report_streaming(&mut self, mut diagnostic: Diagnostic, source_manager: &SourceManager) {
+    pub(crate) fn report_streaming(&mut self, mut diagnostic: Diagnostic, sm: &SourceManager) {
         let prev_len = self.diagnostics.len();
         diagnostic.is_streamed = true;
         self.report_diagnostic(diagnostic);
         if self.diagnostics.len() > prev_len {
             let added_diag = self.diagnostics.last().unwrap();
-            let formatted = self.format_diagnostic(added_diag, source_manager);
-            eprintln!("{}", formatted);
+            if let Ok(mut writer) = self.writer.lock() {
+                let mut fmt_writer = FmtToIoWrite(&mut **writer);
+                let _ = self.print_single(added_diag, sm, &mut fmt_writer);
+                let _ = writeln!(writer);
+            }
         }
     }
 
@@ -190,18 +189,23 @@ impl DiagnosticEngine {
         }
     }
 
-    fn format_location(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
-        let path = source_manager
+    fn print_location<W: std::fmt::Write>(
+        &self,
+        diag: &Diagnostic,
+        sm: &SourceManager,
+        f: &mut W,
+    ) -> std::fmt::Result {
+        let path = sm
             .get_file_info(diag.span.source_id())
             .map(|fi| fi.path.to_str().unwrap_or("<unknown>"))
             .unwrap_or("<unknown>");
 
         // Get line and column information
-        let line_col = source_manager.get_line_column(diag.span.start());
+        let line_col = sm.get_line_column(diag.span.start());
         if let Some((line, col)) = line_col {
-            format!("{}:{}:{}", path, line, col)
+            write!(f, "{}:{}:{}", path, line, col)
         } else {
-            path.to_string()
+            write!(f, "{}", path)
         }
     }
 
@@ -228,37 +232,38 @@ impl DiagnosticEngine {
             .map(|fi| fi.path.to_str().unwrap_or("<unknown>"))
             .unwrap_or("<unknown>");
 
-        let mut snippet = Snippet::source(source_slice).line_start(start_line as usize).path(path);
-
-        let annotation_kind = AnnotationKind::Primary;
-
         let rel_start = span.start().offset().saturating_sub(start) as usize;
         let rel_end = (span.end().offset().saturating_sub(start) as usize).min(source_slice.len());
 
-        snippet = snippet.annotation(annotation_kind.span(rel_start..rel_end).label(message));
-
-        snippet
+        Snippet::source(source_slice)
+            .line_start(start_line as usize)
+            .path(path)
+            .annotation(AnnotationKind::Primary.span(rel_start..rel_end).label(message))
     }
 
-    /// Format a single diagnostic with rich source code context
-    pub(crate) fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
-        let message = if diag.level == DiagnosticLevel::Warning {
-            if let Some(name) = diag.warning_name {
-                format!("{} [-W{}]", diag.message, name)
-            } else {
-                diag.message.clone()
-            }
+    /// Print  a single diagnostic with rich source code context
+    pub(crate) fn print_single<W: std::fmt::Write>(
+        &self,
+        diag: &Diagnostic,
+        sm: &SourceManager,
+        f: &mut W,
+    ) -> std::fmt::Result {
+        let message = if diag.level == DiagnosticLevel::Warning
+            && let Some(name) = diag.warning_name
+        {
+            format!("{} [-W{}]", diag.message, name)
         } else {
             diag.message.clone()
         };
 
         // If it's a built-in source ID (e.g. command line define), simple print
         if diag.span.is_source_id_builtin() {
-            return format!("{}: {}", self.format_location(diag, source_manager), message);
+            self.print_location(diag, sm, f)?;
+            return write!(f, ": {}", message);
         }
 
         // Primary error snippet
-        let snippet = self.create_snippet(diag.span, "", source_manager);
+        let snippet = self.create_snippet(diag.span, "", sm);
         // Use primary_title instead of title
         let mut group = self.level(diag).primary_title(&message).element(snippet);
 
@@ -271,36 +276,34 @@ impl DiagnosticEngine {
         let mut expansion_history = Vec::new();
         let mut current_id = diag.span.source_id();
 
-        while let Some(file_info) = source_manager.get_file_info(current_id) {
-            if let Some(include_loc) = file_info.include_loc {
-                // Determine if this is a macro expansion (virtual file) or an include
-                let note_msg = if file_info.kind == FileKind::MacroExpansion {
-                    format!("expanded from macro '{}'", file_info.path.to_string_lossy())
-                } else {
-                    "included from here".to_string()
-                };
-
-                // For visualization, use a 1-char span at the include/expansion location
-                let exp_span = SourceSpan::from_loc_and_length(include_loc, 1);
-                expansion_history.push((exp_span, note_msg));
-
-                current_id = include_loc.source_id();
+        while let Some(file_info) = sm.get_file_info(current_id)
+            && let Some(include_loc) = file_info.include_loc
+        {
+            // Determine if this is a macro expansion (virtual file) or an include
+            let note_msg = if file_info.kind == FileKind::MacroExpansion {
+                format!("expanded from macro '{}'", file_info.path.to_string_lossy())
             } else {
-                break;
-            }
+                "included from here".to_string()
+            };
+
+            // For visualization, use a 1-char span at the include/expansion location
+            let exp_span = SourceSpan::from_loc_and_length(include_loc, 1);
+            expansion_history.push((exp_span, note_msg));
+
+            current_id = include_loc.source_id();
         }
 
         for (span, msg) in &expansion_history {
-            let exp_snippet = self.create_snippet(*span, msg, source_manager);
+            let exp_snippet = self.create_snippet(*span, msg, sm);
             group = group.element(exp_snippet);
         }
 
         let report = &[group];
-        self.renderer.render(report)
+        write!(f, "{}", self.renderer.render(report))
     }
 
     /// Print diagnostics, skipping warnings if suppress_warnings is true
-    pub(crate) fn print_diagnostics_filtered(&self, source_manager: &SourceManager, suppress_warnings: bool) {
+    pub(crate) fn print(&self, sm: &SourceManager, suppress_warnings: bool) {
         for diag in &self.diagnostics {
             if diag.is_streamed {
                 continue;
@@ -308,8 +311,11 @@ impl DiagnosticEngine {
             if suppress_warnings && diag.level == DiagnosticLevel::Warning {
                 continue;
             }
-            let formatted = self.format_diagnostic(diag, source_manager);
-            eprintln!("{}", formatted);
+            if let Ok(mut writer) = self.writer.lock() {
+                let mut fmt_writer = FmtToIoWrite(&mut **writer);
+                let _ = self.print_single(diag, sm, &mut fmt_writer);
+                let _ = writeln!(writer);
+            }
         }
     }
 }
@@ -375,4 +381,11 @@ pub(crate) fn format_diag_without_registry(diag: &impl DiagDisplay) -> String {
     let mut f = DiagFormatter::new_without_registry();
     let _ = diag.fmt(&mut f);
     f.into_string()
+}
+
+struct FmtToIoWrite<'a>(&'a mut dyn std::io::Write);
+impl<'a> std::fmt::Write for FmtToIoWrite<'a> {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        self.0.write_all(s.as_bytes()).map_err(|_| std::fmt::Error)
+    }
 }

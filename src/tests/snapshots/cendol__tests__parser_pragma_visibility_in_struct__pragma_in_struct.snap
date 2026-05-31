@@ -1,6 +1,6 @@
 ---
 source: src/tests/parser_pragma_visibility_in_struct.rs
-expression: result
+expression: "setup_declaration(\"\n        struct S {\n            #pragma GCC visibility push(hidden)\n            int a;\n            #pragma GCC visibility pop\n            #pragma pack(push, 1)\n            int b;\n            #pragma pack(pop)\n            int c;\n        };\n    \")"
 ---
 Declaration {
     specifiers: [

@@ -152,6 +152,7 @@ pub mod regr_init_range;
 pub mod regr_mixed_sign_comp;
 pub mod regr_pp_short_circuit;
 pub mod regr_shadowing;
+pub mod guardian_pointer_assignment_nested_qualifiers;
 pub mod regr_struct_bitfield;
 
 // Test Helpers

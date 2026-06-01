@@ -592,18 +592,25 @@ impl<'src> Preprocessor<'src> {
 
     /// Check if a macro is defined
     pub(crate) fn is_macro_defined(&self, symbol: StringId) -> bool {
+        // Bolt ⚡: Check user macros first (most common case).
+        // Use an explicit || chain for magic macros to avoid temporary array initialization
+        // and iterator overhead. We also add __LINE__, __FILE__, and __COUNTER__
+        // to correctly support magic macros in the defined() operator.
+        if self.macros.contains_key(&symbol) {
+            return true;
+        }
+
         let kw = &self.keywords;
-        [
-            kw.has_include,
-            kw.has_include_next,
-            kw.has_builtin,
-            kw.has_attribute,
-            kw.has_c_attribute,
-            kw.has_feature,
-            kw.has_extension,
-        ]
-        .contains(&symbol)
-            || self.macros.contains_key(&symbol)
+        symbol == kw.has_include
+            || symbol == kw.has_include_next
+            || symbol == kw.has_builtin
+            || symbol == kw.has_attribute
+            || symbol == kw.has_c_attribute
+            || symbol == kw.has_feature
+            || symbol == kw.has_extension
+            || symbol == kw.line_macro
+            || symbol == kw.file_macro
+            || symbol == kw.counter_macro
     }
 
     /// Get the current directory of the file at the top of the lexer stack

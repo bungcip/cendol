@@ -129,3 +129,7 @@
 ## 2025-06-20 - UTF-8-Safe String Transformation via Slicing
 **Learning:** Transforming a `&str` by iterating over `as_bytes()` and casting to `char` (e.g., `bytes[i] as char`) is a major correctness bug that corrupts multi-byte UTF-8 sequences.
 **Action:** For performance-critical transformations like line-splice removal, use `memchr` to scan for ASCII triggers, then use string slicing and `push_str` to preserve the integrity of multi-byte UTF-8 sequences between triggers. This is both faster and correct.
+
+## 2024-05-31 - Optimized defined() operator and Correctness Fix
+**Learning:** The `is_macro_defined` function was missing several "magic" macros (`__LINE__`, `__FILE__`, `__COUNTER__`), causing the `defined()` operator to incorrectly return false for them. Furthermore, checking a static array with `.contains()` for every macro lookup is slower than a direct user-macro check followed by an explicit `||` chain of identity comparisons.
+**Action:** Always check the user macro table first as it's the most common case. Use explicit `||` chains for keyword/magic macro checks to avoid array initialization and iterator overhead in hot paths. Ensure all magic macros are included in definition checks.

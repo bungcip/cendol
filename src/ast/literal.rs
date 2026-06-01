@@ -479,4 +479,32 @@ mod tests {
         assert_eq!(lit1, lit2);
         assert_eq!(lit1.get_val(), lit2.get_val());
     }
+
+    #[test]
+    fn test_literal_coverage() {
+        // Test FloatSuffix::from_u8 missing arms
+        assert_eq!(FloatSuffix::from_u8(1), FloatSuffix::F);
+        assert_eq!(FloatSuffix::from_u8(2), FloatSuffix::L);
+        assert_eq!(FloatSuffix::from_u8(3), FloatSuffix::I);
+        assert_eq!(FloatSuffix::from_u8(4), FloatSuffix::IF);
+        assert_eq!(FloatSuffix::from_u8(5), FloatSuffix::IL);
+        assert_eq!(FloatSuffix::from_u8(99), FloatSuffix::None);
+
+        // Test CharPrefix::from_u8 missing arms
+        assert_eq!(CharPrefix::from_u8(1), CharPrefix::Wide);
+        assert_eq!(CharPrefix::from_u8(2), CharPrefix::Char16);
+        assert_eq!(CharPrefix::from_u8(3), CharPrefix::Char32);
+        assert_eq!(CharPrefix::from_u8(4), CharPrefix::Utf8);
+        assert_eq!(CharPrefix::from_u8(99), CharPrefix::None);
+
+        // Test is_imaginary
+        assert!(FloatSuffix::I.is_imaginary());
+        assert!(FloatSuffix::IF.is_imaginary());
+        assert!(FloatSuffix::IL.is_imaginary());
+        assert!(!FloatSuffix::F.is_imaginary());
+
+        // Test LitRef::is_integer_zero for NULLPTR
+        let null_lit = LitRef::NULLPTR;
+        assert!(null_lit.is_integer_zero());
+    }
 }

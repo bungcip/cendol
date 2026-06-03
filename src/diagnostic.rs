@@ -73,9 +73,20 @@ impl Default for DiagnosticEngine {
 impl DiagnosticEngine {
     pub(crate) fn from_warnings(warnings: &[String]) -> Self {
         let mut disabled_warnings = HashSet::new();
+
+        // gnu-case-range is disabled by default
+        disabled_warnings.insert("gnu-case-range".to_string());
+
         for w in warnings {
             if let Some(stripped) = w.strip_prefix("no-") {
                 disabled_warnings.insert(stripped.to_string());
+            } else {
+                if w == "gnu-case-range" || w == "all" || w == "pedantic" || w == "pedantic-errors" {
+                    disabled_warnings.remove(w);
+                    if w == "all" || w == "pedantic" || w == "pedantic-errors" {
+                        disabled_warnings.remove("gnu-case-range");
+                    }
+                }
             }
         }
 

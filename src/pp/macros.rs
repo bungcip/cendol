@@ -1116,13 +1116,13 @@ impl<'src> Preprocessor<'src> {
 
     pub(super) fn parse_macro_definition_params(
         &mut self,
-        macro_name: StringId,
+        _macro_name: StringId,
     ) -> Result<(MacroFlags, Vec<StringId>, Option<StringId>), PPDiag> {
         let mut flags = MacroFlags::FUNCTION_LIKE;
         let mut params = Vec::new();
         let mut variadic = None;
 
-        'parsing: loop {
+        loop {
             let token = self.expect_token()?;
             match token.kind {
                 PPTokenKind::RightParen => break,
@@ -1133,8 +1133,15 @@ impl<'src> Preprocessor<'src> {
                     break;
                 }
                 PPTokenKind::Identifier(sym) => {
+                    if sym == self.keywords.va_args {
+                        self.report_warning_with_name(
+                            token.location,
+                            "__VA_ARGS__ can only appear in the expansion of a C99 variadic macro",
+                            "variadic-macros",
+                        );
+                    }
                     if params.contains(&sym) {
-                        return self.emit_error(PPError::InvalidMacroParameter, token.location);
+                        return self.emit_error(PPError::DuplicateMacroParameter(sym), token.location);
                     }
                     params.push(sym);
 
@@ -1150,26 +1157,12 @@ impl<'src> Preprocessor<'src> {
                             break;
                         }
                         _ => {
-                            // Not a parameter list separator; body starts with this token and the previous identifier.
-                            self.pending_tokens.push(sep);
-                            self.pending_tokens.push(token);
-                            break 'parsing;
+                            return self.emit_error(PPError::ExpectedCommaInMacroParameterList, sep.location);
                         }
                     }
                 }
                 _ => {
-                    self.report_warning(
-                        token.location,
-                        format!("Invalid macro parameter in #define '{}'", macro_name),
-                    );
-
-                    // Skip to next divider
-                    while let Some(t) = self.lex_token() {
-                        if matches!(t.kind, PPTokenKind::Comma | PPTokenKind::RightParen) {
-                            self.pending_tokens.push(t);
-                            break;
-                        }
-                    }
+                    return self.emit_error(PPError::InvalidMacroParameter, token.location);
                 }
             }
         }

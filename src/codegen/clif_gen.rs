@@ -786,19 +786,6 @@ fn get_call_result(ctx: &mut BodyEmitContext, call_inst: Inst, return_type_id: T
     }
 }
 
-fn is_libc_variadic(name: &str) -> bool {
-    matches!(
-        name,
-        "printf" | "fprintf" | "sprintf" | "snprintf" | "dprintf" | "asprintf" | "obstack_printf" |
-        "scanf" | "fscanf" | "sscanf" |
-        "wprintf" | "fwprintf" | "swprintf" |
-        "wscanf" | "fwscanf" | "swscanf" |
-        "open" | "openat" | "fcntl" | "ioctl" | "sem_open" | "syslog" |
-        "execl" | "execle" | "execlp" | "syscall" | "prctl" | "ptrace" |
-        "error" | "err" | "errx" | "warn" | "warnx"
-    )
-}
-
 fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut BodyEmitContext) -> Value {
     // 1. Determine function properties and callee address if indirect/variadic
     let (return_type_id, param_types, is_variadic, name_linkage, target_addr, use_variadic_hack, visibility) =
@@ -807,10 +794,9 @@ fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut Body
                 let func = ctx.mir.get_function(*func_id);
                 let param_types: Vec<TypeId> = func.params.iter().map(|&p| ctx.mir.get_local(p).type_id).collect();
                 let name_linkage = Some((func.name, func.linkage));
-                let is_defined = func.linkage != MirLinkage::Import;
                 let use_hack = func.is_variadic
                     && ctx.triple.architecture == target_lexicon::Architecture::X86_64
-                    && (is_defined || !is_libc_variadic(func.name.as_str()));
+                    && func.linkage != MirLinkage::Import;
                 (
                     func.return_type,
                     param_types,
@@ -912,9 +898,6 @@ fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut Body
                 use_variadic_hack,
                 &lower_ctx,
             );
-            if name.as_str() == "Py_BuildValue" || name.as_str() == "_PyPegen_raise_error_known_location" {
-                eprintln!("DEBUG: {} is_variadic={}, use_variadic_hack={}, linkage={:?}, param_types_len={}", name.as_str(), is_variadic, use_variadic_hack, linkage, param_types.len());
-            }
             let decl = ctx
                 .module
                 .declare_function(name.as_str(), lower_mir_linkage(linkage, visibility), &canonical_sig)
@@ -2782,7 +2765,7 @@ impl ClifGen {
             let mut sig = self.module.make_signature();
             let use_hack = func.is_variadic
                 && self.triple.architecture == target_lexicon::Architecture::X86_64
-                && (func.linkage != MirLinkage::Import || !is_libc_variadic(func.name.as_str()));
+                && func.linkage != MirLinkage::Import;
             let (..) = lower_function_signature(func, &self.mir, &mut sig, use_hack);
 
             let clif_func_id = self

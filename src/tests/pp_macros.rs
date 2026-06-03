@@ -599,3 +599,35 @@ A(WRAP)"#;
     - - "Fatal Error: PPDiag { kind: UnexpectedEndOfFile, span: SourceSpan(1099511627776) }"
     "#);
 }
+
+#[test]
+fn test_macro_parameter_list_errors() {
+    // Expected comma / invalid macro parameter list
+    let src1 = "#define A1(x+\n";
+    let (_, diags1) = setup_pp_snapshot_with_diags(src1);
+    assert!(!diags1.is_empty(), "Expected error for invalid parameter separator");
+    assert!(
+        diags1[0].contains("ExpectedCommaInMacroParameterList"),
+        "Found: {}",
+        diags1[0]
+    );
+
+    let src2 = "#define A2(1)\n";
+    let (_, diags2) = setup_pp_snapshot_with_diags(src2);
+    assert!(!diags2.is_empty(), "Expected error for non-identifier parameter");
+    assert!(diags2[0].contains("InvalidMacroParameter"), "Found: {}", diags2[0]);
+
+    let src3 = "#define A3(x, x)\n";
+    let (_, diags3) = setup_pp_snapshot_with_diags(src3);
+    assert!(!diags3.is_empty(), "Expected error for duplicate macro parameter");
+    assert!(diags3[0].contains("DuplicateMacroParameter"), "Found: {}", diags3[0]);
+
+    let src4 = "#define A4(__VA_ARGS__)\n";
+    let (_, diags4) = setup_pp_snapshot_with_diags(src4);
+    assert!(!diags4.is_empty(), "Expected warning for __VA_ARGS__ parameter");
+    assert!(
+        diags4[0].contains("Warning: __VA_ARGS__ can only appear"),
+        "Found: {}",
+        diags4[0]
+    );
+}

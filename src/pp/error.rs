@@ -34,6 +34,8 @@ pub enum PPError {
     DollarInIdentifier,
     DirectiveInMacroArgs,
     PoisonedIdentifier(StringId),
+    DuplicateMacroParameter(StringId),
+    ExpectedCommaInMacroParameterList,
 }
 
 impl PPError {
@@ -78,6 +80,12 @@ impl DiagDisplay for PPError {
             }
             PPError::PoisonedIdentifier(name) => {
                 write!(f, "attempt to use poisoned identifier '{}'", name)
+            }
+            PPError::DuplicateMacroParameter(param) => {
+                write!(f, "duplicate macro parameter name '{}'", param)
+            }
+            PPError::ExpectedCommaInMacroParameterList => {
+                write!(f, "expected comma in macro parameter list")
             }
         }
     }

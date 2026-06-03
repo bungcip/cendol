@@ -215,12 +215,24 @@ fn test_attribute_visibility_merging_with_hidden_default() {
     let artifact = outputs.units.values().next().unwrap();
     let mir = artifact.mir_program.as_ref().unwrap();
 
-    let merged_func = mir.functions.iter().find(|f| f.name.as_str() == "test_merged_func").unwrap();
+    let merged_func = mir
+        .functions
+        .iter()
+        .find(|f| f.name.as_str() == "test_merged_func")
+        .unwrap();
     assert_eq!(merged_func.visibility, Visibility::Default);
 
-    let merged_var = mir.globals.iter().find(|g| g.name.as_str() == "test_merged_var").unwrap();
+    let merged_var = mir
+        .globals
+        .iter()
+        .find(|g| g.name.as_str() == "test_merged_var")
+        .unwrap();
     assert_eq!(merged_var.visibility, Visibility::Protected);
 
-    let default_hidden_func = mir.functions.iter().find(|f| f.name.as_str() == "test_default_hidden_func").unwrap();
+    let default_hidden_func = mir
+        .functions
+        .iter()
+        .find(|f| f.name.as_str() == "test_default_hidden_func")
+        .unwrap();
     assert_eq!(default_hidden_func.visibility, Visibility::Hidden);
 }

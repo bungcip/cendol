@@ -170,19 +170,7 @@ impl<'src> Preprocessor<'src> {
         };
 
         if token.kind == PPTokenKind::LeftParen && !token.flags.contains(PPTokenFlags::LEADING_SPACE) {
-            let first_param = self.expect_token()?;
-
-            if matches!(
-                first_param.kind,
-                PPTokenKind::RightParen | PPTokenKind::Identifier(_) | PPTokenKind::Ellipsis
-            ) {
-                self.pending_tokens.push(first_param);
-                return self.parse_macro_definition_params(name);
-            }
-
-            self.pending_tokens.push(first_param);
-            self.pending_tokens.push(token);
-            return Ok((MacroFlags::empty(), Vec::new(), None));
+            return self.parse_macro_definition_params(name);
         }
 
         self.pending_tokens.push(token);

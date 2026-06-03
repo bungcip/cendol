@@ -786,6 +786,19 @@ fn get_call_result(ctx: &mut BodyEmitContext, call_inst: Inst, return_type_id: T
     }
 }
 
+fn is_libc_variadic(name: &str) -> bool {
+    matches!(
+        name,
+        "printf" | "fprintf" | "sprintf" | "snprintf" | "dprintf" | "asprintf" | "obstack_printf" |
+        "scanf" | "fscanf" | "sscanf" |
+        "wprintf" | "fwprintf" | "swprintf" |
+        "wscanf" | "fwscanf" | "swscanf" |
+        "open" | "openat" | "fcntl" | "ioctl" | "sem_open" | "syslog" |
+        "execl" | "execle" | "execlp" | "syscall" | "prctl" | "ptrace" |
+        "error" | "err" | "errx" | "warn" | "warnx"
+    )
+}
+
 fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut BodyEmitContext) -> Value {
     // 1. Determine function properties and callee address if indirect/variadic
     let (return_type_id, param_types, is_variadic, name_linkage, target_addr, use_variadic_hack, visibility) =
@@ -795,13 +808,16 @@ fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut Body
                 let param_types: Vec<TypeId> = func.params.iter().map(|&p| ctx.mir.get_local(p).type_id).collect();
                 let name_linkage = Some((func.name, func.linkage));
                 let is_defined = func.linkage != MirLinkage::Import;
+                let use_hack = func.is_variadic
+                    && ctx.triple.architecture == target_lexicon::Architecture::X86_64
+                    && (is_defined || !is_libc_variadic(func.name.as_str()));
                 (
                     func.return_type,
                     param_types,
                     func.is_variadic,
                     name_linkage,
                     None,
-                    func.is_variadic && is_defined && ctx.triple.architecture == target_lexicon::Architecture::X86_64,
+                    use_hack,
                     func.visibility,
                 )
             }
@@ -893,9 +909,12 @@ fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut Body
                 &[],
                 is_variadic,
                 use_variadic_hack,
-                linkage != MirLinkage::Import && ctx.triple.architecture == target_lexicon::Architecture::X86_64,
+                use_variadic_hack,
                 &lower_ctx,
             );
+            if name.as_str() == "Py_BuildValue" || name.as_str() == "_PyPegen_raise_error_known_location" {
+                eprintln!("DEBUG: {} is_variadic={}, use_variadic_hack={}, linkage={:?}, param_types_len={}", name.as_str(), is_variadic, use_variadic_hack, linkage, param_types.len());
+            }
             let decl = ctx
                 .module
                 .declare_function(name.as_str(), lower_mir_linkage(linkage, visibility), &canonical_sig)
@@ -1189,6 +1208,7 @@ fn emit_constant_to_memory(const_id: ConstValueId, ctx: &mut BodyEmitContext) ->
     let size = lower_type_size(ty, ctx.mir) as usize;
 
     let mut data_description = DataDescription::new();
+    data_description.set_align(lower_type_alignment(ty, ctx.mir));
 
     if let ConstValueKind::Zero = const_value.kind {
         data_description.define_zeroinit(size);
@@ -2761,8 +2781,8 @@ impl ClifGen {
             // Calculate signature for declaration
             let mut sig = self.module.make_signature();
             let use_hack = func.is_variadic
-                && func.linkage != MirLinkage::Import
-                && self.triple.architecture == target_lexicon::Architecture::X86_64;
+                && self.triple.architecture == target_lexicon::Architecture::X86_64
+                && (func.linkage != MirLinkage::Import || !is_libc_variadic(func.name.as_str()));
             let (..) = lower_function_signature(func, &self.mir, &mut sig, use_hack);
 
             let clif_func_id = self
@@ -2782,6 +2802,12 @@ impl ClifGen {
             if let Some(const_id) = global.initial_value {
                 let data_id = *self.data_id_map.get(&global_id).unwrap();
                 let mut data_description = DataDescription::new();
+                let mir_type = self.mir.get_type(global.type_id);
+                let align = global
+                    .alignment
+                    .map(|a| a as u64)
+                    .unwrap_or_else(|| lower_type_alignment(mir_type, &self.mir));
+                data_description.set_align(align);
 
                 let const_val = self.mir.get_constant(const_id);
                 if let ConstValueKind::Zero = const_val.kind {

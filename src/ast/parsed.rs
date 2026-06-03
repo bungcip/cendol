@@ -208,6 +208,7 @@ pub enum DeclSpec {
     AttributePacked,
     AttributeCleanup(ParsedNodeRef),
     AttributeTransparentUnion,
+    AttributeVisibility(crate::lang_options::Visibility),
 }
 
 // Type specifiers

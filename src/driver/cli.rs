@@ -121,7 +121,7 @@ pub struct Cli {
     pub shared: bool,
 
     /// Pass arguments to linker
-    #[clap(short = 'X', long = "linker-arg", value_name = "ARG", action = clap::ArgAction::Append)]
+    #[clap(short = 'X', long = "linker-arg", value_name = "ARG", action = clap::ArgAction::Append, allow_hyphen_values = true)]
     pub linker_args: Vec<String>,
 
     /// Use a specific linker
@@ -133,35 +133,35 @@ pub struct Cli {
     pub fmax_errors: Option<usize>,
 
     /// Treat signed integer overflow as well-defined (wrapping)
-    #[clap(long = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
+    #[clap(long = "fwrapv", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
     pub fwrapv: bool,
 
     /// Treat signed integer overflow as undefined behavior
-    #[clap(long = "fno-wrapv", overrides_with = "fwrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
+    #[clap(long = "fno-wrapv", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
     pub fno_wrapv: bool,
 
     /// Treat signed integer overflow as undefined behavior
-    #[clap(long = "fstrict-overflow", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
+    #[clap(long = "fstrict-overflow", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
     pub fstrict_overflow: bool,
 
     /// Treat signed integer overflow as well-defined (wrapping)
-    #[clap(long = "fno-strict-overflow", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
+    #[clap(long = "fno-strict-overflow", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
     pub fno_strict_overflow: bool,
 
     /// Generate traps for signed overflow on addition, subtraction, and multiplication
-    #[clap(long = "ftrapv", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
+    #[clap(long = "ftrapv", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
     pub ftrapv: bool,
 
     /// Do not generate traps for signed overflow
-    #[clap(long = "fno-trapv", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", action = clap::ArgAction::SetTrue)]
+    #[clap(long = "fno-trapv", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
     pub fno_trapv: bool,
 
     /// Generate position-independent code
-    #[clap(long = "fPIC", overrides_with = "f_no_pic", action = clap::ArgAction::SetTrue)]
+    #[clap(long = "fPIC", overrides_with = "f_pic", overrides_with = "f_no_pic", action = clap::ArgAction::SetTrue)]
     pub f_pic: bool,
 
     /// Do not generate position-independent code
-    #[clap(long = "fno-PIC", overrides_with = "f_pic", action = clap::ArgAction::SetTrue)]
+    #[clap(long = "fno-PIC", overrides_with = "f_pic", overrides_with = "f_no_pic", action = clap::ArgAction::SetTrue)]
     pub f_no_pic: bool,
 
     /// GCC/Clang compatible flags to ignore (e.g., -fno-stack-protector)
@@ -350,17 +350,25 @@ impl Cli {
         // Build preprocessor configuration with include paths
         let mut system_include_paths = Vec::new();
 
+        let mut add_path = |path: PathBuf| {
+            if let Ok(canonical) = path.canonicalize() {
+                system_include_paths.push(canonical);
+            } else {
+                system_include_paths.push(path);
+            }
+        };
+
         // Add user-specified include paths as system include paths
         for path in &self.include_paths {
-            system_include_paths.push(path.clone());
+            add_path(path.clone());
         }
 
         // Add default system include paths
         if std::path::Path::new("custom-include").exists() {
-            system_include_paths.push(PathBuf::from("custom-include"));
+            add_path(PathBuf::from("custom-include"));
         }
-        system_include_paths.push(PathBuf::from("/usr/include"));
-        system_include_paths.push(PathBuf::from("/usr/local/include"));
+        add_path(PathBuf::from("/usr/include"));
+        add_path(PathBuf::from("/usr/local/include"));
 
         // Add architecture-specific include paths
         let arch_paths = ["/usr/include/x86_64-linux-gnu"];
@@ -368,7 +376,7 @@ impl Cli {
         for arch_path in &arch_paths {
             let path = PathBuf::from(arch_path);
             if path.exists() {
-                system_include_paths.push(path);
+                add_path(path);
             }
         }
 

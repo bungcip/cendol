@@ -149,10 +149,44 @@ impl NodeRef {
     pub(crate) fn raw(self) -> u32 {
         self.0.get()
     }
+}
 
+pub(crate) trait Offset {
+    fn to_u32(self) -> u32;
+}
+
+impl Offset for u16 {
     #[inline]
-    pub(crate) fn add_offset(self, offset: u16) -> Self {
-        NodeRef::new(self.raw() + offset as u32).expect("NodeRef overflow")
+    fn to_u32(self) -> u32 {
+        self as u32
+    }
+}
+
+impl Offset for u32 {
+    #[inline]
+    fn to_u32(self) -> u32 {
+        self
+    }
+}
+
+impl Offset for usize {
+    #[inline]
+    fn to_u32(self) -> u32 {
+        self as u32
+    }
+}
+
+impl Offset for i32 {
+    #[inline]
+    fn to_u32(self) -> u32 {
+        self as u32
+    }
+}
+
+impl NodeRef {
+    #[inline]
+    pub(crate) fn add_offset(self, offset: impl Offset) -> Self {
+        NodeRef::new(self.raw() + offset.to_u32()).expect("NodeRef overflow")
     }
 
     #[inline]

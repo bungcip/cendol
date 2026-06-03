@@ -203,7 +203,7 @@ FOO
     insta::assert_yaml_snapshot!((tokens, diags), @r#"
     - - kind: Number
         text: "43"
-    - - "Error: Macro 'FOO' redefined with different value"
+    - - "Warning: Macro 'FOO' redefined with different value"
     "#);
 }
 
@@ -541,4 +541,61 @@ fn test_counter_macro_pasting_no_prescan() {
         "#define STRINGIFY(x) #x\n#define PASTE(x, y) x ## y\n#define EVAL(x) x\n\nSTRINGIFY(__COUNTER__)\nPASTE(x, __COUNTER__)\nEVAL(__COUNTER__)",
         "\"__COUNTER__\"\nx__COUNTER__\n0",
     );
+}
+
+// C11 6.10.3 - Macro expansion with nested incomplete macro invocation.
+// Per the standard, when macro A(m) expands to m( ARG_PART and m is followed by '(',
+// the preprocessor should recognize this as an incomplete function-like macro invocation.
+// When EOF is reached before the closing parenthesis is found, an error must be issued.
+// Per GCC/Clang behavior, the original macro identifier should remain in the output,
+// but currently cendol crashes on this error instead of continuing.
+#[test]
+fn test_macro_expansion_creates_incomplete_nested_call() {
+    // This test documents current cendol behavior: it stops on the error.
+    // GCC would output just "WRAP" followed by continuation.
+    let src = r#"#define A(m) m( ARG_PART
+#define WRAP(x) <x>
+A(WRAP)"#;
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    // Current behavior: no tokens output, fatal error
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - []
+    - - "Fatal Error: PPDiag { kind: UnexpectedEndOfFile, span: SourceSpan(1099511627776) }"
+    "#);
+}
+
+// C11 6.10.3.1 - Complex nested macro expansion leading to incomplete invocation.
+// When a macro's expansion produces tokens that look like an incomplete function
+// invocation (e.g., "WRAP( ARG_PART" where WRAP is a function-like macro), the
+// preprocessor must detect this as an error. The test verifies that the error is
+// reported when EOF is encountered during argument parsing.
+#[test]
+fn test_nested_macro_produces_incomplete_function_call() {
+    let src = r#"#define OUTER(x) x( INNER_ARG
+#define INNER(x) <x>
+OUTER(INNER)"#;
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - []
+    - - "Fatal Error: PPDiag { kind: UnexpectedEndOfFile, span: SourceSpan(1099511627776) }"
+    "#);
+}
+
+// C11 6.10.3.1 - Macro expansion producing nested incomplete function-like invocation.
+// This test covers the case where A(m) expands to m( B(f and B(f starts expanding,
+// creating a complex sequence that eventually hits EOF before completing the
+// function-like macro invocation for C( started by the expansion.
+// GCC behavior: outputs "C" and continues with remaining tokens.
+// Cendol behavior: stops on fatal error (may change for standard compliance).
+#[test]
+fn test_nested_macros_with_recursion_produce_incomplete_call() {
+    let src = r#"#define A(m) m( RECURSE(f
+#define RECURSE(x) A(x)
+#define WRAP(x) <x>
+A(WRAP)"#;
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - []
+    - - "Fatal Error: PPDiag { kind: UnexpectedEndOfFile, span: SourceSpan(1099511627776) }"
+    "#);
 }

@@ -591,6 +591,7 @@ pub(crate) struct DeclSpecInfo {
     pub(crate) is_packed: bool,
     pub(crate) cleanup_func: Option<ParsedNodeRef>,
     pub(crate) is_transparent_union: bool,
+    pub(crate) visibility: Option<crate::lang_options::Visibility>,
 }
 
 /// Finalize tentative definitions by converting them to defined state
@@ -753,7 +754,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             total_semantic_nodes += count;
         }
 
-        let decl_len = total_semantic_nodes as u16;
+        let decl_len = total_semantic_nodes as u32;
         let mut reserved_slots = Vec::with_capacity(decl_len as usize);
         for _ in 0..decl_len {
             reserved_slots.push(self.push_dummy(span));
@@ -803,7 +804,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         let stmt_start = stmt_slots.first().copied().unwrap_or(NodeRef::ROOT);
-        let stmt_len = stmt_slots.len() as u16;
+        let stmt_len = stmt_slots.len() as u32;
 
         let old_scope = self.symbol_table.current_scope();
         self.symbol_table.set_current_scope(scope_id);
@@ -1067,7 +1068,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 existing
             }
         };
-        self.symbol_table.get_symbol_mut(func_sym).visibility = self.current_visibility;
+        let sym_entry = self.symbol_table.get_symbol_mut(func_sym);
+        if let Some(vis) = spec_info.visibility {
+            sym_entry.visibility = vis;
+            sym_entry.has_explicit_visibility = true;
+        } else if !sym_entry.has_explicit_visibility {
+            sym_entry.visibility = self.current_visibility;
+        }
 
         let scope_id = self
             .parsed_ast
@@ -1427,7 +1434,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             if spec_info.cleanup_func.is_some() {
                 self.report_warning(span, SemanticError::AttributeCleanupOnType);
             }
-            if spec_info.alignment.is_some() {
+            if spec_info.has_c11_alignment {
                 self.report_error(init.span, SemanticError::AlignmentNotAllowed { context: "typedef" });
             }
 
@@ -1528,7 +1535,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 existing
             }
         };
-        self.symbol_table.get_symbol_mut(func_sym).visibility = self.current_visibility;
+        let sym_entry = self.symbol_table.get_symbol_mut(func_sym);
+        if let Some(vis) = spec_info.visibility {
+            sym_entry.visibility = vis;
+            sym_entry.has_explicit_visibility = true;
+        } else if !sym_entry.has_explicit_visibility {
+            sym_entry.visibility = self.current_visibility;
+        }
         self.ast.set_kind(
             node,
             NodeKind::FunctionDecl(FunctionDecl {
@@ -1708,7 +1721,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             },
         );
         if let Ok(sym) = sym_res {
-            self.symbol_table.get_symbol_mut(sym).visibility = self.current_visibility;
+            let sym_entry = self.symbol_table.get_symbol_mut(sym);
+            if let Some(vis) = spec_info.visibility {
+                sym_entry.visibility = vis;
+                sym_entry.has_explicit_visibility = true;
+            } else if !sym_entry.has_explicit_visibility {
+                sym_entry.visibility = self.current_visibility;
+            }
         }
 
         let init_expr = init.map(|n| {
@@ -1763,9 +1782,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         // Linkage and completeness checks
-        let has_internal_linkage = is_global && spec_info.storage == Some(StorageClass::Static);
         let has_no_linkage = !is_global && spec_info.storage != Some(StorageClass::Extern);
-        if (has_internal_linkage || has_no_linkage) && !self.registry.is_complete(qt.ty()) {
+        if has_no_linkage && !self.registry.is_complete(qt.ty()) {
             self.report_error(span, SemanticError::IncompleteType { ty: qt });
         }
 
@@ -1990,7 +2008,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         self.visit_node_entry(init, Some(&slots));
                         let decl_list = DeclList {
                             stmt_start: slots[0],
-                            stmt_len: count as u16,
+                            stmt_len: count as u32,
                         };
                         self.ast.set_kind(child_start, NodeKind::DeclList(decl_list));
                     } else {
@@ -2336,7 +2354,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let init_start = init_dummies.first().copied().unwrap_or(NodeRef::ROOT);
         NodeKind::InitializerList(InitializerList {
             init_start,
-            init_len: inits.len() as u16,
+            init_len: inits.len() as u32,
         })
     }
 
@@ -2456,11 +2474,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     /// Try to infer the type of an expression node during lowering.
     /// This is limited because full semantic analysis hasn't run yet.
-    fn is_constant_expr(&self, node: NodeRef) -> bool {
-        match self.ast.get_kind(node) {
+    fn is_constant_expr(&mut self, node: NodeRef) -> bool {
+        let node_kind = *self.ast.get_kind(node);
+        match node_kind {
             NodeKind::Literal(_) => true,
             NodeKind::Ident(_, sym) => {
-                let symbol = self.symbol_table.get_symbol(*sym);
+                let symbol = self.symbol_table.get_symbol(sym);
                 if matches!(symbol.kind, SymbolKind::EnumConstant { .. }) {
                     return true;
                 }
@@ -2470,21 +2489,29 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
                 false
             }
-            NodeKind::UnaryOp(UnaryOp::AddrOf, expr) => self.is_static_duration_object(*expr),
+            NodeKind::UnaryOp(UnaryOp::AddrOf, expr) => self.is_static_duration_object(expr),
             NodeKind::BinaryOp(op, l, r) => {
-                if *op == BinaryOp::Comma {
+                if op == BinaryOp::Comma {
                     return false;
                 }
-                self.is_constant_expr(*l) && self.is_constant_expr(*r)
+                self.is_constant_expr(l) && self.is_constant_expr(r)
             }
             NodeKind::UnaryOp(op, e) => match op {
                 UnaryOp::AddrOf => unreachable!(),
-                UnaryOp::Deref => false,
-                _ => self.is_constant_expr(*e),
+                UnaryOp::Deref => {
+                    if let Some(ty) = self.try_infer_type(node)
+                        && (ty.is_array() || ty.is_function())
+                    {
+                        self.is_static_duration_object(node)
+                    } else {
+                        false
+                    }
+                }
+                _ => self.is_constant_expr(e),
             },
-            NodeKind::Cast(_, e) => self.is_constant_expr(*e),
+            NodeKind::Cast(_, e) => self.is_constant_expr(e),
             NodeKind::TernaryOp(c, t, e) => {
-                self.is_constant_expr(*c) && self.is_constant_expr(*t) && self.is_constant_expr(*e)
+                self.is_constant_expr(c) && self.is_constant_expr(t) && self.is_constant_expr(e)
             }
             NodeKind::InitializerList(list) => {
                 for item in list.init_start.range(list.init_len) {
@@ -2500,7 +2527,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 if self.symbol_table.current_scope() != ScopeId::GLOBAL {
                     return false;
                 }
-                if let NodeKind::InitializerList(list) = self.ast.get_kind(*init_list) {
+                if let NodeKind::InitializerList(list) = self.ast.get_kind(init_list) {
                     for item in list.init_start.range(list.init_len) {
                         if let NodeKind::InitializerItem(ii) = self.ast.get_kind(item)
                             && !self.is_constant_expr(ii.initializer)
@@ -2537,22 +2564,56 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
                 true
             }
+            NodeKind::MemberAccess(..) | NodeKind::IndexAccess(..) => {
+                if let Some(ty) = self.try_infer_type(node)
+                    && (ty.is_array() || ty.is_function())
+                {
+                    return self.is_static_duration_object(node);
+                }
+                self.const_ctx().eval_int(node).is_some() || self.const_ctx().eval_float(node).is_some()
+            }
             _ => self.const_ctx().eval_int(node).is_some() || self.const_ctx().eval_float(node).is_some(),
         }
     }
 
-    fn is_static_duration_object(&self, node: NodeRef) -> bool {
-        match self.ast.get_kind(node) {
+    fn is_constant_pointer_to_static_duration_object(&mut self, node: NodeRef) -> bool {
+        let node_kind = *self.ast.get_kind(node);
+        match node_kind {
+            NodeKind::UnaryOp(UnaryOp::AddrOf, expr) => self.is_static_duration_object(expr),
+            NodeKind::Cast(_, expr) => self.is_constant_pointer_to_static_duration_object(expr),
             NodeKind::Ident(_, sym) => {
-                let symbol = self.symbol_table.get_symbol(*sym);
+                let symbol = self.symbol_table.get_symbol(sym);
+                symbol.has_static_duration() && (symbol.type_info.is_array() || symbol.type_info.is_function())
+            }
+            NodeKind::MemberAccess(base, _, is_arrow) => {
+                if is_arrow {
+                    self.is_constant_pointer_to_static_duration_object(base)
+                } else {
+                    self.is_static_duration_object(base)
+                }
+            }
+            _ => false,
+        }
+    }
+
+    fn is_static_duration_object(&mut self, node: NodeRef) -> bool {
+        let node_kind = *self.ast.get_kind(node);
+        match node_kind {
+            NodeKind::Ident(_, sym) => {
+                let symbol = self.symbol_table.get_symbol(sym);
                 symbol.has_static_duration()
             }
-            NodeKind::IndexAccess(base, index) => {
-                self.is_static_duration_object(*base) && self.is_constant_expr(*index)
+            NodeKind::IndexAccess(base, index) => self.is_static_duration_object(base) && self.is_constant_expr(index),
+            NodeKind::MemberAccess(base, _, is_arrow) => {
+                if is_arrow {
+                    self.is_constant_pointer_to_static_duration_object(base)
+                } else {
+                    self.is_static_duration_object(base)
+                }
             }
-            NodeKind::MemberAccess(base, ..) => self.is_static_duration_object(*base),
             NodeKind::CompoundLiteral(..) => self.symbol_table.current_scope() == ScopeId::GLOBAL,
-            NodeKind::Cast(_, e) => self.is_static_duration_object(*e),
+            NodeKind::Cast(_, e) => self.is_static_duration_object(e),
+            NodeKind::UnaryOp(UnaryOp::Deref, expr) => self.is_constant_pointer_to_static_duration_object(expr),
             _ => false,
         }
     }
@@ -3006,9 +3067,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let params_list = self.parsed_ast.parsed_types.get_params(*params);
                 let processed_params = self.visit_function_parameters(params_list, false, *scope_id);
                 let is_noreturn = spec_info.as_ref().map(|s| s.is_noreturn).unwrap_or(false);
-                let function_type =
-                    self.registry
-                        .function_type(current_type.ty(), processed_params, flags.is_variadic, is_noreturn);
+                let function_type = self.registry.function_type(
+                    current_type.ty(),
+                    processed_params,
+                    flags.is_variadic,
+                    flags.has_prototype,
+                    is_noreturn,
+                );
                 self.apply_declarator(QualType::unqualified(function_type), *inner, span, spec_info, ctx)
             }
             ParsedDeclarator::BitField { inner, .. } => {
@@ -3031,6 +3096,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         }
                         DeclSpec::FunctionSpec(FunctionSpec::Noreturn) => info.is_noreturn = true,
                         DeclSpec::FunctionSpec(FunctionSpec::Inline) => info.is_inline = true,
+                        DeclSpec::AttributeVisibility(vis) => info.visibility = Some(*vis),
                         _ => {}
                     }
                 }
@@ -3558,6 +3624,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
                 DeclSpec::AttributeCleanup(node_ref) => {
                     info.cleanup_func = Some(*node_ref);
+                }
+                DeclSpec::AttributeVisibility(vis) => {
+                    info.visibility = Some(*vis);
                 }
             }
         }

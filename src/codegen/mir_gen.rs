@@ -1312,6 +1312,7 @@ impl<'a> MirGen<'a> {
     }
 
     pub(super) fn lower_type(&mut self, ty: TypeRef) -> TypeId {
+        let ty = self.registry.canonical_type(ty);
         if let Some(type_id) = self.type_cache.get(&ty) {
             return *type_id;
         }
@@ -1927,6 +1928,7 @@ impl<'a> MirGen<'a> {
                         let const_val = self.mb.get_constant(*const_id);
                         match const_val.kind {
                             ConstValueKind::Int(v) => v,
+                            ConstValueKind::Zero => 0,
                             _ => return None,
                         }
                     }
@@ -2017,7 +2019,10 @@ impl<'a> MirGen<'a> {
     }
 
     pub(super) fn deref_operand(&self, operand: Operand) -> Place {
-        Place::Deref(Box::new(operand))
+        match operand {
+            Operand::AddressOf(place) => *place,
+            _ => Place::Deref(Box::new(operand)),
+        }
     }
 
     pub(super) fn create_temp_local_with_assignment(&mut self, rvalue: Rvalue, type_id: TypeId) -> (LocalId, Place) {
@@ -2073,6 +2078,39 @@ impl<'a> MirGen<'a> {
                     const_elements.push(const_id);
                 }
                 Some(self.create_constant(type_id, ConstValueKind::ArrayLiteral(const_elements)))
+            }
+            Rvalue::PtrAdd(base, offset) | Rvalue::PtrSub(base, offset) => {
+                let base_const_id = self.operand_to_const_id(base)?;
+                let offset_const_id = self.operand_to_const_id(offset)?;
+                let base_const = self.mb.get_constant(base_const_id).clone();
+                let offset_const = self.mb.get_constant(offset_const_id).clone();
+
+                if let ConstValueKind::GlobalAddress(global_id, base_offset) = base_const.kind {
+                    let offset_val = match offset_const.kind {
+                        ConstValueKind::Int(v) => Some(v),
+                        ConstValueKind::Zero => Some(0),
+                        _ => None,
+                    }?;
+
+                    let base_type_id = self.get_operand_type(base);
+                    let pointee_size = match self.mb.get_type(base_type_id) {
+                        MirType::Pointer { pointee } => {
+                            let pointee_type = self.mb.get_type(*pointee);
+                            self.get_type_size(pointee_type) as i64
+                        }
+                        _ => return None,
+                    };
+
+                    let is_add = matches!(rvalue, Rvalue::PtrAdd(..));
+                    let new_offset = if is_add {
+                        base_offset + offset_val * pointee_size
+                    } else {
+                        base_offset - offset_val * pointee_size
+                    };
+                    Some(self.create_constant(type_id, ConstValueKind::GlobalAddress(global_id, new_offset)))
+                } else {
+                    None
+                }
             }
             _ => None,
         }

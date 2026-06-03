@@ -230,7 +230,7 @@ impl<'src> Preprocessor<'src> {
 
             if is_different {
                 let err = self.error(PPError::MacroRedefined(name), name_token.location);
-                self.report_pp_error(err);
+                self.report_pp_warning(err);
             }
         }
         true
@@ -535,8 +535,21 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn resolve_next_include_path(&mut self, path: &str, is_angled: bool, loc: SourceLoc) -> Result<SourceId, PPDiag> {
-        let current_dir = self.get_current_dir();
-        let resolved = self.header_search.resolve_next_path(path, is_angled, current_dir);
+        use crate::source_manager::FileKind;
+        let is_builtin = self
+            .lexer_stack
+            .last()
+            .and_then(|lexer| self.sm.get_file_info(lexer.source_id))
+            .map(|info| info.kind == FileKind::Builtin)
+            .unwrap_or(false);
+
+        let resolved = if is_builtin {
+            let current_dir = self.get_current_dir();
+            self.header_search.resolve_path(path, is_angled, current_dir)
+        } else {
+            let current_dir = self.get_current_dir();
+            self.header_search.resolve_next_path(path, is_angled, current_dir)
+        };
 
         if let Some(id) = self.load_resolved_header(path, resolved, loc)? {
             return Ok(id);

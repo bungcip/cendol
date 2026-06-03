@@ -24,7 +24,8 @@ pub(crate) fn get_string_builtin_type(prefix: StrPrefix) -> BuiltinType {
 /// Bolt ⚡: Optimized metadata-only calculation to avoid full literal lowering.
 pub(crate) fn get_string_literal_size(content: &str, prefix: StrPrefix) -> usize {
     match prefix {
-        StrPrefix::None | StrPrefix::Utf8 => content.len() + 1,
+        StrPrefix::None => content.chars().count() + 1,
+        StrPrefix::Utf8 => content.len() + 1,
         StrPrefix::Wide | StrPrefix::Utf32 => content.chars().count() + 1,
         StrPrefix::Utf16 => {
             let mut len = 0;
@@ -43,7 +44,10 @@ pub(crate) fn lower_string_literal(content: &str, prefix: StrPrefix) -> StringLi
     // Bolt ⚡: Use with_capacity to ensure a single allocation.
     let mut values = Vec::with_capacity(size);
     match prefix {
-        StrPrefix::None | StrPrefix::Utf8 => {
+        StrPrefix::None => {
+            values.extend(content.chars().map(|c| c as u32 as i64));
+        }
+        StrPrefix::Utf8 => {
             values.extend(content.bytes().map(|b| b as i64));
         }
         StrPrefix::Wide | StrPrefix::Utf32 => {

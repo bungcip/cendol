@@ -72,6 +72,7 @@ pub struct ParsedEnumConstant {
 #[derive(Debug, Clone, Copy)]
 pub struct FunctionFlags {
     pub is_variadic: bool,
+    pub has_prototype: bool,
 }
 
 /// Parsed base type (the fundamental type specifier)

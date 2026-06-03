@@ -154,3 +154,73 @@ fn test_pragma_visibility_codegen() {
     let default_var = mir.globals.iter().find(|g| g.name.as_str() == "default_var").unwrap();
     assert_eq!(default_var.visibility, Visibility::Default);
 }
+
+#[test]
+fn test_attribute_visibility_codegen() {
+    use crate::tests::test_utils::run_pipeline_to_mir;
+    let source = r#"
+        __attribute__((visibility("hidden"))) void test_hidden_func(void) {}
+        __attribute__((visibility("default"))) void test_default_func(void) {}
+        __attribute__((visibility("protected"))) int test_protected_var = 123;
+        __attribute__((visibility("internal"))) int test_internal_var = 456;
+    "#;
+    let outputs = run_pipeline_to_mir(source);
+    let artifact = outputs.units.values().next().unwrap();
+    let mir = artifact.mir_program.as_ref().unwrap();
+
+    let hidden_func = mir
+        .functions
+        .iter()
+        .find(|f| f.name.as_str() == "test_hidden_func")
+        .unwrap();
+    assert_eq!(hidden_func.visibility, Visibility::Hidden);
+
+    let default_func = mir
+        .functions
+        .iter()
+        .find(|f| f.name.as_str() == "test_default_func")
+        .unwrap();
+    assert_eq!(default_func.visibility, Visibility::Default);
+
+    let protected_var = mir
+        .globals
+        .iter()
+        .find(|g| g.name.as_str() == "test_protected_var")
+        .unwrap();
+    assert_eq!(protected_var.visibility, Visibility::Protected);
+
+    let internal_var = mir
+        .globals
+        .iter()
+        .find(|g| g.name.as_str() == "test_internal_var")
+        .unwrap();
+    assert_eq!(internal_var.visibility, Visibility::Internal);
+}
+
+#[test]
+fn test_attribute_visibility_merging_with_hidden_default() {
+    let source = r#"
+        __attribute__((visibility("default"))) void test_merged_func(void);
+        void test_merged_func(void) {}
+
+        __attribute__((visibility("protected"))) int test_merged_var;
+        int test_merged_var = 123;
+        
+        void test_default_hidden_func(void) {}
+    "#;
+    let mut config = CompileConfig::from_virtual_file(source.to_string(), CompilePhase::Mir);
+    config.lang_options.visibility = Visibility::Hidden;
+    let mut driver = CompilerDriver::from_config(config);
+    let outputs = driver.run_pipeline(CompilePhase::Mir).unwrap();
+    let artifact = outputs.units.values().next().unwrap();
+    let mir = artifact.mir_program.as_ref().unwrap();
+
+    let merged_func = mir.functions.iter().find(|f| f.name.as_str() == "test_merged_func").unwrap();
+    assert_eq!(merged_func.visibility, Visibility::Default);
+
+    let merged_var = mir.globals.iter().find(|g| g.name.as_str() == "test_merged_var").unwrap();
+    assert_eq!(merged_var.visibility, Visibility::Protected);
+
+    let default_hidden_func = mir.functions.iter().find(|f| f.name.as_str() == "test_default_hidden_func").unwrap();
+    assert_eq!(default_hidden_func.visibility, Visibility::Hidden);
+}

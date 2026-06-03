@@ -886,6 +886,8 @@ impl<'a> SemanticAnalyzer<'a> {
 
     /// Check if the assignment is between pointers where target qualifiers are discarded
     fn is_discarding_pointer_qualifiers(&self, lhs: QualType, rhs: QualType) -> bool {
+        let lhs = self.registry.canonical_qual_type(lhs);
+        let rhs = self.registry.canonical_qual_type(rhs);
         // Both must be pointers (or array/function that decay to pointers)
         if !lhs.is_pointer() {
             return false;
@@ -926,6 +928,8 @@ impl<'a> SemanticAnalyzer<'a> {
 
     /// Check if the mismatch is between pointers to integers that only differ in signedness
     fn is_pointer_signedness_mismatch(&self, lhs: QualType, rhs: QualType) -> bool {
+        let lhs = self.registry.canonical_qual_type(lhs);
+        let rhs = self.registry.canonical_qual_type(rhs);
         if !lhs.is_pointer() || !rhs.is_pointer() {
             return false;
         }
@@ -947,6 +951,8 @@ impl<'a> SemanticAnalyzer<'a> {
 
     /// Check if the mismatch is between pointers to different struct types
     fn is_incompatible_struct_pointer_types(&self, lhs: QualType, rhs: QualType) -> bool {
+        let lhs = self.registry.canonical_qual_type(lhs);
+        let rhs = self.registry.canonical_qual_type(rhs);
         // Both must be pointers
         if !lhs.is_pointer() || !rhs.is_pointer() {
             return false;
@@ -1298,7 +1304,7 @@ impl<'a> SemanticAnalyzer<'a> {
                         return None;
                     }
 
-                    Some((QualType::unqualified(self.registry.type_int), lhs))
+                    Some((QualType::unqualified(self.registry.type_long), lhs))
                 } else {
                     self.report_error(
                         node,
@@ -1605,38 +1611,38 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         // 1. Arithmetic types
-        if lhs_qt.is_arithmetic() && rhs_qt.is_arithmetic() {
+        if lhs_ty_canon.is_arithmetic() && rhs_ty_canon.is_arithmetic() {
             return true;
         }
 
         // 2. Structure or Union types
-        if lhs_qt.is_record() || rhs_qt.is_record() {
-            return lhs_qt.is_record() && rhs_qt.is_record() && lhs_ty_canon.ty() == rhs_ty_canon.ty();
+        if lhs_ty_canon.is_record() || rhs_ty_canon.is_record() {
+            return lhs_ty_canon.is_record() && rhs_ty_canon.is_record() && lhs_ty_canon.ty() == rhs_ty_canon.ty();
         }
 
         // 3. Pointers
-        if lhs_qt.is_pointer() {
+        if lhs_ty_canon.is_pointer() {
             if is_npc {
                 return true;
             }
 
             // Resolve implicit decay for RHS to check compatibility
-            let rhs_pointee = if rhs_qt.is_array() {
+            let rhs_pointee = if rhs_ty_canon.is_array() {
                 // Array qualifiers apply to the element type
                 self.registry
-                    .get_array_element(rhs_qt.ty())
-                    .map(|elem| QualType::new(elem, rhs_qt.qualifiers()))
-            } else if rhs_qt.is_function() {
-                Some(rhs_qt) // Function decays to pointer to function (unqualified)
-            } else if rhs_qt.is_pointer() {
-                self.registry.get_pointee(rhs_qt.ty())
+                    .get_array_element(rhs_ty_canon.ty())
+                    .map(|elem| QualType::new(elem, rhs_ty_canon.qualifiers()))
+            } else if rhs_ty_canon.is_function() {
+                Some(rhs_ty_canon) // Function decays to pointer to function (unqualified)
+            } else if rhs_ty_canon.is_pointer() {
+                self.registry.get_pointee(rhs_ty_canon.ty())
             } else {
                 None
             };
 
             if let Some(rhs_base) = rhs_pointee {
                 // Check compatibility
-                let lhs_base = self.registry.get_pointee(lhs_qt.ty()).unwrap();
+                let lhs_base = self.registry.get_pointee(lhs_ty_canon.ty()).unwrap();
 
                 // void* wildcard
                 if lhs_base.is_void() || rhs_base.is_void() {
@@ -1659,7 +1665,8 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         // 4. _Bool = Pointer
-        if lhs_qt.ty() == self.registry.type_bool && (rhs_qt.is_pointer() || rhs_qt.is_array() || rhs_qt.is_function())
+        if lhs_ty_canon.ty() == self.registry.type_bool
+            && (rhs_ty_canon.is_pointer() || rhs_ty_canon.is_array() || rhs_ty_canon.is_function())
         {
             return true;
         }
@@ -1667,7 +1674,9 @@ impl<'a> SemanticAnalyzer<'a> {
         false
     }
 
-    fn record_implicit_conversions(&mut self, lhs_qt: QualType, mut rhs_qt: QualType, rhs: NodeRef, is_npc: bool) {
+    fn record_implicit_conversions(&mut self, lhs_qt: QualType, rhs_qt: QualType, rhs: NodeRef, is_npc: bool) {
+        let lhs_qt = self.registry.canonical_qual_type(lhs_qt);
+        let mut rhs_qt = self.registry.canonical_qual_type(rhs_qt);
         // 1. Null pointer constant conversion (0 or (void*)0 -> T*)
         if lhs_qt.is_pointer() && is_npc {
             self.push_conversion(rhs, Conversion::NullPointerConstant);

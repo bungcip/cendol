@@ -661,7 +661,15 @@ impl<'a> MirValidator<'a> {
         }
 
         match (ty1, ty2) {
-            (MirType::Pointer { pointee: p1 }, MirType::Pointer { pointee: p2 }) => self.are_types_compatible(*p1, *p2),
+            (MirType::Pointer { pointee: p1 }, MirType::Pointer { pointee: p2 }) => {
+                let p1_ty = self.mir.get_type(*p1);
+                let p2_ty = self.mir.get_type(*p2);
+                if matches!(p1_ty, MirType::Void) || matches!(p2_ty, MirType::Void) {
+                    true
+                } else {
+                    self.are_types_compatible(*p1, *p2)
+                }
+            }
             (
                 MirType::Array {
                     element: e1, size: s1, ..

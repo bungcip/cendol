@@ -897,6 +897,7 @@ pub enum TypeKind {
         return_type: TypeRef,
         parameters: Arc<[FunctionParam]>,
         is_variadic: bool,
+        has_prototype: bool,
         is_noreturn: bool,
     },
     Record {

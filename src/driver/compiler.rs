@@ -519,6 +519,10 @@ impl CompilerDriver {
             .map_err(|e| DriverError::IoError(format!("Failed to create temp assembly: {}", e)))?;
 
         let asm_content = b"
+.hidden __cendol_vararg_al_count
+.hidden __cendol_vararg_target_addr
+.hidden __cendol_vararg_trampoline
+
 .data
 .global __cendol_vararg_al_count
 .global __cendol_vararg_target_addr

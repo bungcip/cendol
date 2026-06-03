@@ -69,6 +69,8 @@ pub(crate) struct ParserKeywords {
     pub(crate) attr_cleanup_underscore: NameId,
     pub(crate) attr_transparent_union: NameId,
     pub(crate) attr_transparent_union_underscore: NameId,
+    pub(crate) attr_visibility: NameId,
+    pub(crate) attr_visibility_underscore: NameId,
 }
 
 impl ParserKeywords {
@@ -84,6 +86,8 @@ impl ParserKeywords {
             attr_cleanup_underscore: NameId::new("__cleanup__"),
             attr_transparent_union: NameId::new("transparent_union"),
             attr_transparent_union_underscore: NameId::new("__transparent_union__"),
+            attr_visibility: NameId::new("visibility"),
+            attr_visibility_underscore: NameId::new("__visibility__"),
         }
     }
 }

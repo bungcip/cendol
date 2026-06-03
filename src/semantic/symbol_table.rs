@@ -285,6 +285,7 @@ pub struct Symbol {
     pub def_state: DefinitionState,
     pub is_completed: bool,
     pub visibility: crate::lang_options::Visibility,
+    pub has_explicit_visibility: bool,
 }
 
 impl Symbol {
@@ -439,6 +440,7 @@ impl SymbolTable {
             def_state: DefinitionState::DeclaredOnly,
             is_completed: false,
             visibility: crate::lang_options::Visibility::Default,
+            has_explicit_visibility: false,
         });
         table
     }
@@ -602,6 +604,7 @@ impl SymbolTable {
             def_state: DefinitionState::Defined,
             is_completed: true,
             visibility: crate::lang_options::Visibility::Default,
+            has_explicit_visibility: false,
         }
     }
 

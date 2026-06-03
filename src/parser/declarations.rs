@@ -523,6 +523,24 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
                     let arg = parser.parse_expr_assignment()?;
                     parser.expect(TokenKind::RightParen)?;
                     specs.push(DeclSpec::AttributeCleanup(arg));
+                } else if name == parser.keywords.attr_visibility || name == parser.keywords.attr_visibility_underscore
+                {
+                    parser.advance();
+                    parser.expect(TokenKind::LeftParen)?;
+                    let (lit, _span) = parser.expect_string_literal()?;
+                    let val = match lit.get_val() {
+                        crate::ast::literal::LitVal::String { value, .. } => value,
+                        _ => String::new(),
+                    };
+                    parser.expect(TokenKind::RightParen)?;
+                    let vis = match val.as_str() {
+                        "default" => crate::lang_options::Visibility::Default,
+                        "hidden" => crate::lang_options::Visibility::Hidden,
+                        "protected" => crate::lang_options::Visibility::Protected,
+                        "internal" => crate::lang_options::Visibility::Internal,
+                        _ => crate::lang_options::Visibility::Default,
+                    };
+                    specs.push(DeclSpec::AttributeVisibility(vis));
                 } else {
                     // Skip unknown attribute name and potential arguments
                     parser.advance();

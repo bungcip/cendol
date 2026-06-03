@@ -203,12 +203,12 @@ fn parse_trailing_declarators(
             TokenKind::LeftParen => {
                 parser.advance();
                 validate_declarator(&parser.ast.parsed_types, base, DeclaratorKind::Function, token.span)?;
-                let (param_range, is_variadic, scope_id) = parse_function_parameters(parser)?;
+                let (param_range, flags, scope_id) = parse_function_parameters(parser)?;
                 parser.expect(TokenKind::RightParen)?;
                 base = parser.alloc_decl(ParsedDeclarator::Function {
                     inner: base,
                     params: param_range,
-                    flags: FunctionFlags { is_variadic },
+                    flags,
                     scope_id,
                 });
             }
@@ -254,20 +254,34 @@ fn reconstruct_declarator_chain(
 
 fn parse_function_parameters(
     parser: &mut Parser,
-) -> Result<(ParsedParamRange, bool, crate::semantic::ScopeId), ParseDiag> {
+) -> Result<(ParsedParamRange, FunctionFlags, crate::semantic::ScopeId), ParseDiag> {
     let scope_id = parser.symbol_table.push_scope();
     let mut params = Vec::new();
     let mut is_variadic = false;
 
     if parser.is_token(TokenKind::RightParen) {
         parser.symbol_table.pop_scope();
-        return Ok((parser.alloc_params(params), is_variadic, scope_id));
+        return Ok((
+            parser.alloc_params(params),
+            FunctionFlags {
+                is_variadic: false,
+                has_prototype: false,
+            },
+            scope_id,
+        ));
     }
 
     if parser.is_token(TokenKind::Void) && parser.peek_token(0).is_some_and(|t| t.kind == TokenKind::RightParen) {
         parser.advance();
         parser.symbol_table.pop_scope();
-        return Ok((parser.alloc_params(params), is_variadic, scope_id));
+        return Ok((
+            parser.alloc_params(params),
+            FunctionFlags {
+                is_variadic: false,
+                has_prototype: true,
+            },
+            scope_id,
+        ));
     }
 
     while !parser.at_eof() && !parser.is_token(TokenKind::RightParen) {
@@ -350,7 +364,14 @@ fn parse_function_parameters(
     }
 
     parser.symbol_table.pop_scope();
-    Ok((parser.alloc_params(params), is_variadic, scope_id))
+    Ok((
+        parser.alloc_params(params),
+        FunctionFlags {
+            is_variadic,
+            has_prototype: true,
+        },
+        scope_id,
+    ))
 }
 
 /// Check if current token starts an abstract declarator

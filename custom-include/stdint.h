@@ -81,13 +81,25 @@ typedef __UINTMAX_TYPE__ uintmax_t;
 #define UINTMAX_C(x) __UINTMAX_C(x)
 
 /* Limits of other integer types */
+#ifndef SIG_ATOMIC_MIN
 #define SIG_ATOMIC_MIN INT32_MIN
+#endif
+#ifndef SIG_ATOMIC_MAX
 #define SIG_ATOMIC_MAX INT32_MAX
+#endif
 
+#ifndef WCHAR_MIN
 #define WCHAR_MIN INT32_MIN
+#endif
+#ifndef WCHAR_MAX
 #define WCHAR_MAX INT32_MAX
+#endif
 
+#ifndef WINT_MIN
 #define WINT_MIN INT32_MIN
+#endif
+#ifndef WINT_MAX
 #define WINT_MAX INT32_MAX
+#endif
 
 #endif

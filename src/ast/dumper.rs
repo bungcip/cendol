@@ -166,10 +166,11 @@ impl AstDumper {
         write!(f, "{}", init.initializer.raw())
     }
 
-    fn write_range(f: &mut Formatter<'_>, label: &str, start: NodeRef, len: u16) -> fmt::Result {
+    fn write_range(f: &mut Formatter<'_>, label: &str, start: NodeRef, len: impl Into<u32>) -> fmt::Result {
+        let len = len.into();
         if len > 0 {
             let s = start.raw();
-            write!(f, "{}={}..{}", label, s, s + len as u32 - 1)
+            write!(f, "{}={}..{}", label, s, s + len - 1)
         } else {
             write!(f, "{}=[]", label)
         }

@@ -410,28 +410,28 @@ pub(crate) struct ForStmt {
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct DeclList {
     pub(crate) stmt_start: NodeRef,
-    pub(crate) stmt_len: u16,
+    pub(crate) stmt_len: u32,
 }
 
 // Semantic node data structures (type-resolved)
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct CompoundStmt {
     pub(crate) stmt_start: NodeRef,
-    pub(crate) stmt_len: u16,
+    pub(crate) stmt_len: u32,
     pub(crate) scope_id: ScopeId,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct TranslationUnit {
     pub(crate) decl_start: NodeRef,
-    pub(crate) decl_len: u16,
+    pub(crate) decl_len: u32,
     pub(crate) scope_id: ScopeId,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct InitializerList {
     pub(crate) init_start: NodeRef,
-    pub(crate) init_len: u16,
+    pub(crate) init_len: u32,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]

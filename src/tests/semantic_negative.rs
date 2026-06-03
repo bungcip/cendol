@@ -1,7 +1,7 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::run_fail_with_message;
 use crate::tests::test_utils::run_pass_with_diagnostic;
 use crate::tests::test_utils::run_pass_with_diagnostic_message;
+use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 // A. Lvalue & Assignment Constraints
 #[test]
@@ -245,8 +245,15 @@ fn test_extern_followed_by_static_function_mismatch() {
 
 #[test]
 fn test_static_tentative_incomplete_type_prohibited() {
-    run_fail_with_message("static int arr[];", "incomplete type 'int[]'");
     run_fail_with_message("struct S; static struct S x;", "incomplete type 'struct S'");
+}
+
+#[test]
+fn test_static_tentative_incomplete_type_allowed() {
+    run_pass(
+        "static int arr[]; int main() { return 0; }",
+        CompilePhase::SemanticLowering,
+    );
 }
 
 #[test]

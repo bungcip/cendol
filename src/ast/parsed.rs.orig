@@ -422,6 +422,23 @@ impl ParsedFunctionDef {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decl_spec_for_each_child_attribute_cleanup() {
+        let mut called = false;
+        let expr = ParsedNodeRef::new(1).unwrap();
+        let spec = DeclSpec::AttributeCleanup(expr);
+        spec.for_each_child(&mut |e| {
+            assert_eq!(e, expr);
+            called = true;
+        });
+        assert!(called);
+    }
+}
+
 impl ParsedNodeKind {
     pub(super) fn tagname(&self) -> &'static str {
         match self {
@@ -609,22 +626,5 @@ impl ParsedNodeKind {
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_decl_spec_for_each_child_attribute_cleanup() {
-        let mut called = false;
-        let expr = ParsedNodeRef::new(1).unwrap();
-        let spec = DeclSpec::AttributeCleanup(expr);
-        spec.for_each_child(&mut |e| {
-            assert_eq!(e, expr);
-            called = true;
-        });
-        assert!(called);
     }
 }

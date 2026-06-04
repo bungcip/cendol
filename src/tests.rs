@@ -158,3 +158,4 @@ pub mod regr_struct_bitfield;
 pub mod guardian_pointer_assignment_nested_qualifiers;
 pub mod semantic_types_compatible;
 pub mod test_utils;
+pub mod semantic_binary_conversion;

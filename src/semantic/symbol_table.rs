@@ -408,6 +408,20 @@ pub(crate) struct Function {
     pub builtin_kind: Option<BuiltinFunctionKind>,
 }
 
+#[derive(Debug)]
+enum UndoOp {
+    MapInsertion {
+        scope_id: ScopeId,
+        namespace: Namespace,
+        name: NameId,
+        prev_symbol: Option<SymbolRef>,
+    },
+    SymbolModified {
+        index: SymbolRef,
+        old_symbol: Box<Symbol>,
+    },
+}
+
 /// Symbol table using flattened storage
 #[derive(Debug)]
 pub struct SymbolTable {
@@ -415,6 +429,7 @@ pub struct SymbolTable {
     pub scopes: Vec<Scope>,
     current_scope_id: ScopeId,
     next_scope_id: u32,
+    undo_log: Vec<UndoOp>,
 }
 
 impl SymbolTable {
@@ -426,6 +441,7 @@ impl SymbolTable {
             scopes: Vec::with_capacity(32),
             current_scope_id: ScopeId::GLOBAL,
             next_scope_id: 2, // Start after GLOBAL
+            undo_log: Vec::with_capacity(512),
         };
 
         // Initialize global scope
@@ -487,10 +503,20 @@ impl SymbolTable {
         &mut self.scopes[scope_id.get() as usize - 1]
     }
 
+    fn record_map_insertion(&mut self, scope_id: ScopeId, ns: Namespace, name: NameId, prev: Option<SymbolRef>) {
+        self.undo_log.push(UndoOp::MapInsertion {
+            scope_id,
+            namespace: ns,
+            name,
+            prev_symbol: prev,
+        });
+    }
+
     fn add_symbol_in_scope(&mut self, name: NameId, entry: Symbol, scope_id: ScopeId) -> SymbolRef {
         let sym = self.push_symbol(entry);
         let scope = self.get_scope_mut(scope_id);
-        scope.symbols.insert(name, sym);
+        let prev = scope.symbols.insert(name, sym);
+        self.record_map_insertion(scope_id, Namespace::Ordinary, name, prev);
         sym
     }
 
@@ -500,12 +526,14 @@ impl SymbolTable {
 
     fn add_symbol_in_namespace(&mut self, name: NameId, entry: Symbol, ns: Namespace) -> SymbolRef {
         let sym = self.push_symbol(entry);
-        let current_scope = self.get_scope_mut(self.current_scope_id);
-        match ns {
+        let scope_id = self.current_scope_id;
+        let current_scope = self.get_scope_mut(scope_id);
+        let prev = match ns {
             Namespace::Ordinary => current_scope.symbols.insert(name, sym),
             Namespace::Tag => current_scope.tags.insert(name, sym),
             Namespace::Label => current_scope.labels.insert(name, sym),
         };
+        self.record_map_insertion(scope_id, ns, name, prev);
         sym
     }
 
@@ -613,7 +641,9 @@ impl SymbolTable {
         let ty = QualType::unqualified(TypeRef::dummy());
         let symbol = self.create_symbol(name, SymbolKind::Typedef { aliased_type: ty }, ty, span);
         let sym_ref = self.push_symbol(symbol);
-        self.get_scope_mut(self.current_scope_id).symbols.insert(name, sym_ref);
+        let scope_id = self.current_scope_id;
+        let prev = self.get_scope_mut(scope_id).symbols.insert(name, sym_ref);
+        self.record_map_insertion(scope_id, Namespace::Ordinary, name, prev);
     }
 
     /// Define a non-typedef in the parser (used for type disambiguation).
@@ -629,7 +659,9 @@ impl SymbolTable {
         };
         let symbol = self.create_symbol(name, SymbolKind::Variable(var), ty, span);
         let sym_ref = self.push_symbol(symbol);
-        self.get_scope_mut(self.current_scope_id).symbols.insert(name, sym_ref);
+        let scope_id = self.current_scope_id;
+        let prev = self.get_scope_mut(scope_id).symbols.insert(name, sym_ref);
+        self.record_map_insertion(scope_id, Namespace::Ordinary, name, prev);
     }
 
     /// Define a new variable in the current scope.
@@ -678,7 +710,9 @@ impl SymbolTable {
         };
 
         // Link the local name to the target symbol
-        self.get_scope_mut(self.current_scope_id).symbols.insert(name, target);
+        let scope_id = self.current_scope_id;
+        let prev = self.get_scope_mut(scope_id).symbols.insert(name, target);
+        self.record_map_insertion(scope_id, Namespace::Ordinary, name, prev);
         Ok(target)
     }
 
@@ -724,7 +758,9 @@ impl SymbolTable {
             // Create global entry for the function
             symbol.scope_id = ScopeId::GLOBAL;
             let global = self.merge_global_symbol(name, symbol)?;
-            self.get_scope_mut(self.current_scope_id).symbols.insert(name, global);
+            let scope_id = self.current_scope_id;
+            let prev = self.get_scope_mut(scope_id).symbols.insert(name, global);
+            self.record_map_insertion(scope_id, Namespace::Ordinary, name, prev);
             Ok(global)
         }
     }
@@ -826,6 +862,9 @@ impl SymbolTable {
             return Ok(self.add_symbol_in_scope(name, new_entry, ScopeId::GLOBAL));
         };
 
+        let old_symbol = Box::new(self.get_symbol(sym).clone());
+        self.undo_log.push(UndoOp::SymbolModified { index: sym, old_symbol });
+
         let existing = self.get_symbol_mut(sym);
 
         // 1. Verify kinds match and check variable-specific constraints
@@ -872,15 +911,43 @@ impl SymbolTable {
     pub(crate) fn save_state(&self) -> SymbolTableState {
         SymbolTableState {
             entries_len: self.entries.len(),
-            scopes: self.scopes.clone(),
+            scopes_len: self.scopes.len(),
+            undo_log_len: self.undo_log.len(),
             current_scope_id: self.current_scope_id,
             next_scope_id: self.next_scope_id,
         }
     }
 
     pub(crate) fn restore_state(&mut self, state: SymbolTableState) {
+        while self.undo_log.len() > state.undo_log_len {
+            let op = self.undo_log.pop().unwrap();
+            match op {
+                UndoOp::MapInsertion {
+                    scope_id,
+                    namespace,
+                    name,
+                    prev_symbol,
+                } => {
+                    let scope = self.get_scope_mut(scope_id);
+                    let map = match namespace {
+                        Namespace::Ordinary => &mut scope.symbols,
+                        Namespace::Tag => &mut scope.tags,
+                        Namespace::Label => &mut scope.labels,
+                    };
+                    if let Some(prev) = prev_symbol {
+                        map.insert(name, prev);
+                    } else {
+                        map.remove(&name);
+                    }
+                }
+                UndoOp::SymbolModified { index, old_symbol } => {
+                    self.entries[(index.get() - 1) as usize] = *old_symbol;
+                }
+            }
+        }
+
         self.entries.truncate(state.entries_len);
-        self.scopes = state.scopes;
+        self.scopes.truncate(state.scopes_len);
         self.current_scope_id = state.current_scope_id;
         self.next_scope_id = state.next_scope_id;
     }
@@ -892,6 +959,7 @@ impl SymbolTable {
             scope.tags.clear();
             scope.labels.clear();
         }
+        self.undo_log.clear();
         self.current_scope_id = ScopeId::GLOBAL;
     }
 }
@@ -899,7 +967,8 @@ impl SymbolTable {
 #[derive(Clone)]
 pub struct SymbolTableState {
     entries_len: usize,
-    scopes: Vec<Scope>,
+    scopes_len: usize,
+    undo_log_len: usize,
     current_scope_id: ScopeId,
     next_scope_id: u32,
 }

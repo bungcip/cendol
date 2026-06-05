@@ -164,6 +164,12 @@ impl<'src> Preprocessor<'src> {
 
             if needs_expansion {
                 let mut arg_clone = arg.clone();
+                // GCC semantics: Arguments are pre-expanded in an independent context.
+                // Do not inherit caller's hide sets during pre-expansion!
+                for t in &mut arg_clone {
+                    t.hide_set = 0;
+                    t.flags.remove(PPTokenFlags::DISABLE_EXPANSION);
+                }
                 self.expand_tokens(&mut arg_clone, false)?;
                 expanded_args.push(Cow::Owned(arg_clone));
             } else {

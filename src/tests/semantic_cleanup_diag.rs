@@ -33,3 +33,18 @@ fn test_cleanup_on_typedef() {
         "ignored on type",
     );
 }
+
+#[test]
+fn test_cleanup_on_static_local() {
+    run_pass_with_diagnostic_message(
+        r#"
+            void clean(int *p) {}
+            int main() {
+                int __attribute__((cleanup(clean))) static local_static = 3;
+                return 0;
+            }
+        "#,
+        CompilePhase::Mir,
+        "'__cleanup__' attribute only applies to local variables",
+    );
+}

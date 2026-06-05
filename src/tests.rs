@@ -41,6 +41,7 @@ pub mod semantic_bool_literals;
 pub mod semantic_brace_elision;
 pub mod semantic_builtin_complex;
 pub mod semantic_caserange;
+pub mod semantic_cleanup_diag;
 pub mod semantic_common;
 pub mod semantic_complex_types;
 pub mod semantic_composite;

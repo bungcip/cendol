@@ -631,3 +631,13 @@ fn test_macro_parameter_list_errors() {
         diags4[0]
     );
 }
+#[test]
+fn test_macro_expansion_arguments_hide_set_regression() {
+    assert_pp(
+        r#"#define A(m) m( B(f)
+#define B(x) A(x)
+#define C(x) x
+A(C) )"#,
+        "f( B(f)",
+    );
+}

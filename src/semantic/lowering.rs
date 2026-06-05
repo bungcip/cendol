@@ -1562,7 +1562,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     ) {
         let is_global = self.symbol_table.current_scope() == ScopeId::GLOBAL;
 
-        if spec_info.cleanup_func.is_some() && (is_global || spec_info.storage == Some(StorageClass::Extern)) {
+        if spec_info.cleanup_func.is_some()
+            && (is_global
+                || spec_info.storage == Some(StorageClass::Extern)
+                || spec_info.storage == Some(StorageClass::Static)
+                || spec_info.storage == Some(StorageClass::ThreadLocal))
+        {
             self.report_warning(span, SemanticError::AttributeCleanupOnNonLocal);
         }
 

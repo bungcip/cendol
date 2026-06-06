@@ -167,8 +167,12 @@ impl<'src> Preprocessor<'src> {
                 // GCC semantics: Arguments are pre-expanded in an independent context.
                 // Do not inherit caller's hide sets during pre-expansion!
                 for t in &mut arg_clone {
+                    if let PPTokenKind::Identifier(symbol) = t.kind
+                        && self.hide_sets.contains(t.hide_set, symbol)
+                    {
+                        t.flags |= PPTokenFlags::DISABLE_EXPANSION;
+                    }
                     t.hide_set = 0;
-                    t.flags.remove(PPTokenFlags::DISABLE_EXPANSION);
                 }
                 self.expand_tokens(&mut arg_clone, false)?;
                 expanded_args.push(Cow::Owned(arg_clone));
@@ -487,24 +491,17 @@ impl<'src> Preprocessor<'src> {
                                 result[start_idx].flags |= PPTokenFlags::LEADING_SPACE;
                             }
 
-                            if ctx.intersect_hs == 0 {
-                                // Bolt ⚡: Fast-path for top-level macro calls. All tokens receive new_hs.
-                                for t in &mut result[start_idx..] {
-                                    t.hide_set = ctx.new_hs;
-                                }
-                            } else {
-                                for t in &mut result[start_idx..] {
-                                    // Bolt ⚡: Hide-set intersection logic for arguments (Dave Prosser algorithm).
-                                    if t.hide_set == 0 {
-                                        t.hide_set = arg_empty_hs;
-                                    } else {
-                                        if t.hide_set != last_hs.0 {
-                                            let intersected = self.hide_sets.intersection(t.hide_set, ctx.intersect_hs);
-                                            let updated = self.hide_sets.insert(intersected, ctx.symbol);
-                                            last_hs = (t.hide_set, updated);
-                                        }
-                                        t.hide_set = last_hs.1;
+                            for t in &mut result[start_idx..] {
+                                // Bolt ⚡: Hide-set intersection logic for arguments (Dave Prosser algorithm).
+                                if t.hide_set == 0 {
+                                    t.hide_set = arg_empty_hs;
+                                } else {
+                                    if t.hide_set != last_hs.0 {
+                                        let intersected = self.hide_sets.intersection(t.hide_set, ctx.intersect_hs);
+                                        let updated = self.hide_sets.insert(intersected, ctx.symbol);
+                                        last_hs = (t.hide_set, updated);
                                     }
+                                    t.hide_set = last_hs.1;
                                 }
                             }
                             last_token_produced_output = true;

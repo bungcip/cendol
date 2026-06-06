@@ -134,6 +134,14 @@ fn test_recursive_macro_expansion_regression() {
     );
 }
 
+#[test]
+fn test_gcc_recursive_macro_painted_blue() {
+    assert_pp(
+        "#define func(x) x\n#define bar func(\n#define foo bar foo\nfoo )",
+        "foo",
+    );
+}
+
 // Magic Macros
 #[test]
 fn test_magic_macros() {

@@ -5,7 +5,7 @@ use crate::ast::nodes::InitializerList;
 use crate::ast::{self, NameId};
 use crate::ast::{Designator, NodeKind, NodeRef};
 use crate::codegen::mir_gen::MirGen;
-use crate::mir::{ConstValueKind, MirArrayLayout, MirType, Operand, Place, Rvalue};
+use crate::mir::{ConstValueId, ConstValueKind, MirArrayLayout, MirType, Operand, Place, Rvalue, TypeId};
 use crate::semantic::literal_utils::lower_string_literal;
 use crate::semantic::{ArraySizeType, FieldLayout, QualType, RecordMember, TypeKind, TypeRef};
 
@@ -13,7 +13,7 @@ impl<'a> MirGen<'a> {
     fn visit_init_list(&mut self, list: &InitializerList, target_ty: QualType, destination: Option<Place>) -> Operand {
         let range = list.init_start.range(list.init_len);
         let mut iter = range.peekable();
-        let fields = self.visit_struct_fields_recursive(&mut iter, None, &[], target_ty);
+        let fields = self.visit_struct_fields_recursive(&mut iter, None, &[], target_ty, None);
         self.finalize_struct_init(fields, target_ty, destination)
     }
 
@@ -31,6 +31,7 @@ impl<'a> MirGen<'a> {
         pending: Option<(NodeRef, Option<(NodeRef, u16)>)>,
         pending_path: &[usize],
         target_qt: QualType,
+        existing_op: Option<Operand>,
     ) -> Vec<(usize, Operand)> {
         let type_info = self.registry.get(target_qt.ty());
         let (members, is_union) = match &type_info.kind {
@@ -88,7 +89,15 @@ impl<'a> MirGen<'a> {
 
             let m = &members[field_idx];
             let flat_base = hierarchical_offsets[field_idx];
-            let value = self.visit_nested_aggregate_init(iter, initializer, designator, active_path, m);
+            let value = self.visit_nested_aggregate_init(
+                iter,
+                initializer,
+                designator,
+                active_path,
+                m,
+                field_idx,
+                existing_op.clone(),
+            );
 
             for (sub_idx, op) in value {
                 field_operands.push((flat_base + sub_idx, op));
@@ -139,6 +148,8 @@ impl<'a> MirGen<'a> {
         designator: Option<(NodeRef, u16)>,
         active_path: Vec<usize>,
         m: &RecordMember,
+        field_idx: usize,
+        existing_op: Option<Operand>,
     ) -> Vec<(usize, Operand)> {
         if !active_path.is_empty() || (designator.is_some() && designator.unwrap().1 > 1) {
             let (next_pending, next_path) = if !active_path.is_empty() {
@@ -153,7 +164,9 @@ impl<'a> MirGen<'a> {
 
             match &self.registry.get(m.member_type.ty()).kind {
                 TypeKind::Record { .. } => {
-                    let fields = self.visit_struct_fields_recursive(iter, next_pending, &next_path, m.member_type);
+                    let sub_existing = self.get_existing_struct_field(&existing_op, field_idx);
+                    let fields =
+                        self.visit_struct_fields_recursive(iter, next_pending, &next_path, m.member_type, sub_existing);
                     if m.name.is_none() {
                         fields
                     } else {
@@ -162,6 +175,7 @@ impl<'a> MirGen<'a> {
                 }
                 TypeKind::Array { element_type, size } => {
                     let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
+                    let sub_existing = self.get_existing_struct_field(&existing_op, field_idx);
                     let op = self.visit_array_init_from_iter(
                         iter,
                         next_pending,
@@ -169,6 +183,8 @@ impl<'a> MirGen<'a> {
                         array_size,
                         m.member_type,
                         None,
+                        false,
+                        sub_existing,
                     );
                     vec![(0, op)]
                 }
@@ -178,7 +194,9 @@ impl<'a> MirGen<'a> {
             let next_pending = Some((initializer, None));
             match &self.registry.get(m.member_type.ty()).kind {
                 TypeKind::Record { .. } => {
-                    let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], m.member_type);
+                    let sub_existing = self.get_existing_struct_field(&existing_op, field_idx);
+                    let fields =
+                        self.visit_struct_fields_recursive(iter, next_pending, &[], m.member_type, sub_existing);
                     if m.name.is_none() {
                         fields
                     } else {
@@ -187,6 +205,7 @@ impl<'a> MirGen<'a> {
                 }
                 TypeKind::Array { element_type, size } => {
                     let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
+                    let sub_existing = self.get_existing_struct_field(&existing_op, field_idx);
                     let op = self.visit_array_init_from_iter(
                         iter,
                         next_pending,
@@ -194,6 +213,8 @@ impl<'a> MirGen<'a> {
                         array_size,
                         m.member_type,
                         None,
+                        false,
+                        sub_existing,
                     );
                     vec![(0, op)]
                 }
@@ -205,7 +226,8 @@ impl<'a> MirGen<'a> {
         {
             let range = list.init_start.range(list.init_len);
             let mut sub_iter = range.peekable();
-            self.visit_struct_fields_recursive(&mut sub_iter, None, &[], m.member_type)
+            let sub_existing = self.get_existing_struct_field(&existing_op, field_idx);
+            self.visit_struct_fields_recursive(&mut sub_iter, None, &[], m.member_type, sub_existing)
         } else {
             vec![(0, self.visit_init(initializer, m.member_type, None))]
         }
@@ -265,9 +287,10 @@ impl<'a> MirGen<'a> {
     ) -> Operand {
         let range = list.init_start.range(list.init_len);
         let mut iter = range.peekable();
-        self.visit_array_init_from_iter(&mut iter, None, element_ty, size, target_ty, destination)
+        self.visit_array_init_from_iter(&mut iter, None, element_ty, size, target_ty, destination, true, None)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn visit_array_init_from_iter(
         &mut self,
         iter: &mut Peekable<impl Iterator<Item = NodeRef>>,
@@ -276,8 +299,10 @@ impl<'a> MirGen<'a> {
         size: usize,
         target_ty: QualType,
         destination: Option<Place>,
+        is_top_level: bool,
+        existing_op: Option<Operand>,
     ) -> Operand {
-        let mut elements: Vec<Option<Operand>> = vec![None; size];
+        let mut elements: Vec<Option<Operand>> = self.get_existing_array_elements(&existing_op, size);
         let mut current_idx = 0;
         let mut first_item_processed = false;
 
@@ -304,6 +329,10 @@ impl<'a> MirGen<'a> {
                 )
             };
 
+            if !is_top_level && !is_pending && designator.is_some() {
+                break;
+            }
+
             if designator.is_none() && size > 0 && current_idx >= size {
                 break;
             }
@@ -316,13 +345,21 @@ impl<'a> MirGen<'a> {
                 iter.next();
             }
 
-            let operand = self.visit_array_element_init(iter, initializer, designator, element_qt);
+            let existing_el = if start < elements.len() {
+                elements[start].clone()
+            } else {
+                None
+            };
+            let operand = self.visit_array_element_init(iter, initializer, designator, element_qt, existing_el);
 
             if end >= elements.len() {
                 elements.resize(end + 1, None);
             }
             for item in elements.iter_mut().take(end + 1).skip(start) {
-                *item = Some(operand.clone());
+                *item = Some(match item.take() {
+                    Some(existing_op) => self.merge_operands(existing_op, operand.clone(), element_qt),
+                    None => operand.clone(),
+                });
             }
             current_idx = end + 1;
         }
@@ -364,6 +401,7 @@ impl<'a> MirGen<'a> {
         initializer: NodeRef,
         designator: Option<(NodeRef, u16)>,
         element_qt: QualType,
+        existing_op: Option<Operand>,
     ) -> Operand {
         if let Some((d_start, d_len)) = designator
             && d_len > 1
@@ -374,7 +412,7 @@ impl<'a> MirGen<'a> {
 
             match &self.registry.get(element_qt.ty()).kind {
                 TypeKind::Record { .. } => {
-                    let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], element_qt);
+                    let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], element_qt, existing_op);
                     self.finalize_struct_init(fields, element_qt, None)
                 }
                 TypeKind::Array { element_type, size } => {
@@ -386,6 +424,8 @@ impl<'a> MirGen<'a> {
                         array_size,
                         element_qt,
                         None,
+                        false,
+                        existing_op,
                     )
                 }
                 _ => unreachable!("Designator path on non-aggregate"),
@@ -394,7 +434,7 @@ impl<'a> MirGen<'a> {
             let next_pending = Some((initializer, None));
             match &self.registry.get(element_qt.ty()).kind {
                 TypeKind::Record { .. } => {
-                    let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], element_qt);
+                    let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], element_qt, existing_op);
                     self.finalize_struct_init(fields, element_qt, None)
                 }
                 TypeKind::Array { element_type, size } => {
@@ -406,6 +446,8 @@ impl<'a> MirGen<'a> {
                         array_size,
                         element_qt,
                         None,
+                        false,
+                        existing_op,
                     )
                 }
                 _ => unreachable!(),
@@ -447,11 +489,17 @@ impl<'a> MirGen<'a> {
         target_ty: QualType,
         destination: Option<Place>,
     ) -> Operand {
-        // Dedup by index, taking the last one for each index
+        let fields_types: Vec<QualType> = match &self.registry.get(target_ty.ty()).kind {
+            TypeKind::Record { members, .. } => members.iter().map(|m| m.member_type).collect(),
+            _ => Vec::new(),
+        };
+
+        // Dedup by index, merging if existing
         let mut final_fields: Vec<(usize, Operand)> = Vec::new();
         for (idx, op) in field_operands {
             if let Some(existing) = final_fields.iter_mut().find(|(i, _)| *i == idx) {
-                existing.1 = op;
+                let field_ty = fields_types[idx];
+                existing.1 = self.merge_operands(existing.1.clone(), op, field_ty);
             } else {
                 final_fields.push((idx, op));
             }
@@ -757,5 +805,78 @@ impl<'a> MirGen<'a> {
             }
         }
         None
+    }
+
+    fn merge_operands(&mut self, existing: Operand, new: Operand, ty: QualType) -> Operand {
+        match (existing, new) {
+            (Operand::Constant(existing_id), Operand::Constant(new_id)) => {
+                let mir_ty = self.lower_qual_type(ty);
+                let merged_id = self.merge_constants(existing_id, new_id, mir_ty);
+                Operand::Constant(merged_id)
+            }
+            (_, new) => new,
+        }
+    }
+
+    fn merge_constants(&mut self, existing_id: ConstValueId, new_id: ConstValueId, mir_ty: TypeId) -> ConstValueId {
+        let existing_val = self.mb.get_constant(existing_id).clone();
+        let new_val = self.mb.get_constant(new_id).clone();
+
+        match (&existing_val.kind, &new_val.kind) {
+            (ConstValueKind::Zero, _) => new_id,
+            (ConstValueKind::StructLiteral(existing_fields), ConstValueKind::StructLiteral(new_fields)) => {
+                let mut merged_fields = existing_fields.clone();
+                for &(new_idx, new_field_const_id) in new_fields {
+                    let field_ty = match self.mb.get_type(mir_ty) {
+                        MirType::Record { field_types, .. } => field_types[new_idx],
+                        _ => panic!("Expected Record type in merge_constants"),
+                    };
+
+                    if let Some(existing_field) = merged_fields.iter_mut().find(|(idx, _)| *idx == new_idx) {
+                        existing_field.1 = self.merge_constants(existing_field.1, new_field_const_id, field_ty);
+                    } else {
+                        merged_fields.push((new_idx, new_field_const_id));
+                    }
+                }
+                merged_fields.sort_by_key(|(idx, _)| *idx);
+                self.create_constant(mir_ty, ConstValueKind::StructLiteral(merged_fields))
+            }
+            (ConstValueKind::ArrayLiteral(existing_elements), ConstValueKind::ArrayLiteral(new_elements)) => {
+                let mut merged_elements = existing_elements.clone();
+                let elem_ty = match self.mb.get_type(mir_ty) {
+                    &MirType::Array { element, .. } => element,
+                    _ => panic!("Expected Array type in merge_constants"),
+                };
+
+                for (idx, &new_el_id) in new_elements.iter().enumerate() {
+                    let existing_el_id = merged_elements[idx];
+                    merged_elements[idx] = self.merge_constants(existing_el_id, new_el_id, elem_ty);
+                }
+                self.create_constant(mir_ty, ConstValueKind::ArrayLiteral(merged_elements))
+            }
+            _ => new_id,
+        }
+    }
+
+    fn get_existing_struct_field(&self, existing_op: &Option<Operand>, field_idx: usize) -> Option<Operand> {
+        if let Some(Operand::Constant(const_id)) = existing_op {
+            let const_val = self.mb.get_constant(*const_id);
+            if let ConstValueKind::StructLiteral(fields) = &const_val.kind
+                && let Some((_, field_const_id)) = fields.iter().find(|(idx, _)| *idx == field_idx)
+            {
+                return Some(Operand::Constant(*field_const_id));
+            }
+        }
+        None
+    }
+
+    fn get_existing_array_elements(&self, existing_op: &Option<Operand>, size: usize) -> Vec<Option<Operand>> {
+        if let Some(Operand::Constant(const_id)) = existing_op {
+            let const_val = self.mb.get_constant(*const_id);
+            if let ConstValueKind::ArrayLiteral(elements) = &const_val.kind {
+                return elements.iter().map(|&el_id| Some(Operand::Constant(el_id))).collect();
+            }
+        }
+        vec![None; size]
     }
 }

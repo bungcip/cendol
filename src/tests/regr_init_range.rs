@@ -42,3 +42,31 @@ fn test_init_range_deduce_size() {
     "#;
     assert_eq!(run_c_code_exit_status(source), 0);
 }
+
+#[test]
+fn test_init_range_nested_aggregate_override() {
+    let source = r#"
+    struct S { int x; int y[3]; };
+    int main() {
+        struct S a[5] = {
+            [0 ... 4].x = 1,
+            [0 ... 4].y[0 ... 2] = 2,
+            [2 ... 3].y[1 ... 2] = 3
+        };
+        for (int i = 0; i < 5; i++) {
+            if (a[i].x != 1) return 100 + i;
+            if (i == 2 || i == 3) {
+                if (a[i].y[0] != 2) return 200 + i;
+                if (a[i].y[1] != 3) return 300 + i;
+                if (a[i].y[2] != 3) return 400 + i;
+            } else {
+                if (a[i].y[0] != 2) return 500 + i;
+                if (a[i].y[1] != 2) return 600 + i;
+                if (a[i].y[2] != 2) return 700 + i;
+            }
+        }
+        return 0;
+    }
+    "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
+}

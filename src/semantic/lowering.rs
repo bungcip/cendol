@@ -3137,6 +3137,31 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 (symbol.type_info.ty(), symbol.is_completed, symbol.def_span)
             };
 
+            let is_mismatch = match &self.symbol_table.get_symbol(sym_ref).kind {
+                SymbolKind::Record { .. } => {
+                    if let TypeKind::Record {
+                        is_union: existing_is_union,
+                        ..
+                    } = &self.registry.get(ty).kind
+                    {
+                        *existing_is_union != is_union
+                    } else {
+                        true
+                    }
+                }
+                _ => true,
+            };
+
+            if is_mismatch {
+                return Err(SemanticDiag::new(
+                    span,
+                    SemanticError::TagKindMismatch {
+                        name: tag_name,
+                        prev_decl: def_span,
+                    },
+                ));
+            }
+
             if is_definition && is_completed {
                 self.report_error(
                     span,
@@ -3191,6 +3216,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     };
                 (symbol.type_info.ty(), symbol.is_completed, symbol.def_span, has_enums)
             };
+
+            let is_mismatch = !matches!(&self.symbol_table.get_symbol(sym_ref).kind, SymbolKind::EnumTag { .. });
+
+            if is_mismatch {
+                return Err(SemanticDiag::new(
+                    span,
+                    SemanticError::TagKindMismatch {
+                        name: tag_name,
+                        prev_decl: def_span,
+                    },
+                ));
+            }
 
             if is_definition && is_completed {
                 // C23 allows redefinition only if it was empty or compatible

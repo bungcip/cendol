@@ -154,6 +154,7 @@ pub mod regr_mixed_sign_comp;
 pub mod regr_pp_short_circuit;
 pub mod regr_shadowing;
 pub mod regr_struct_bitfield;
+pub mod regr_tag_kind_mismatch;
 pub mod regr_typeof_ternary;
 
 // Test Helpers

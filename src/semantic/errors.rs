@@ -57,6 +57,7 @@ impl SemanticDiag {
             | SemanticError::RedefinitionWithDifferentType { first_def, .. } => {
                 Some(("previous definition is here", *first_def))
             }
+            SemanticError::TagKindMismatch { prev_decl, .. } => Some(("previous declaration is here", *prev_decl)),
             SemanticError::GenericMultipleDefault { first_def, .. } => {
                 Some(("previous default association is here", *first_def))
             }
@@ -107,6 +108,10 @@ pub enum SemanticError {
     RedefinitionWithDifferentType {
         name: NameId,
         first_def: SourceSpan,
+    },
+    TagKindMismatch {
+        name: NameId,
+        prev_decl: SourceSpan,
     },
     TypeMismatch {
         expected: QualType,
@@ -476,6 +481,13 @@ impl DiagDisplay for SemanticError {
             SemanticError::Redefinition { name, .. } => write!(f, "redefinition of '{}'", name),
             SemanticError::RedefinitionWithDifferentType { name, .. } => {
                 write!(f, "redefinition of '{}' with a different type", name)
+            }
+            SemanticError::TagKindMismatch { name, .. } => {
+                write!(
+                    f,
+                    "use of '{}' with tag type that does not match previous declaration",
+                    name
+                )
             }
             SemanticError::TypeMismatch { expected, found } => write!(
                 f,

@@ -5,6 +5,10 @@ use crate::semantic::{BuiltinType, QualType, TypeRegistry};
 
 /// Performs the "usual arithmetic conversions" as specified in C11 6.3.1.8.
 pub(super) fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rhs: QualType) -> Option<QualType> {
+    if !lhs.is_arithmetic() || !rhs.is_arithmetic() {
+        return None;
+    }
+
     if lhs.is_floating() || rhs.is_floating() {
         let get_real = |qt: QualType| {
             if qt.is_complex() {

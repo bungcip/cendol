@@ -2724,12 +2724,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             },
             NodeKind::Assignment(_, l, _) => self.try_infer_type(l),
             NodeKind::TernaryOp(_, t, e) => {
-                let tt = self.try_infer_type(t)?;
-                let et = self.try_infer_type(e)?;
+                let mut tt = self.try_infer_type(t)?;
+                let mut et = self.try_infer_type(e)?;
+                tt = self.registry.decay(tt, TypeQualifiers::empty());
+                et = self.registry.decay(et, TypeQualifiers::empty());
                 if tt.ty() == et.ty() {
                     Some(tt)
-                } else {
+                } else if tt.is_arithmetic() && et.is_arithmetic() {
                     usual_arithmetic_conversions(self.registry, tt, et)
+                } else {
+                    None
                 }
             }
             NodeKind::SizeOfExpr(_)

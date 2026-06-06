@@ -36,6 +36,7 @@ pub enum PPError {
     PoisonedIdentifier(StringId),
     DuplicateMacroParameter(StringId),
     ExpectedCommaInMacroParameterList,
+    ExpectedRightParenAfterEllipsis,
 }
 
 impl PPError {
@@ -87,6 +88,7 @@ impl DiagDisplay for PPError {
             PPError::ExpectedCommaInMacroParameterList => {
                 write!(f, "expected comma in macro parameter list")
             }
+            PPError::ExpectedRightParenAfterEllipsis => write!(f, "expected ')' after \"...\""),
         }
     }
 }

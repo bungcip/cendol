@@ -1132,7 +1132,10 @@ impl<'src> Preprocessor<'src> {
                 PPTokenKind::Ellipsis => {
                     flags |= MacroFlags::C99_VARARGS;
                     variadic = Some(self.keywords.va_args);
-                    self.expect_kind(PPTokenKind::RightParen)?;
+                    let token = self.expect_token()?;
+                    if token.kind != PPTokenKind::RightParen {
+                        return self.emit_error(PPError::ExpectedRightParenAfterEllipsis, token.location);
+                    }
                     break;
                 }
                 PPTokenKind::Identifier(sym) => {
@@ -1156,7 +1159,10 @@ impl<'src> Preprocessor<'src> {
                             // GNU named varargs: `arg...`
                             variadic = Some(params.pop().unwrap());
                             flags |= MacroFlags::GNU_VARARGS;
-                            self.expect_kind(PPTokenKind::RightParen)?;
+                            let token = self.expect_token()?;
+                            if token.kind != PPTokenKind::RightParen {
+                                return self.emit_error(PPError::ExpectedRightParenAfterEllipsis, token.location);
+                            }
                             break;
                         }
                         _ => {

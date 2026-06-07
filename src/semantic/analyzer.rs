@@ -2616,35 +2616,15 @@ impl<'a> SemanticAnalyzer<'a> {
             self.report_error(index, SemanticError::ExpectedIntegerType { found: index_ty });
         }
 
-        if sequence_qt.is_array() {
-            // Ensure layout is computed for array type
-            let _ = self.registry.ensure_layout(sequence_qt.ty());
-            let element_type = self.registry.get_array_element(sequence_qt.ty()).unwrap();
+        let pointee = self.registry.get_pointee(sequence_qt.ty()).unwrap();
 
-            // C11 6.5.2.1p1: "pointer to complete object type"
-            // Note: Incomplete arrays (like extern int a[]) are fine as they decay to complete pointers.
-            // But an array of incomplete type (like extern struct S a[]) is always illegal anyway.
-            if !self.registry.is_complete(element_type) || element_type.is_function() {
-                self.report_error(
-                    sequence,
-                    SemanticError::SubscriptIncompleteType {
-                        ty: QualType::new(element_type, sequence_qt.qualifiers()),
-                    },
-                );
-            }
-
-            Some(QualType::new(element_type, sequence_qt.qualifiers()))
-        } else {
-            let pointee = self.registry.get_pointee(sequence_qt.ty()).unwrap();
-
-            // C11 6.5.2.1p1: pointee must be a complete object type.
-            // A function type is not an object type.
-            if !self.registry.is_complete(pointee.ty()) || pointee.is_function() {
-                self.report_error(sequence, SemanticError::SubscriptIncompleteType { ty: pointee });
-            }
-
-            Some(pointee)
+        // C11 6.5.2.1p1: pointee must be a complete object type.
+        // A function type is not an object type.
+        if !self.registry.is_complete(pointee.ty()) || pointee.is_function() {
+            self.report_error(sequence, SemanticError::SubscriptIncompleteType { ty: pointee });
         }
+
+        Some(pointee)
     }
 
     fn visit_declaration_node(&mut self, node: NodeRef, kind: &NodeKind) -> Option<QualType> {
@@ -3062,83 +3042,14 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::UnaryOp(op, operand) => self.visit_unary_op(node, *op, *operand),
             NodeKind::BinaryOp(op, lhs, rhs) => self.visit_binary_op(*op, *lhs, *rhs),
             NodeKind::TernaryOp(cond, then, else_expr) => self.visit_ternary_op(*cond, *then, *else_expr),
-            NodeKind::StatementExpr(stmt, result_expr) => {
-                self.visit_node(*stmt);
-
-                if let NodeKind::Dummy = self.ast.get_kind(*result_expr) {
-                    Some(QualType::unqualified(self.registry.type_void))
-                } else {
-                    self.apply_lvalue_conversion(*result_expr);
-                    let mut ty = self.visit_node(*result_expr);
-                    if let Some(t) = ty
-                        && (t.is_array() || t.is_function())
-                    {
-                        let decayed = self.decay(*result_expr, t);
-                        ty = Some(decayed);
-                    }
-                    ty
-                }
-            }
-            NodeKind::PostIncrement(expr) | NodeKind::PostDecrement(expr) => {
-                let ty = self.visit_node(*expr);
-                if let Some(t) = ty {
-                    self.check_lvalue_and_modifiable(*expr, t);
-                    if self.check_increment_decrement_operand(node, t) {
-                        Some(t)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            }
+            NodeKind::StatementExpr(stmt, result_expr) => self.visit_statement_expr(*stmt, *result_expr),
+            NodeKind::PostIncrement(expr) | NodeKind::PostDecrement(expr) => self.visit_post_inc_dec(node, *expr),
             NodeKind::Assignment(op, lhs, rhs) => self.visit_assignment(node, *op, *lhs, *rhs),
             NodeKind::FunctionCall(call_expr) => self.visit_function_call(call_expr),
             NodeKind::MemberAccess(_, field_name, is_arrow) => self.visit_member_access(node, *field_name, *is_arrow),
             NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
             NodeKind::Cast(ty, expr) | NodeKind::BuiltinVaArg(ty, expr) => {
-                self.visit_type_exprs(*ty);
-                let expr_qt = self.visit_node(*expr);
-                self.apply_lvalue_conversion(*expr);
-
-                if let NodeKind::Cast(..) = kind
-                    && !ty.is_void()
-                {
-                    let scalar_target = ty.is_scalar();
-                    let mut scalar_operand = true;
-
-                    let mut eqt_decayed = None;
-                    if let Some(mut eqt) = expr_qt {
-                        if eqt.is_array() || eqt.is_function() {
-                            eqt = self.decay(*expr, eqt);
-                        }
-                        eqt_decayed = Some(eqt);
-                        if !eqt.is_scalar() {
-                            scalar_operand = false;
-                        }
-                    }
-
-                    // C11 6.5.4p2: "Unless the type name specifies a void type, then both the named type
-                    // and the expression shall have scalar types."
-                    // However, as an extension, some compilers allow casting a struct to itself (identity cast).
-                    // We strictly follow C11 here unless it's an identity cast of compatible types.
-                    let is_identity_cast = if let Some(eqt) = eqt_decayed {
-                        self.registry.is_compatible(*ty, eqt)
-                    } else {
-                        false
-                    };
-
-                    if !is_identity_cast {
-                        if !scalar_target {
-                            self.report_error(node, SemanticError::ExpectedScalarType { found: *ty });
-                        }
-                        if !scalar_operand && let Some(eqt) = eqt_decayed {
-                            self.report_error(*expr, SemanticError::ExpectedScalarType { found: eqt });
-                        }
-                    }
-                }
-
-                Some(ty.strip_all())
+                self.visit_cast_or_va_arg(node, kind, *ty, *expr)
             }
             NodeKind::SizeOfExpr(_) | NodeKind::SizeOfType(_) | NodeKind::AlignOfExpr(_) | NodeKind::AlignOfType(_) => {
                 let (expr, ty, is_alignof) = match kind {
@@ -3150,34 +3061,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 };
                 self.visit_sizeof_alignof(expr, ty, is_alignof, node)
             }
-            NodeKind::CompoundLiteral(qt, init) => {
-                self.visit_type_exprs(*qt);
-
-                // C11 6.5.2.5p1: The type name shall specify a complete object type
-                // or an array of unknown size, but not a variably modified type.
-                let resolved = self.registry.get(qt.ty());
-                if let TypeKind::Function { .. } = &resolved.kind {
-                    self.report_error(node, SemanticError::CompoundLiteralFunction { ty: *qt });
-                } else if self.registry.is_vla_type(qt.ty()) {
-                    self.report_error(node, SemanticError::CompoundLiteralVla { ty: *qt });
-                } else if !self.registry.is_complete(qt.ty()) {
-                    // Exception: array of unknown size is allowed.
-                    let is_incomplete_array = matches!(
-                        resolved.kind,
-                        TypeKind::Array {
-                            size: ArraySizeType::Incomplete,
-                            ..
-                        }
-                    );
-                    if !is_incomplete_array {
-                        self.report_error(node, SemanticError::CompoundLiteralIncomplete { ty: *qt });
-                    }
-                }
-
-                let _ = self.registry.ensure_layout(qt.ty());
-                self.visit_init(*init, *qt);
-                Some(*qt)
-            }
+            NodeKind::CompoundLiteral(qt, init) => self.visit_compound_literal(node, *qt, *init),
             NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs, node),
             NodeKind::GenericAssociation(ga) => {
                 if let Some(ty) = ga.ty {
@@ -3191,24 +3075,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 None
             }
-            NodeKind::InitializerItem(init) => {
-                for designator in init.designator_start.range(init.designator_len) {
-                    if let NodeKind::Designator(d) = self.ast.get_kind(designator) {
-                        match d {
-                            Designator::ArrayIndex(expr) => {
-                                self.visit_node(*expr);
-                            }
-                            Designator::ArrayRange(start, end) => {
-                                self.visit_node(*start);
-                                self.visit_node(*end);
-                            }
-                            Designator::FieldName(_) => {}
-                        }
-                    }
-                }
-                self.visit_node(init.initializer);
-                None
-            }
+            NodeKind::InitializerItem(init) => self.visit_initializer_item_node(init),
             NodeKind::BuiltinBitCast(ty, expr) => {
                 self.visit_node(*expr);
                 Some(*ty)
@@ -3217,24 +3084,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*expr);
                 Some(*ty)
             }
-            NodeKind::BuiltinComplex(real, imag) => {
-                let real_ty = self.visit_node(*real)?;
-                let imag_ty = self.visit_node(*imag)?;
-                self.apply_lvalue_conversion(*real);
-                self.apply_lvalue_conversion(*imag);
-
-                if !real_ty.is_real() {
-                    self.report_error(*real, SemanticError::InvalidUnaryOperand { ty: real_ty });
-                    return None;
-                }
-                if !imag_ty.is_real() {
-                    self.report_error(*imag, SemanticError::InvalidUnaryOperand { ty: imag_ty });
-                    return None;
-                }
-
-                let common_real = usual_arithmetic_conversions(self.registry, real_ty, imag_ty)?;
-                Some(QualType::unqualified(self.registry.complex_type(common_real.ty())))
-            }
+            NodeKind::BuiltinComplex(real, imag) => self.visit_builtin_complex_expr(*real, *imag),
             NodeKind::BuiltinOffsetof(ty, expr) => self.visit_builtin_offsetof(*ty, *expr, node),
             NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
                 self.visit_type_exprs(*t1);
@@ -3529,18 +3379,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         match self.const_ctx().eval_int(cond) {
             Some(0) => {
-                let message = msg
-                    .and_then(|m| match self.ast.get_kind(m) {
-                        NodeKind::Literal(l) => {
-                            if let LitVal::String { value: s, .. } = l.get_val() {
-                                Some(s.as_str().to_string())
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    })
-                    .unwrap_or_default();
+                let message = msg.and_then(|m| self.ast.try_string_literal(m)).unwrap_or_default();
 
                 self.report_error(node, SemanticError::StaticAssertFailed { message });
             }
@@ -3756,5 +3595,155 @@ impl<'a> SemanticAnalyzer<'a> {
         *offset += index_val * (layout.size as i64);
         *current_qt = QualType::unqualified(elem_ty);
         true
+    }
+
+    fn visit_statement_expr(&mut self, stmt: NodeRef, result_expr: NodeRef) -> Option<QualType> {
+        self.visit_node(stmt);
+
+        if let NodeKind::Dummy = self.ast.get_kind(result_expr) {
+            Some(QualType::unqualified(self.registry.type_void))
+        } else {
+            self.apply_lvalue_conversion(result_expr);
+            let mut ty = self.visit_node(result_expr);
+            if let Some(t) = ty
+                && (t.is_array() || t.is_function())
+            {
+                let decayed = self.decay(result_expr, t);
+                ty = Some(decayed);
+            }
+            ty
+        }
+    }
+
+    fn visit_post_inc_dec(&mut self, node: NodeRef, expr: NodeRef) -> Option<QualType> {
+        let ty = self.visit_node(expr);
+        if let Some(t) = ty {
+            self.check_lvalue_and_modifiable(expr, t);
+            if self.check_increment_decrement_operand(node, t) {
+                Some(t)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    fn visit_cast_or_va_arg(
+        &mut self,
+        node: NodeRef,
+        kind: &NodeKind,
+        ty: QualType,
+        expr: NodeRef,
+    ) -> Option<QualType> {
+        self.visit_type_exprs(ty);
+        let expr_qt = self.visit_node(expr);
+        self.apply_lvalue_conversion(expr);
+
+        if let NodeKind::Cast(..) = kind
+            && !ty.is_void()
+        {
+            let scalar_target = ty.is_scalar();
+            let mut scalar_operand = true;
+
+            let mut eqt_decayed = None;
+            if let Some(mut eqt) = expr_qt {
+                if eqt.is_array() || eqt.is_function() {
+                    eqt = self.decay(expr, eqt);
+                }
+                eqt_decayed = Some(eqt);
+                if !eqt.is_scalar() {
+                    scalar_operand = false;
+                }
+            }
+
+            // C11 6.5.4p2: "Unless the type name specifies a void type, then both the named type
+            // and the expression shall have scalar types."
+            // However, as an extension, some compilers allow casting a struct to itself (identity cast).
+            // We strictly follow C11 here unless it's an identity cast of compatible types.
+            let is_identity_cast = if let Some(eqt) = eqt_decayed {
+                self.registry.is_compatible(ty, eqt)
+            } else {
+                false
+            };
+
+            if !is_identity_cast {
+                if !scalar_target {
+                    self.report_error(node, SemanticError::ExpectedScalarType { found: ty });
+                }
+                if !scalar_operand && let Some(eqt) = eqt_decayed {
+                    self.report_error(expr, SemanticError::ExpectedScalarType { found: eqt });
+                }
+            }
+        }
+
+        Some(ty.strip_all())
+    }
+
+    fn visit_compound_literal(&mut self, node: NodeRef, qt: QualType, init: NodeRef) -> Option<QualType> {
+        self.visit_type_exprs(qt);
+
+        // C11 6.5.2.5p1: The type name shall specify a complete object type
+        // or an array of unknown size, but not a variably modified type.
+        let resolved = self.registry.get(qt.ty());
+        if let TypeKind::Function { .. } = &resolved.kind {
+            self.report_error(node, SemanticError::CompoundLiteralFunction { ty: qt });
+        } else if self.registry.is_vla_type(qt.ty()) {
+            self.report_error(node, SemanticError::CompoundLiteralVla { ty: qt });
+        } else if !self.registry.is_complete(qt.ty()) {
+            // Exception: array of unknown size is allowed.
+            let is_incomplete_array = matches!(
+                resolved.kind,
+                TypeKind::Array {
+                    size: ArraySizeType::Incomplete,
+                    ..
+                }
+            );
+            if !is_incomplete_array {
+                self.report_error(node, SemanticError::CompoundLiteralIncomplete { ty: qt });
+            }
+        }
+
+        let _ = self.registry.ensure_layout(qt.ty());
+        self.visit_init(init, qt);
+        Some(qt)
+    }
+
+    fn visit_initializer_item_node(&mut self, init: &DesignatedInitializer) -> Option<QualType> {
+        for designator in init.designator_start.range(init.designator_len) {
+            if let NodeKind::Designator(d) = self.ast.get_kind(designator) {
+                match d {
+                    Designator::ArrayIndex(expr) => {
+                        self.visit_node(*expr);
+                    }
+                    Designator::ArrayRange(start, end) => {
+                        self.visit_node(*start);
+                        self.visit_node(*end);
+                    }
+                    Designator::FieldName(_) => {}
+                }
+            }
+        }
+        self.visit_node(init.initializer);
+        None
+    }
+
+    fn visit_builtin_complex_expr(&mut self, real: NodeRef, imag: NodeRef) -> Option<QualType> {
+        let real_ty = self.visit_node(real)?;
+        let imag_ty = self.visit_node(imag)?;
+        self.apply_lvalue_conversion(real);
+        self.apply_lvalue_conversion(imag);
+
+        if !real_ty.is_real() {
+            self.report_error(real, SemanticError::InvalidUnaryOperand { ty: real_ty });
+            return None;
+        }
+        if !imag_ty.is_real() {
+            self.report_error(imag, SemanticError::InvalidUnaryOperand { ty: imag_ty });
+            return None;
+        }
+
+        let common_real = usual_arithmetic_conversions(self.registry, real_ty, imag_ty)?;
+        Some(QualType::unqualified(self.registry.complex_type(common_real.ty())))
     }
 }

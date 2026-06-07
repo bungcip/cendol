@@ -16,7 +16,7 @@ pub struct PPDumper<'a> {
 
 struct DumperState<'a> {
     file_id: SourceId,
-    file_name: Option<String>,
+    file_name: Option<&'a str>,
     current_line: u32,
     buffer: &'a [u8],
     last_pos: u32,
@@ -69,7 +69,7 @@ impl<'a> PPDumper<'a> {
             let (line, _, file_name) = self.sm.get_presumed_location(loc).unwrap_or((1, 1, None));
             let file_name_str = file_name.unwrap_or("<unknown>");
 
-            if loc.source_id() != state.file_id || state.file_name.as_deref() != Some(file_name_str) {
+            if loc.source_id() != state.file_id || state.file_name != Some(file_name_str) {
                 self.print_line_marker(writer, &mut state, line, file_name_str)?;
                 state.file_id = loc.source_id();
                 state.buffer = self.sm.get_buffer_safe(state.file_id).unwrap_or(&[]);
@@ -119,12 +119,12 @@ impl<'a> PPDumper<'a> {
         writer: &mut impl Write,
         state: &mut DumperState<'a>,
         line: u32,
-        name: &str,
+        name: &'a str,
     ) -> std::io::Result<()> {
         let old_line = state.current_line;
         state.current_line = line;
-        let is_same_file = state.file_name.as_deref() == Some(name);
-        state.file_name = Some(name.to_string());
+        let is_same_file = state.file_name == Some(name);
+        state.file_name = Some(name);
 
         if !self.suppress_line_markers {
             if !state.at_line_start {

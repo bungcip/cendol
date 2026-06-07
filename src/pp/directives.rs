@@ -787,17 +787,23 @@ impl<'src> Preprocessor<'src> {
     fn handle_pragma_diagnostic_message(&mut self, level: DiagnosticLevel) -> Result<(), PPDiag> {
         let message = self.parse_pragma_message_content()?;
         let loc = self.get_current_location();
-        let diag = Diagnostic {
-            level,
-            message: message.clone(),
-            span: SourceSpan::from_loc(loc),
-            ..Default::default()
-        };
-        self.diag.report_diagnostic(diag);
-
         if level == DiagnosticLevel::Error {
+            let diag = Diagnostic {
+                level,
+                message: message.clone(),
+                span: SourceSpan::from_loc(loc),
+                ..Default::default()
+            };
+            self.diag.report_diagnostic(diag);
             self.emit_error(PPError::PragmaError(message), loc)
         } else {
+            let diag = Diagnostic {
+                level,
+                message,
+                span: SourceSpan::from_loc(loc),
+                ..Default::default()
+            };
+            self.diag.report_diagnostic(diag);
             Ok(())
         }
     }
@@ -807,21 +813,12 @@ impl<'src> Preprocessor<'src> {
         let tokens = self.collect_tokens_until_eod();
         let message = self.tokens_to_string(&tokens);
 
-        let formatted_message = if is_error {
-            format!("#error directive: {}", message)
-        } else {
-            message.clone()
-        };
-
         if is_error {
+            let formatted_message = format!("#error directive: {}", message);
             self.report_error(directive_location, formatted_message);
-        } else {
-            self.report_warning_with_name(directive_location, formatted_message, "#warnings");
-        }
-
-        if is_error {
             self.emit_error(PPError::ErrorDirective(message), directive_location)
         } else {
+            self.report_warning_with_name(directive_location, message, "#warnings");
             Ok(())
         }
     }

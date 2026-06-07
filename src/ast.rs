@@ -26,8 +26,11 @@ use std::num::NonZeroU32;
 pub type NameId = symbol_table::GlobalSymbol;
 pub type StringId = NameId;
 
-use crate::semantic::{QualType, ScopeId, SemanticInfo, SymbolRef, ValueCategory};
 pub use crate::source_manager::{SourceId, SourceSpan};
+use crate::{
+    ast::literal::LitVal,
+    semantic::{QualType, ScopeId, SemanticInfo, SymbolRef, ValueCategory},
+};
 
 // Submodules
 // Submodules
@@ -272,5 +275,19 @@ impl Ast {
             .get(&node.index())
             .copied()
             .expect("Choose expression failed (should be caught by Analyzer)")
+    }
+
+    /// get the string literal value for a node, if it is a string literal
+    pub(crate) fn try_string_literal(&self, node: NodeRef) -> Option<String> {
+        match self.get_kind(node) {
+            NodeKind::Literal(literal_id) => {
+                if let LitVal::String { value, .. } = &literal_id.get_val() {
+                    Some(value.as_str().to_string())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
     }
 }

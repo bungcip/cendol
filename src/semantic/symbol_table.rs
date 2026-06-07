@@ -5,6 +5,7 @@
 //! scope structure and provides efficient symbol lookup and storage.
 
 use hashbrown::HashMap;
+use serde::Serialize;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use thiserror::Error;
@@ -351,8 +352,6 @@ pub enum SymbolTableError {
     #[error("Invalid redefinition: symbol '{name}' cannot be redefined")]
     InvalidRedefinition { name: NameId, existing: SymbolRef },
 }
-
-use serde::Serialize;
 
 /// Scope ID for efficient scope references
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]

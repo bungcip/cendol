@@ -10,6 +10,7 @@ use bitflags::bitflags;
 use serde::Serialize;
 
 use crate::ast::{NameId, NodeRef, SourceSpan, StorageClass, TypeQualifier};
+use crate::semantic::TypeRegistry;
 
 /// Type representation (for semantic analysis)
 /// This is a canonical type, distinct from TypeSpec which is a syntax construct.
@@ -57,7 +58,7 @@ impl Type {
     /// Bolt ⚡: This avoids full record flattening when only a single member is needed.
     pub(crate) fn find_member_with_offset(
         &self,
-        registry: &super::TypeRegistry,
+        registry: &TypeRegistry,
         name: NameId,
         base_offset: u64,
         base_index: &mut usize,
@@ -97,7 +98,7 @@ impl Type {
     /// Recursively search for a member by name without requiring layout, returning its info and flattened index.
     pub(crate) fn find_member_recursive(
         &self,
-        registry: &super::TypeRegistry,
+        registry: &TypeRegistry,
         name: NameId,
         base_index: &mut usize,
     ) -> Option<(RecordMember, usize)> {
@@ -122,7 +123,7 @@ impl Type {
         None
     }
 
-    pub(crate) fn find_member(&self, registry: &super::TypeRegistry, name: NameId) -> Option<RecordMember> {
+    pub(crate) fn find_member(&self, registry: &TypeRegistry, name: NameId) -> Option<RecordMember> {
         let TypeKind::Record { members, .. } = &self.kind else {
             return None;
         };
@@ -139,7 +140,7 @@ impl Type {
 
     pub(crate) fn flatten_members_with_layouts(
         &self,
-        registry: &super::TypeRegistry,
+        registry: &TypeRegistry,
         flat_members: &mut Vec<RecordMember>,
         flat_fields: &mut Vec<FieldLayout>,
         base_offset: u64,

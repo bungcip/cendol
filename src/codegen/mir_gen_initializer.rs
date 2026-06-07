@@ -9,6 +9,15 @@ use crate::mir::{ConstValueId, ConstValueKind, MirArrayLayout, MirType, Operand,
 use crate::semantic::literal_utils::lower_string_literal;
 use crate::semantic::{ArraySizeType, FieldLayout, QualType, RecordMember, TypeKind, TypeRef};
 
+struct ArrayInitArgs {
+    element_qt: QualType,
+    size: usize,
+    target_ty: QualType,
+    destination: Option<Place>,
+    is_top_level: bool,
+    existing_op: Option<Operand>,
+}
+
 impl<'a> MirGen<'a> {
     fn visit_init_list(&mut self, list: &InitializerList, target_ty: QualType, destination: Option<Place>) -> Operand {
         let range = list.init_start.range(list.init_len);
@@ -51,27 +60,23 @@ impl<'a> MirGen<'a> {
         let mut first_item_processed = false;
 
         loop {
-            let (item, is_pending) = if pending.is_some() && !first_item_processed {
-                first_item_processed = true;
-                (NodeRef::ROOT, true)
-            } else if let Some(r) = iter.peek() {
-                (*r, false)
-            } else {
-                break;
-            };
-
-            let (initializer, designator) = if is_pending {
-                pending.unwrap()
-            } else {
-                let NodeKind::InitializerItem(init) = self.ast.get_kind(item) else {
-                    iter.next();
-                    continue;
+            let (initializer, designator, is_pending) =
+                if let (Some((init, desig)), false) = (pending, first_item_processed) {
+                    first_item_processed = true;
+                    (init, desig, true)
+                } else if let Some(&item) = iter.peek() {
+                    let NodeKind::InitializerItem(init) = self.ast.get_kind(item) else {
+                        iter.next();
+                        continue;
+                    };
+                    (
+                        init.initializer,
+                        (init.designator_len > 0).then_some((init.designator_start, init.designator_len)),
+                        false,
+                    )
+                } else {
+                    break;
                 };
-                (
-                    init.initializer,
-                    (init.designator_len > 0).then_some((init.designator_start, init.designator_len)),
-                )
-            };
 
             let Some((field_idx, active_path)) =
                 self.resolve_init_field_target(&members, current_pos, designator, pending_path, is_pending)
@@ -123,7 +128,7 @@ impl<'a> MirGen<'a> {
         match designator {
             Some((d_start, _)) => {
                 if let NodeKind::Designator(Designator::FieldName(name)) = self.ast.get_kind(d_start) {
-                    self.find_member_recursive(members, *name)
+                    self.find_member(members, *name)
                 } else {
                     if is_pending {
                         panic!("Array designator in struct initializer");
@@ -151,7 +156,7 @@ impl<'a> MirGen<'a> {
         field_idx: usize,
         existing_op: Option<Operand>,
     ) -> Vec<(usize, Operand)> {
-        if !active_path.is_empty() || (designator.is_some() && designator.unwrap().1 > 1) {
+        let recursion_args = if !active_path.is_empty() || (designator.is_some() && designator.unwrap().1 > 1) {
             let (next_pending, next_path) = if !active_path.is_empty() {
                 (Some((initializer, designator)), active_path)
             } else {
@@ -161,10 +166,17 @@ impl<'a> MirGen<'a> {
                     Vec::new(),
                 )
             };
+            Some((next_pending, next_path))
+        } else if self.should_recurse_aggregate(m.member_type, initializer) {
+            Some((Some((initializer, None)), Vec::new()))
+        } else {
+            None
+        };
 
+        if let Some((next_pending, next_path)) = recursion_args {
+            let sub_existing = self.get_existing_struct_field(&existing_op, field_idx);
             match &self.registry.get(m.member_type.ty()).kind {
                 TypeKind::Record { .. } => {
-                    let sub_existing = self.get_existing_struct_field(&existing_op, field_idx);
                     let fields =
                         self.visit_struct_fields_recursive(iter, next_pending, &next_path, m.member_type, sub_existing);
                     if m.name.is_none() {
@@ -175,50 +187,21 @@ impl<'a> MirGen<'a> {
                 }
                 TypeKind::Array { element_type, size } => {
                     let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
-                    let sub_existing = self.get_existing_struct_field(&existing_op, field_idx);
                     let op = self.visit_array_init_from_iter(
                         iter,
                         next_pending,
-                        QualType::unqualified(*element_type),
-                        array_size,
-                        m.member_type,
-                        None,
-                        false,
-                        sub_existing,
+                        ArrayInitArgs {
+                            element_qt: QualType::unqualified(*element_type),
+                            size: array_size,
+                            target_ty: m.member_type,
+                            destination: None,
+                            is_top_level: false,
+                            existing_op: sub_existing,
+                        },
                     );
                     vec![(0, op)]
                 }
                 _ => unreachable!("Designator path on non-aggregate"),
-            }
-        } else if self.should_recurse_aggregate(m.member_type, initializer) {
-            let next_pending = Some((initializer, None));
-            match &self.registry.get(m.member_type.ty()).kind {
-                TypeKind::Record { .. } => {
-                    let sub_existing = self.get_existing_struct_field(&existing_op, field_idx);
-                    let fields =
-                        self.visit_struct_fields_recursive(iter, next_pending, &[], m.member_type, sub_existing);
-                    if m.name.is_none() {
-                        fields
-                    } else {
-                        vec![(0, self.finalize_struct_init(fields, m.member_type, None))]
-                    }
-                }
-                TypeKind::Array { element_type, size } => {
-                    let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
-                    let sub_existing = self.get_existing_struct_field(&existing_op, field_idx);
-                    let op = self.visit_array_init_from_iter(
-                        iter,
-                        next_pending,
-                        QualType::unqualified(*element_type),
-                        array_size,
-                        m.member_type,
-                        None,
-                        false,
-                        sub_existing,
-                    );
-                    vec![(0, op)]
-                }
-                _ => unreachable!(),
             }
         } else if let NodeKind::InitializerList(list) = self.ast.get_kind(initializer)
             && m.name.is_none()
@@ -287,47 +270,56 @@ impl<'a> MirGen<'a> {
     ) -> Operand {
         let range = list.init_start.range(list.init_len);
         let mut iter = range.peekable();
-        self.visit_array_init_from_iter(&mut iter, None, element_ty, size, target_ty, destination, true, None)
+        self.visit_array_init_from_iter(
+            &mut iter,
+            None,
+            ArrayInitArgs {
+                element_qt: element_ty,
+                size,
+                target_ty,
+                destination,
+                is_top_level: true,
+                existing_op: None,
+            },
+        )
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn visit_array_init_from_iter(
         &mut self,
         iter: &mut Peekable<impl Iterator<Item = NodeRef>>,
         pending: Option<(NodeRef, Option<(NodeRef, u16)>)>,
-        element_qt: QualType,
-        size: usize,
-        target_ty: QualType,
-        destination: Option<Place>,
-        is_top_level: bool,
-        existing_op: Option<Operand>,
+        args: ArrayInitArgs,
     ) -> Operand {
+        let ArrayInitArgs {
+            element_qt,
+            size,
+            target_ty,
+            destination,
+            is_top_level,
+            existing_op,
+        } = args;
         let mut elements: Vec<Option<Operand>> = self.get_existing_array_elements(&existing_op, size);
         let mut current_idx = 0;
         let mut first_item_processed = false;
 
         loop {
-            let (item, is_pending) = if pending.is_some() && !first_item_processed {
-                first_item_processed = true;
-                (NodeRef::ROOT, true)
-            } else if let Some(r) = iter.peek() {
-                (*r, false)
-            } else {
-                break;
-            };
-
-            let (initializer, designator) = if is_pending {
-                pending.unwrap()
-            } else {
-                let NodeKind::InitializerItem(init) = self.ast.get_kind(item) else {
-                    iter.next();
-                    continue;
+            let (initializer, designator, is_pending) =
+                if let (Some((init, desig)), false) = (pending, first_item_processed) {
+                    first_item_processed = true;
+                    (init, desig, true)
+                } else if let Some(&item) = iter.peek() {
+                    let NodeKind::InitializerItem(init) = self.ast.get_kind(item) else {
+                        iter.next();
+                        continue;
+                    };
+                    (
+                        init.initializer,
+                        (init.designator_len > 0).then_some((init.designator_start, init.designator_len)),
+                        false,
+                    )
+                } else {
+                    break;
                 };
-                (
-                    init.initializer,
-                    (init.designator_len > 0).then_some((init.designator_start, init.designator_len)),
-                )
-            };
 
             if !is_top_level && !is_pending && designator.is_some() {
                 break;
@@ -379,19 +371,20 @@ impl<'a> MirGen<'a> {
         designator: Option<(NodeRef, u16)>,
         is_pending: bool,
     ) -> Option<(usize, usize)> {
-        if let Some((d_start, _)) = designator {
-            match self.ast.get_kind(d_start) {
-                NodeKind::Designator(Designator::ArrayIndex(_))
-                | NodeKind::Designator(Designator::ArrayRange(_, _)) => Some(self.resolve_designator_range(d_start)),
-                _ => {
-                    if is_pending {
-                        panic!("Field designator in array initializer");
-                    }
-                    None
-                }
+        let Some((d_start, _)) = designator else {
+            return Some((current_idx, current_idx));
+        };
+
+        match self.ast.get_kind(d_start) {
+            NodeKind::Designator(Designator::ArrayIndex(_) | Designator::ArrayRange(_, _)) => {
+                Some(self.resolve_designator_range(d_start))
             }
-        } else {
-            Some((current_idx, current_idx))
+            _ => {
+                if is_pending {
+                    panic!("Field designator in array initializer");
+                }
+                None
+            }
         }
     }
 
@@ -403,54 +396,40 @@ impl<'a> MirGen<'a> {
         element_qt: QualType,
         existing_op: Option<Operand>,
     ) -> Operand {
-        if let Some((d_start, d_len)) = designator
+        let next_pending = if let Some((d_start, d_len)) = designator
             && d_len > 1
         {
             let next_d_start = d_start.add_offset(1);
             let next_d_len = d_len - 1;
-            let next_pending = Some((initializer, Some((next_d_start, next_d_len))));
+            Some((initializer, Some((next_d_start, next_d_len))))
+        } else if self.should_recurse_aggregate(element_qt, initializer) {
+            Some((initializer, None))
+        } else {
+            None
+        };
 
+        if let Some(pending) = next_pending {
             match &self.registry.get(element_qt.ty()).kind {
                 TypeKind::Record { .. } => {
-                    let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], element_qt, existing_op);
+                    let fields = self.visit_struct_fields_recursive(iter, Some(pending), &[], element_qt, existing_op);
                     self.finalize_struct_init(fields, element_qt, None)
                 }
                 TypeKind::Array { element_type, size } => {
                     let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
                     self.visit_array_init_from_iter(
                         iter,
-                        next_pending,
-                        QualType::unqualified(*element_type),
-                        array_size,
-                        element_qt,
-                        None,
-                        false,
-                        existing_op,
+                        Some(pending),
+                        ArrayInitArgs {
+                            element_qt: QualType::unqualified(*element_type),
+                            size: array_size,
+                            target_ty: element_qt,
+                            destination: None,
+                            is_top_level: false,
+                            existing_op,
+                        },
                     )
                 }
                 _ => unreachable!("Designator path on non-aggregate"),
-            }
-        } else if self.should_recurse_aggregate(element_qt, initializer) {
-            let next_pending = Some((initializer, None));
-            match &self.registry.get(element_qt.ty()).kind {
-                TypeKind::Record { .. } => {
-                    let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], element_qt, existing_op);
-                    self.finalize_struct_init(fields, element_qt, None)
-                }
-                TypeKind::Array { element_type, size } => {
-                    let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
-                    self.visit_array_init_from_iter(
-                        iter,
-                        next_pending,
-                        QualType::unqualified(*element_type),
-                        array_size,
-                        element_qt,
-                        None,
-                        false,
-                        existing_op,
-                    )
-                }
-                _ => unreachable!(),
             }
         } else {
             self.visit_init(initializer, element_qt, None)
@@ -786,22 +765,19 @@ impl<'a> MirGen<'a> {
         flat_members.len()
     }
 
-    fn find_member_recursive(&self, members: &[RecordMember], name: NameId) -> Option<(usize, Vec<usize>)> {
+    fn find_member(&self, members: &[RecordMember], name: NameId) -> Option<(usize, Vec<usize>)> {
         for (i, m) in members.iter().enumerate() {
             if m.name == Some(name) {
                 return Some((i, Vec::new()));
             }
-            if m.name.is_none() {
-                // Anonymous member: look inside
-                let sub_ty = self.registry.get(m.member_type.ty());
-                if let TypeKind::Record {
+            if m.name.is_none()
+                && let TypeKind::Record {
                     members: sub_members, ..
-                } = &sub_ty.kind
-                    && let Some((sub_idx, mut path)) = self.find_member_recursive(sub_members, name)
-                {
-                    path.insert(0, sub_idx);
-                    return Some((i, path));
-                }
+                } = &self.registry.get(m.member_type.ty()).kind
+                && let Some((sub_idx, mut path)) = self.find_member(sub_members, name)
+            {
+                path.insert(0, sub_idx);
+                return Some((i, path));
             }
         }
         None

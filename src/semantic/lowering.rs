@@ -177,16 +177,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         match const_ctx.eval_int(cond_node) {
             Some(0) => {
                 let message = msg_node
-                    .and_then(|m| match self.ast.get_kind(m) {
-                        NodeKind::Literal(literal_id) => {
-                            if let LitVal::String { value: s, .. } = literal_id.get_val() {
-                                Some(s.as_str().to_string())
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    })
+                    .and_then(|m| self.ast.try_string_literal(m))
                     .unwrap_or_default();
 
                 self.report_error(span, SemanticError::StaticAssertFailed { message });
@@ -2851,6 +2842,27 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
+    fn is_array_designator(&self, init: &DesignatedInitializer) -> bool {
+        init.designator_len > 0
+            && matches!(
+                self.ast.get_kind(init.designator_start),
+                NodeKind::Designator(Designator::ArrayIndex(_)) | NodeKind::Designator(Designator::ArrayRange(_, _))
+            )
+    }
+
+    fn is_next_item_array_designator<I>(&self, iter: &mut std::iter::Peekable<I>) -> bool
+    where
+        I: Iterator<Item = NodeRef>,
+    {
+        if let Some(&next) = iter.peek()
+            && let NodeKind::InitializerItem(next_init) = self.ast.get_kind(next)
+        {
+            self.is_array_designator(next_init)
+        } else {
+            false
+        }
+    }
+
     fn consume_initializers<I>(
         &mut self,
         element_type: TypeRef,
@@ -2887,23 +2899,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         if init.designator_len > 0 {
-            // Check for array designators
-            match *self.ast.get_kind(init.designator_start) {
-                NodeKind::Designator(Designator::ArrayIndex(_))
-                | NodeKind::Designator(Designator::ArrayRange(_, _)) => {
-                    if !allow_array_designator {
-                        return;
-                    }
-                    // If allowed, we proceed to consume this item (and potentially others)
-                }
-                _ => {
-                    // Field designator.
-                    // For now, we assume field designators consume one item from the list.
-                    // (Strictly we should check if it belongs to current struct, but for size counting
-                    // we assume valid C code).
-                    iter.next();
+            if self.is_array_designator(&init) {
+                if !allow_array_designator {
                     return;
                 }
+            } else {
+                // Field designator.
+                iter.next();
+                return;
             }
         } else if element_type.is_record() {
             // Check for struct-to-struct initialization
@@ -2952,18 +2955,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         return;
                     }
                     // Check if next item is an array designator (stopper)
-                    if let Some(next) = iter.peek()
-                        && let item_kind = *self.ast.get_kind(*next)
-                        && let NodeKind::InitializerItem(next_init) = item_kind
-                        && next_init.designator_len > 0
-                    {
-                        match *self.ast.get_kind(next_init.designator_start) {
-                            NodeKind::Designator(Designator::ArrayIndex(_))
-                            | NodeKind::Designator(Designator::ArrayRange(_, _)) => {
-                                return;
-                            }
-                            _ => {}
-                        }
+                    if self.is_next_item_array_designator(iter) {
+                        return;
                     }
                 }
             }
@@ -2978,18 +2971,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         return;
                     }
                     // Check stopper
-                    if let Some(next) = iter.peek()
-                        && let item_kind = *self.ast.get_kind(*next)
-                        && let NodeKind::InitializerItem(next_init) = item_kind
-                        && next_init.designator_len > 0
-                    {
-                        match *self.ast.get_kind(next_init.designator_start) {
-                            NodeKind::Designator(Designator::ArrayIndex(_))
-                            | NodeKind::Designator(Designator::ArrayRange(_, _)) => {
-                                return;
-                            }
-                            _ => {}
-                        }
+                    if self.is_next_item_array_designator(iter) {
+                        return;
                     }
                 }
             }

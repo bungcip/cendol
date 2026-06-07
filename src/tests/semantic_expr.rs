@@ -231,7 +231,11 @@ fn test_assign_incompatible_pointers() {
             return 0;
         }
     "#;
-    run_fail_with_message(source, "type mismatch: expected float*, found int*");
+    let driver = run_pass(source, CompilePhase::Mir);
+    check_diagnostic_message_only(
+        &driver,
+        "incompatible pointer types passing 'int*' to parameter of type 'float*'",
+    );
 }
 
 #[test]

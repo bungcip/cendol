@@ -872,6 +872,16 @@ impl<'a> SemanticAnalyzer<'a> {
             );
             self.record_implicit_conversions(lhs_qt, rhs_qt, rhs_node, is_npc);
             true
+        } else if self.is_incompatible_pointer_types(lhs_qt, rhs_qt) {
+            self.report_warning(
+                report_node,
+                SemanticError::IncompatiblePointerTypes {
+                    expected: lhs_qt,
+                    found: rhs_qt,
+                },
+            );
+            self.record_implicit_conversions(lhs_qt, rhs_qt, rhs_node, is_npc);
+            true
         } else {
             self.report_error(
                 report_node,
@@ -970,6 +980,42 @@ impl<'a> SemanticAnalyzer<'a> {
             if let (TypeKind::Record { .. }, TypeKind::Record { .. }) = (&lhs_pointee_ty.kind, &rhs_pointee_ty.kind) {
                 // They must be different types (not compatible)
                 return lhs_p.ty() != rhs_p.ty();
+            }
+        }
+
+        false
+    }
+
+    /// Check if the mismatch is between incompatible level-1 pointer types
+    fn is_incompatible_pointer_types(&self, lhs: QualType, rhs: QualType) -> bool {
+        let lhs = self.registry.canonical_qual_type(lhs);
+        let rhs = self.registry.canonical_qual_type(rhs);
+        if !lhs.is_pointer() {
+            return false;
+        }
+
+        // Resolve implicit decay for RHS
+        let rhs_pointee = if rhs.is_array() {
+            self.registry
+                .get_array_element(rhs.ty())
+                .map(|elem| QualType::new(elem, rhs.qualifiers()))
+        } else if rhs.is_function() {
+            Some(rhs)
+        } else if rhs.is_pointer() {
+            self.registry.get_pointee(rhs.ty())
+        } else {
+            None
+        };
+
+        if let Some(rhs_base) = rhs_pointee {
+            let lhs_base = self.registry.get_pointee(lhs.ty()).unwrap();
+
+            // We only warn for level-1 pointers to prevent silent bypass of nested qualifiers constraints.
+            if !lhs_base.is_pointer() && !rhs_base.is_pointer() {
+                return !self.registry.is_compatible(
+                    QualType::unqualified(lhs_base.ty()),
+                    QualType::unqualified(rhs_base.ty()),
+                );
             }
         }
 

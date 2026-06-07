@@ -243,10 +243,13 @@ impl<'a> SemanticAnalyzer<'a> {
     fn apply_lvalue_conversion(&mut self, node: NodeRef) {
         if self.semantic_info.value_categories[node.index()] == ValueCategory::LValue {
             // C11 6.3.2.1p2: Lvalue-to-rvalue conversion does not apply to array or function types.
-            if let Some(qt) = self.semantic_info.types[node.index()]
-                && (qt.is_array() || qt.is_function())
-            {
-                return;
+            if let Some(qt) = self.semantic_info.types[node.index()] {
+                if qt.is_array() || qt.is_function() {
+                    return;
+                }
+                if !qt.is_void() && !self.registry.is_complete(qt.ty()) {
+                    self.report_error(node, SemanticError::IncompleteType { ty: qt });
+                }
             }
 
             self.semantic_info.value_categories[node.index()] = ValueCategory::RValue;

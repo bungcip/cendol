@@ -158,6 +158,7 @@ pub mod regr_shadowing;
 pub mod regr_struct_bitfield;
 pub mod regr_tag_kind_mismatch;
 pub mod regr_typeof_ternary;
+pub mod regr_union_cast;
 
 // Test Helpers
 pub mod guardian_pointer_assignment_nested_qualifiers;

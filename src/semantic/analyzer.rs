@@ -3716,7 +3716,27 @@ impl<'a> SemanticAnalyzer<'a> {
                 false
             };
 
-            if !is_identity_cast {
+            let is_union_cast = if let TypeKind::Record {
+                members,
+                is_union: true,
+                ..
+            } = &self.registry.get(ty.ty()).kind
+            {
+                if let Some(eqt) = eqt_decayed {
+                    members.iter().any(|m| {
+                        self.registry.is_compatible(
+                            QualType::unqualified(m.member_type.ty()),
+                            QualType::unqualified(eqt.ty()),
+                        )
+                    })
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if !is_identity_cast && !is_union_cast {
                 if !scalar_target {
                     self.report_error(node, SemanticError::ExpectedScalarType { found: ty });
                 }

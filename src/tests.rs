@@ -149,6 +149,7 @@ pub mod guardian_vla;
 pub mod guardian_vm_linkage_constraints;
 
 // Regression
+pub mod regr_different_pointer_levels_warning;
 pub mod regr_incompatible_pointer_warning;
 pub mod regr_incomplete_deref_statement;
 pub mod regr_init_range;

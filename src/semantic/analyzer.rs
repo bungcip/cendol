@@ -989,7 +989,7 @@ impl<'a> SemanticAnalyzer<'a> {
         false
     }
 
-    /// Check if the mismatch is between incompatible level-1 pointer types
+    /// Check if the mismatch is between incompatible level-1 pointer types or pointers of different levels
     fn is_incompatible_pointer_types(&self, lhs: QualType, rhs: QualType) -> bool {
         let lhs = self.registry.canonical_qual_type(lhs);
         let rhs = self.registry.canonical_qual_type(rhs);
@@ -1013,8 +1013,8 @@ impl<'a> SemanticAnalyzer<'a> {
         if let Some(rhs_base) = rhs_pointee {
             let lhs_base = self.registry.get_pointee(lhs.ty()).unwrap();
 
-            // We only warn for level-1 pointers to prevent silent bypass of nested qualifiers constraints.
-            if !lhs_base.is_pointer() && !rhs_base.is_pointer() {
+            // We only warn for level-1 pointers or pointers of different levels to prevent silent bypass of nested qualifiers constraints.
+            if (!lhs_base.is_pointer() && !rhs_base.is_pointer()) || (lhs_base.is_pointer() != rhs_base.is_pointer()) {
                 return !self.registry.is_compatible(
                     QualType::unqualified(lhs_base.ty()),
                     QualType::unqualified(rhs_base.ty()),

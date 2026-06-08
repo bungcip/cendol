@@ -154,6 +154,7 @@ pub mod regr_incompatible_pointer_warning;
 pub mod regr_incomplete_deref_statement;
 pub mod regr_init_range;
 pub mod regr_mixed_sign_comp;
+pub mod regr_nonconstant_array_designator;
 pub mod regr_pp_short_circuit;
 pub mod regr_shadowing;
 pub mod regr_struct_bitfield;

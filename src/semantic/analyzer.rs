@@ -2040,14 +2040,14 @@ impl<'a> SemanticAnalyzer<'a> {
                 if let NodeKind::Designator(d) = self.ast.get_kind(designator) {
                     match d {
                         Designator::ArrayIndex(e) => {
-                            self.visit_node(*e);
+                            self.check_array_designator(*e);
                             if let Some(idx) = self.const_ctx().eval_int(*e) {
                                 current_idx = idx;
                             }
                         }
                         Designator::ArrayRange(s, e) => {
-                            self.visit_node(*s);
-                            self.visit_node(*e);
+                            self.check_array_designator(*s);
+                            self.check_array_designator(*e);
                             if let Some(idx) = self.const_ctx().eval_int(*e) {
                                 current_idx = idx;
                             }
@@ -2110,13 +2110,13 @@ impl<'a> SemanticAnalyzer<'a> {
 
                 let mut end_idx = 0;
                 if let Designator::ArrayRange(s, end) = designator {
-                    self.visit_node(s);
-                    self.visit_node(end);
+                    self.check_array_designator(s);
+                    self.check_array_designator(end);
                     if let Some(idx) = self.const_ctx().eval_int(end) {
                         end_idx = idx;
                     }
                 } else {
-                    self.visit_node(e);
+                    self.check_array_designator(e);
                     if let Some(idx) = self.const_ctx().eval_int(e) {
                         end_idx = idx;
                     }
@@ -3778,16 +3778,24 @@ impl<'a> SemanticAnalyzer<'a> {
         Some(qt)
     }
 
+    fn check_array_designator(&mut self, expr: NodeRef) {
+        let ty = self.visit_node(expr);
+        let val = self.const_ctx().eval_int(expr);
+        if val.is_none() || ty.is_none_or(|t| !t.is_integer()) {
+            self.report_error(expr, SemanticError::NonConstantDesignator);
+        }
+    }
+
     fn visit_initializer_item_node(&mut self, init: &DesignatedInitializer) -> Option<QualType> {
         for designator in init.designator_start.range(init.designator_len) {
             if let NodeKind::Designator(d) = self.ast.get_kind(designator) {
                 match d {
                     Designator::ArrayIndex(expr) => {
-                        self.visit_node(*expr);
+                        self.check_array_designator(*expr);
                     }
                     Designator::ArrayRange(start, end) => {
-                        self.visit_node(*start);
-                        self.visit_node(*end);
+                        self.check_array_designator(*start);
+                        self.check_array_designator(*end);
                     }
                     Designator::FieldName(_) => {}
                 }

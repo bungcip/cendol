@@ -278,6 +278,7 @@ pub enum SemanticError {
         value: i64,
     },
     NonConstantCaseValue,
+    NonConstantDesignator,
     InvalidSwitchCondition {
         ty: QualType,
     },
@@ -695,6 +696,9 @@ impl DiagDisplay for SemanticError {
             SemanticError::DuplicateCase { value } => write!(f, "duplicate case value '{}'", value),
             SemanticError::NonConstantCaseValue => {
                 write!(f, "expression in 'case' label is not an integer constant expression")
+            }
+            SemanticError::NonConstantDesignator => {
+                write!(f, "expression is not an integer constant expression")
             }
             SemanticError::InvalidSwitchCondition { ty } => {
                 write!(

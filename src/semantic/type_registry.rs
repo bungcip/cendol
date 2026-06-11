@@ -1963,32 +1963,39 @@ impl TypeRegistry {
             return true;
         }
 
-        // nullptr_t is implicitly compatible with pointer types in standard contexts
-        // (but strict type equivalence usually distinguishes them. We handle nullptr_t
-        // implicitly converting to any pointer type in Analyzer)
+        let class_a = ty_a.class();
+        let class_b = ty_b.class();
 
-        // Bolt ⚡: Fast path for pointers to avoid self.get() and Cow<Type> overhead.
-        let pa = self.get_pointee(ty_a);
-        let pb = self.get_pointee(ty_b);
-        if pa.is_some() || pb.is_some() {
-            return if let (Some(pa), Some(pb)) = (pa, pb) {
-                self.is_compatible(pa, pb)
-            } else {
-                false
-            };
+        if class_a != class_b {
+            // Bolt ⚡: Optimized handle for enums using direct registry access.
+            // C11 6.7.2.2p4: "Each enumerated type shall be compatible with ... an integer type."
+            // GCC and many other compilers are permissive with enum compatibility.
+            if class_a == TypeClass::Enum && class_b == TypeClass::Builtin {
+                return b.is_integer() && self.get_layout(ty_a).size == self.get_layout(ty_b).size;
+            }
+            if class_b == TypeClass::Enum && class_a == TypeClass::Builtin {
+                return a.is_integer() && self.get_layout(ty_a).size == self.get_layout(ty_b).size;
+            }
+            return false;
         }
 
-        // Bolt ⚡: Fast path for arrays to avoid self.get() and Cow<Type> overhead.
-        let ea = self.get_array_element(ty_a);
-        let eb = self.get_array_element(ty_b);
-        if ea.is_some() || eb.is_some() {
-            return if let (Some(ea), Some(eb)) = (ea, eb) {
+        // Bolt ⚡: Optimized dispatch based on TypeClass to avoid redundant property checks and lookups.
+        // Terminal types (Builtin, Record, Complex) with different TypeRefs are never compatible.
+        match class_a {
+            TypeClass::Pointer => {
+                let pa = self.get_pointee(ty_a).expect("is_pointer but no pointee");
+                let pb = self.get_pointee(ty_b).expect("is_pointer but no pointee");
+                self.is_compatible(pa, pb)
+            }
+            TypeClass::Array => {
+                let ea = self.get_array_element(ty_a).expect("is_array but no element");
+                let eb = self.get_array_element(ty_b).expect("is_array but no element");
+
                 if !self.is_compatible(QualType::unqualified(ea), QualType::unqualified(eb)) {
                     return false;
                 }
 
                 // For array compatibility, we need to compare their sizes.
-                // Inline arrays are always constant size; registry arrays can be complex.
                 let sa = if ty_a.is_inline_array() {
                     ArraySizeType::Constant(ty_a.array_len().unwrap() as usize)
                 } else {
@@ -2008,117 +2015,110 @@ impl TypeRegistry {
                 };
 
                 match (sa, sb) {
-                    (ArraySizeType::Incomplete, _) => true,
-                    (_, ArraySizeType::Incomplete) => true,
+                    (ArraySizeType::Incomplete, _)
+                    | (_, ArraySizeType::Incomplete)
+                    | (ArraySizeType::Star, _)
+                    | (_, ArraySizeType::Star)
+                    | (ArraySizeType::Variable(_), _)
+                    | (_, ArraySizeType::Variable(_)) => true,
                     (ArraySizeType::Constant(sa_val), ArraySizeType::Constant(sb_val)) => sa_val == sb_val,
-                    (ArraySizeType::Star, _) => true,
-                    (_, ArraySizeType::Star) => true,
-                    (ArraySizeType::Variable(_), _) => true,
-                    (_, ArraySizeType::Variable(_)) => true,
                 }
-            } else {
-                false
-            };
-        }
+            }
+            TypeClass::Function => {
+                let type_a = &self.types[ty_a.index()];
+                let type_b = &self.types[ty_b.index()];
 
-        // Bolt ⚡: Optimized handle for enums using direct registry access.
-        // C11 6.7.2.2p4: "Each enumerated type shall be compatible with ... an integer type."
-        // GCC and many other compilers are permissive with enum compatibility, especially
-        // regarding signedness of the underlying type. We allow an enum to be compatible
-        // with any integer type of the same size.
-        // However, different enum types are NOT compatible with each other (non-transitivity).
-        if ty_a.is_enum() {
-            return !ty_b.is_enum() && b.is_integer() && self.get_layout(ty_a).size == self.get_layout(ty_b).size;
-        }
-        if ty_b.is_enum() {
-            return !ty_a.is_enum() && a.is_integer() && self.get_layout(ty_a).size == self.get_layout(ty_b).size;
-        }
-
-        // Fallback for registry-only types (Functions, Records).
-        // Since these are never inline, self.get() returns Cow::Borrowed which is cheap.
-        let type_a = self.get(ty_a);
-        let type_b = self.get(ty_b);
-
-        match (&type_a.kind, &type_b.kind) {
-            (
-                TypeKind::Function {
-                    return_type: ret_a,
-                    parameters: params_a,
-                    is_variadic: var_a,
-                    has_prototype: proto_a,
-                    ..
-                },
-                TypeKind::Function {
-                    return_type: ret_b,
-                    parameters: params_b,
-                    is_variadic: var_b,
-                    has_prototype: proto_b,
-                    ..
-                },
-            ) => {
-                if !self.is_compatible(QualType::unqualified(*ret_a), QualType::unqualified(*ret_b)) {
-                    return false;
-                }
-                if !proto_a || !proto_b {
-                    // One has no prototype. Under C11, it is compatible with any function
-                    // that has a compatible return type and is not variadic.
-                    return if !proto_a { !var_b } else { !var_a };
-                }
-                if var_a != var_b {
-                    return false;
-                }
-                if params_a.len() != params_b.len() {
-                    return false;
-                }
-                for (p_a, p_b) in params_a.iter().zip(params_b.iter()) {
-                    // Ignore top-level qualifiers on parameters (C11 6.7.6.3p15)
-                    // Note: strip_for_parameter() preserves _Atomic.
-                    let type_a = p_a.param_type.strip_for_parameter();
-                    let type_b = p_b.param_type.strip_for_parameter();
-                    if !self.is_compatible(type_a, type_b) {
-                        return false;
+                match (&type_a.kind, &type_b.kind) {
+                    (
+                        TypeKind::Function {
+                            return_type: ret_a,
+                            parameters: params_a,
+                            is_variadic: var_a,
+                            has_prototype: proto_a,
+                            ..
+                        },
+                        TypeKind::Function {
+                            return_type: ret_b,
+                            parameters: params_b,
+                            is_variadic: var_b,
+                            has_prototype: proto_b,
+                            ..
+                        },
+                    ) => {
+                        if !self.is_compatible(QualType::unqualified(*ret_a), QualType::unqualified(*ret_b)) {
+                            return false;
+                        }
+                        if !proto_a || !proto_b {
+                            return if !proto_a { !var_b } else { !var_a };
+                        }
+                        if var_a != var_b {
+                            return false;
+                        }
+                        if params_a.len() != params_b.len() {
+                            return false;
+                        }
+                        for (p_a, p_b) in params_a.iter().zip(params_b.iter()) {
+                            // Ignore top-level qualifiers on parameters (C11 6.7.6.3p15)
+                            if !self.is_compatible(
+                                p_a.param_type.strip_for_parameter(),
+                                p_b.param_type.strip_for_parameter(),
+                            ) {
+                                return false;
+                            }
+                        }
+                        true
                     }
+                    _ => false,
                 }
-                true
             }
             _ => false,
         }
     }
 
-    pub(super) fn composite_type(&mut self, a: QualType, b: QualType) -> Option<QualType> {
+    pub(super) fn composite_type(&mut self, mut a: QualType, mut b: QualType) -> Option<QualType> {
         if a == b {
             return Some(a);
         }
+
+        a = self.canonical_qual_type(a);
+        b = self.canonical_qual_type(b);
 
         if a.qualifiers() != b.qualifiers() {
             return None;
         }
 
-        if a.ty() == b.ty() {
-            return Some(a);
-        }
-
         let ty_a = a.ty();
         let ty_b = b.ty();
 
-        // Bolt ⚡: Fast path for pointers.
-        if let (Some(pa), Some(pb)) = (self.get_pointee(ty_a), self.get_pointee(ty_b)) {
-            return self.composite_pointer_type(a, pa, pb);
+        if ty_a == ty_b {
+            return Some(a);
         }
 
-        // Bolt ⚡: Fast path for arrays.
-        if let (Some(ea), Some(eb)) = (self.get_array_element(ty_a), self.get_array_element(ty_b)) {
-            return self.composite_array_type(a, ty_a, ty_b, ea, eb);
+        let class_a = ty_a.class();
+        let class_b = ty_b.class();
+
+        if class_a != class_b {
+            if self.is_compatible(a, b) {
+                return Some(a);
+            }
+            return None;
         }
 
-        // Fallback for registry-only types (Functions, Records, Enums).
-        let type_a = self.get(ty_a);
-        let type_b = self.get(ty_b);
-
-        match (&type_a.kind, &type_b.kind) {
-            (TypeKind::Function { .. }, TypeKind::Function { .. }) => {
-                let type_a = type_a.into_owned();
-                let type_b = type_b.into_owned();
+        // Bolt ⚡: Optimized dispatch based on TypeClass to avoid redundant property checks and lookups.
+        match class_a {
+            TypeClass::Pointer => {
+                let pa = self.get_pointee(ty_a).expect("is_pointer but no pointee");
+                let pb = self.get_pointee(ty_b).expect("is_pointer but no pointee");
+                self.composite_pointer_type(a, pa, pb)
+            }
+            TypeClass::Array => {
+                let ea = self.get_array_element(ty_a).expect("is_array but no element");
+                let eb = self.get_array_element(ty_b).expect("is_array but no element");
+                self.composite_array_type(a, ty_a, ty_b, ea, eb)
+            }
+            TypeClass::Function => {
+                let type_a = self.get(ty_a).into_owned();
+                let type_b = self.get(ty_b).into_owned();
                 self.composite_function_type(a, &type_a, &type_b)
             }
             _ => {

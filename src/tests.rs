@@ -167,3 +167,4 @@ pub mod guardian_pointer_assignment_nested_qualifiers;
 pub mod semantic_binary_conversion;
 pub mod semantic_types_compatible;
 pub mod test_utils;
+pub mod semantic_conversions_uncovered;

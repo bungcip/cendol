@@ -13,6 +13,7 @@ indexmap = "2.13"
 chrono = "0.4"
 memchr = "2.7"
 bitflags = { version = "2.6", features = ["serde"] }
+rustc-hash = "2.1"
 target-lexicon = "0.13"
 symbol_table = { version = "0.5", features = ["global", "serde"] }
 cranelift = "0.132"

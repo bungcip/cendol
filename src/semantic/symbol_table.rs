@@ -4,7 +4,7 @@
 //! symbols and scopes during semantic analysis. It maintains a hierarchical
 //! scope structure and provides efficient symbol lookup and storage.
 
-use hashbrown::HashMap;
+use rustc_hash::FxHashMap;
 use serde::Serialize;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -381,9 +381,9 @@ pub enum Namespace {
 #[derive(Debug, Default, Clone)]
 pub struct Scope {
     pub parent: Option<ScopeId>,
-    pub symbols: HashMap<NameId, SymbolRef>, // Ordinary identifiers
-    pub tags: HashMap<NameId, SymbolRef>,    // Struct/union/enum tags
-    pub labels: HashMap<NameId, SymbolRef>,  // Goto labels
+    pub symbols: FxHashMap<NameId, SymbolRef>, // Ordinary identifiers
+    pub tags: FxHashMap<NameId, SymbolRef>,    // Struct/union/enum tags
+    pub labels: FxHashMap<NameId, SymbolRef>,  // Goto labels
     pub level: u32,
 }
 

@@ -46,3 +46,18 @@ fn test_usual_arithmetic_conversions() {
     let (_, result_long_long_unsigned_long) = run_pipeline(source_long_long_unsigned_long, CompilePhase::Mir);
     assert!(result_long_long_unsigned_long.is_ok());
 }
+
+#[test]
+fn test_usual_arithmetic_conversions_reject_struct_int_ternary() {
+    let source = r#"
+        struct S { int a; };
+        int main() {
+            struct S s;
+            int a;
+            1 ? a : s;
+            return 0;
+        }
+    "#;
+    let (_, result) = run_pipeline(source, CompilePhase::Mir);
+    assert!(result.is_err());
+}

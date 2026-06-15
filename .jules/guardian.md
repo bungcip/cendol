@@ -264,3 +264,8 @@ Learning: C11 §6.7.1p3 requires that `_Thread_local` variables in block scope m
 2024-05-31 - [Nested Pointer Qualifiers]
 
 Learning: C11 6.5.16.1p1 requires that operands for assignment are pointers to qualified or unqualified versions of compatible types. For nested pointers, `int **` and `const int **` are NOT compatible types. The compiler correctly prevents implicit conversion for these assignments and returns a type mismatch rather than just emitting a "discards qualifiers" warning. We need to test to ensure we don't accidentally enable this type conversion implicitly because the outer qualifiers would silently be added, which breaks C11 safety assumptions around pointer aliasing. Action: Add tests specifically verifying that type conversions fail outright for incompatible nested pointers like `int **` assigned to `const int **`.
+
+2026-06-15 - [Multiple Default Labels Constraint]
+
+Learning: C11 §6.8.4.2p3 requires that a `switch` statement can have at most one `default` label. However, nested `switch` statements can each have their own `default` label. It is important to ensure that the compiler's tracking of `default` labels correctly resets or scopes per `switch` statement, allowing valid nested cases while rejecting multiple labels at the same level.
+Action: Add tests asserting both the rejection of multiple default labels in a single switch, and the correct acceptance of default labels in nested switch statements.

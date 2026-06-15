@@ -10,7 +10,7 @@ use crate::{
     ast::{NameId, NodeRef},
     semantic::QualType,
 };
-use hashbrown::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use target_lexicon::{PointerWidth, Triple};
 
@@ -90,13 +90,13 @@ pub struct TypeRegistry {
     pub types: Vec<Type>,
 
     // --- Canonicalization caches ---
-    pointer_cache: HashMap<QualType, TypeRef>,
-    array_cache: HashMap<(TypeRef, ArraySizeType), TypeRef>,
-    function_cache: HashMap<FnSigKey, TypeRef>,
-    complex_cache: HashMap<TypeRef, TypeRef>,
+    pointer_cache: FxHashMap<QualType, TypeRef>,
+    array_cache: FxHashMap<(TypeRef, ArraySizeType), TypeRef>,
+    function_cache: FxHashMap<FnSigKey, TypeRef>,
+    complex_cache: FxHashMap<TypeRef, TypeRef>,
 
     // --- Layout computation tracking ---
-    layout_in_progress: HashSet<TypeRef>,
+    layout_in_progress: FxHashSet<TypeRef>,
 
     // --- Common builtin types ---
     pub type_void: TypeRef,
@@ -169,11 +169,11 @@ impl TypeRegistry {
         let mut reg = TypeRegistry {
             target_triple,
             types: Vec::new(),
-            pointer_cache: HashMap::new(),
-            array_cache: HashMap::new(),
-            function_cache: HashMap::new(),
-            complex_cache: HashMap::new(),
-            layout_in_progress: HashSet::new(),
+            pointer_cache: FxHashMap::default(),
+            array_cache: FxHashMap::default(),
+            function_cache: FxHashMap::default(),
+            complex_cache: FxHashMap::default(),
+            layout_in_progress: FxHashSet::default(),
 
             // temporary placeholders - will be overwritten by create_builtin
             type_void: TypeRef::dummy(),

@@ -3,7 +3,7 @@ use crate::lang_options::CStandard;
 use crate::pp::pp_lexer::PPToken;
 use crate::source_manager::{SourceId, SourceLoc};
 use chrono::{DateTime, Utc};
-use hashbrown::HashMap;
+use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -27,9 +27,9 @@ bitflags::bitflags! {
 #[derive(Debug, Clone)]
 pub(crate) struct HideSetTable {
     pub(crate) sets: Vec<Arc<[StringId]>>,
-    pub(crate) map: HashMap<Arc<[StringId]>, u32>,
-    pub(crate) intersection_cache: HashMap<(u32, u32), u32>,
-    pub(crate) insert_cache: HashMap<(u32, StringId), u32>,
+    pub(crate) map: FxHashMap<Arc<[StringId]>, u32>,
+    pub(crate) intersection_cache: FxHashMap<(u32, u32), u32>,
+    pub(crate) insert_cache: FxHashMap<(u32, StringId), u32>,
 }
 
 impl Default for HideSetTable {
@@ -42,13 +42,13 @@ impl HideSetTable {
     pub(super) fn new() -> Self {
         // Index 0 is the empty hide set
         let empty: Arc<[StringId]> = Arc::from([]);
-        let mut map = HashMap::new();
+        let mut map = FxHashMap::default();
         map.insert(empty.clone(), 0);
         Self {
             sets: vec![empty],
             map,
-            intersection_cache: HashMap::new(),
-            insert_cache: HashMap::new(),
+            intersection_cache: FxHashMap::default(),
+            insert_cache: FxHashMap::default(),
         }
     }
     pub(crate) fn intern(&mut self, set: SmallVec<[StringId; 4]>) -> u32 {

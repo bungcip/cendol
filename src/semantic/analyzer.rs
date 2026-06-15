@@ -2717,10 +2717,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_type_exprs(sym.type_info);
 
                 if let TypeAnalysisTask::Function { parameters, .. } = self.get_analysis_task(sym.type_info) {
-                    // Bolt ⚡: Extract parameter types without holding a borrow of self while calling ensure_layout.
-                    let params_to_check: Vec<_> = parameters.iter().map(|p| p.param_type.ty()).collect();
-                    for param_ty in params_to_check {
-                        let _ = self.registry.ensure_layout(param_ty);
+                    // Bolt ⚡: Iterate directly over the parameters Arc to avoid redundant Vec allocation.
+                    // This is safe because parameters is a local Arc clone and doesn't borrow from self.
+                    for p in parameters.iter() {
+                        let _ = self.registry.ensure_layout(p.param_type.ty());
                     }
                 }
 

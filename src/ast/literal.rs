@@ -311,12 +311,7 @@ impl LitRef {
             TAG_CHAR => (self.payload() & CHAR_VAL_MASK) == 0,
             TAG_FLOAT32 => false,
             TAG_SMALL_STR => false,
-            TAG_INTERNED => match self.get_val() {
-                LitVal::Int { value, .. } => value == 0,
-                LitVal::Char(c, _) => c == 0,
-                LitVal::True | LitVal::False => self == Self::FALSE,
-                _ => false,
-            },
+            TAG_INTERNED => false, // 0 and '\0' are always represented as small literals.
             _ => false,
         }
     }

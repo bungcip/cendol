@@ -3,7 +3,7 @@ use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
 use crate::lang_options::CStandard;
 use crate::source_manager::{FileKind, SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use hashbrown::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::Arc;
 
 use super::pp_lexer::PPLexer;
@@ -28,12 +28,12 @@ pub struct Preprocessor<'src> {
     pub(crate) keywords: PPKeywordTable,
 
     // Macro management
-    pub(crate) macros: HashMap<StringId, MacroInfo>,
+    pub(crate) macros: FxHashMap<StringId, MacroInfo>,
     pub(crate) hide_sets: HideSetTable,
-    pub(crate) macro_stack: HashMap<StringId, Vec<Option<MacroInfo>>>,
+    pub(crate) macro_stack: FxHashMap<StringId, Vec<Option<MacroInfo>>>,
 
     // Include management
-    pub(crate) once_included: HashSet<SourceId>,
+    pub(crate) once_included: FxHashSet<SourceId>,
 
     // Conditional compilation state
     pub(crate) conditional_stack: Vec<PPConditionalInfo>,
@@ -41,8 +41,8 @@ pub struct Preprocessor<'src> {
     // Include handling
     pub(crate) include_stack: Vec<IncludeStackInfo>,
     pub(crate) header_search: HeaderSearch,
-    pub(crate) built_in_headers: HashMap<&'static str, &'static str>,
-    pub(crate) built_in_file_ids: HashMap<String, SourceId>,
+    pub(crate) built_in_headers: FxHashMap<&'static str, &'static str>,
+    pub(crate) built_in_file_ids: FxHashMap<String, SourceId>,
 
     // Token management
     pub(crate) lexer_stack: Vec<PPLexer>,
@@ -59,7 +59,7 @@ pub struct Preprocessor<'src> {
     pub(crate) counter: u32,
     pub(crate) in_macro_argument_parsing: usize,
     eof_emitted: bool,
-    pub(crate) poisoned_identifiers: HashSet<StringId>,
+    pub(crate) poisoned_identifiers: FxHashSet<StringId>,
 }
 
 impl<'src> Preprocessor<'src> {
@@ -90,7 +90,7 @@ impl<'src> Preprocessor<'src> {
             header_search.add_framework_path(path.clone());
         }
 
-        let mut built_in_headers = HashMap::new();
+        let mut built_in_headers = FxHashMap::default();
         built_in_headers.insert("stddef.h", include_str!("../../custom-include/stddef.h"));
         built_in_headers.insert("stdint.h", include_str!("../../custom-include/stdint.h"));
         built_in_headers.insert("stdarg.h", include_str!("../../custom-include/stdarg.h"));
@@ -105,15 +105,15 @@ impl<'src> Preprocessor<'src> {
             diag,
             c_standard: config.c_standard,
             keywords: PPKeywordTable::new(),
-            macros: HashMap::new(),
+            macros: FxHashMap::default(),
             hide_sets: HideSetTable::new(),
-            macro_stack: HashMap::new(),
-            once_included: HashSet::new(),
+            macro_stack: FxHashMap::default(),
+            once_included: FxHashSet::default(),
             conditional_stack: Vec::new(),
             include_stack: Vec::new(),
             header_search,
             built_in_headers,
-            built_in_file_ids: HashMap::new(),
+            built_in_file_ids: FxHashMap::default(),
             lexer_stack: Vec::new(),
             pending_tokens: Vec::new(),
             include_depth: 0,
@@ -124,7 +124,7 @@ impl<'src> Preprocessor<'src> {
             counter: 0,
             in_macro_argument_parsing: 0,
             eof_emitted: false,
-            poisoned_identifiers: HashSet::new(),
+            poisoned_identifiers: FxHashSet::default(),
         };
 
         // Initialize built-in headers

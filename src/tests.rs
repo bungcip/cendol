@@ -145,6 +145,7 @@ pub mod guardian_static_array_constraints;
 pub mod guardian_ternary_pointer_constraints;
 pub mod guardian_typedef_member_function;
 pub mod guardian_typedef_redefinition;
+pub mod guardian_storage_class_parameter;
 pub mod guardian_vla;
 pub mod guardian_vm_linkage_constraints;
 

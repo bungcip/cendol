@@ -18,7 +18,7 @@ use crate::{
     },
 };
 
-use hashbrown::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use std::sync::Arc;
 
@@ -68,10 +68,10 @@ pub struct SemanticInfo {
     pub types: Vec<Option<QualType>>,
     pub conversions: Vec<SmallVec<[Conversion; 1]>>,
     pub value_categories: Vec<ValueCategory>,
-    pub generic_selections: HashMap<usize, NodeRef>, // Maps NodeIndex of GenericSelection to selected result_expr
-    pub choose_expressions: HashMap<usize, NodeRef>, // Maps NodeIndex of BuiltinChooseExpr to selected branch
-    pub offsetof_results: HashMap<usize, i64>,       // Maps NodeIndex of BuiltinOffsetof to computed offset
-    pub anonymous_tags: HashMap<TypeRef, NameId>,    // Maps TypeRef to its stable anonymous name ($anonN)
+    pub generic_selections: FxHashMap<usize, NodeRef>, // Maps NodeIndex of GenericSelection to selected result_expr
+    pub choose_expressions: FxHashMap<usize, NodeRef>, // Maps NodeIndex of BuiltinChooseExpr to selected branch
+    pub offsetof_results: FxHashMap<usize, i64>,       // Maps NodeIndex of BuiltinOffsetof to computed offset
+    pub anonymous_tags: FxHashMap<TypeRef, NameId>,    // Maps TypeRef to its stable anonymous name ($anonN)
 }
 
 impl SemanticInfo {
@@ -80,10 +80,10 @@ impl SemanticInfo {
             types: vec![None; n],
             conversions: vec![SmallVec::new(); n],
             value_categories: vec![ValueCategory::RValue; n],
-            generic_selections: HashMap::new(),
-            choose_expressions: HashMap::new(),
-            offsetof_results: HashMap::new(),
-            anonymous_tags: HashMap::new(),
+            generic_selections: FxHashMap::default(),
+            choose_expressions: FxHashMap::default(),
+            offsetof_results: FxHashMap::default(),
+            anonymous_tags: FxHashMap::default(),
         }
     }
 }
@@ -147,10 +147,10 @@ pub(crate) fn visit_ast(
         deferred_checks: Vec::new(),
         loop_depth: 0,
         switch_stack: SmallVec::new(),
-        checked_types: HashSet::new(),
+        checked_types: FxHashSet::default(),
         active_vlas: Vec::new(),
         goto_vla_state: Vec::new(),
-        label_vla_state: HashMap::new(),
+        label_vla_state: FxHashMap::default(),
         lang_opts,
         source_manager,
     };
@@ -177,10 +177,10 @@ struct SemanticAnalyzer<'a> {
     loop_depth: usize,
     // Bolt ⚡: Use SmallVec for switch state to avoid heap allocations for nested switches.
     switch_stack: SmallVec<[SwitchCtx; 4]>,
-    checked_types: HashSet<TypeRef>,
+    checked_types: FxHashSet<TypeRef>,
     active_vlas: Vec<NodeRef>,
     goto_vla_state: Vec<(NodeRef, Vec<NodeRef>)>,
-    label_vla_state: HashMap<SymbolRef, (SourceSpan, Vec<NodeRef>)>,
+    label_vla_state: FxHashMap<SymbolRef, (SourceSpan, Vec<NodeRef>)>,
     lang_opts: &'a crate::lang_options::LangOptions,
     source_manager: &'a crate::source_manager::SourceManager,
 }

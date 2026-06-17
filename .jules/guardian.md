@@ -273,3 +273,7 @@ Action: Add tests using `run_fail_with_diagnostic` targeting `CompilePhase::Mir`
 
 Learning: C11 §6.7.6.3p2 specifies that the only storage-class specifier that shall occur in a parameter declaration is `register`. The compiler correctly enforced this in lowering via `SemanticError::InvalidStorageClassForParameter`, but lacked dedicated integration tests to verify this exact rejection for `static`, `extern`, and `auto`. We implemented a dedicated test file to guarantee this semantic rule is always enforced properly.
 Action: Implement specific targeted tests for all invalid combinations of parameter storage classes to ensure regressions don't occur when refactoring the semantic analyzer or function parameter parsing logic.
+2025-05-18 - [Validate continue outside loops]
+
+Learning: A `continue` statement is only allowed inside loop statements (`while`, `do`, `for`). It is an easy mistake to forget that `continue` is not allowed directly inside a `switch` statement unless that `switch` statement is itself enclosed within a loop. The semantic analyzer correctly tracked `loop_depth`, but this needed explicit verification because switch statements have their own jump tracking mechanics for `break` (via `switch_stack`). Ensuring `if` and `switch` context doesn't improperly swallow or misreport invalid `continue` locations ensures that loop invariants are upheld during lowering.
+Action: Explicitly separate the negative testing of `break` and `continue` inside and outside of `switch`/loop permutations. Added `guardian_continue_not_in_loop` tests.

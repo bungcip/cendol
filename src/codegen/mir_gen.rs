@@ -20,7 +20,7 @@ use crate::semantic::TypeKind;
 use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::{Conversion, ScopeId};
 use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
-use hashbrown::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 use target_lexicon::Architecture;
 
 use crate::mir::GlobalId;
@@ -40,14 +40,14 @@ pub(crate) struct LabelInfo {
 pub(crate) struct FunctionState {
     pub(crate) func_id: MirFunctionId,
     pub(crate) current_block: Option<MirBlockId>,
-    pub(crate) local_map: HashMap<SymbolRef, LocalId>,
-    pub(crate) vla_map: HashMap<SymbolRef, (LocalId, LocalId)>,
-    pub(crate) label_map: HashMap<NameId, LabelInfo>,
+    pub(crate) local_map: FxHashMap<SymbolRef, LocalId>,
+    pub(crate) vla_map: FxHashMap<SymbolRef, (LocalId, LocalId)>,
+    pub(crate) label_map: FxHashMap<NameId, LabelInfo>,
     pub(crate) break_target: Option<MirBlockId>,
     pub(crate) break_depth: Option<usize>,
     pub(crate) continue_target: Option<MirBlockId>,
     pub(crate) continue_depth: Option<usize>,
-    pub(crate) switch_case_map: HashMap<NodeRef, MirBlockId>,
+    pub(crate) switch_case_map: FxHashMap<NodeRef, MirBlockId>,
     pub(crate) scope_cleanup: Vec<Vec<CleanupAction>>,
 }
 
@@ -56,14 +56,14 @@ impl FunctionState {
         Self {
             func_id,
             current_block: Some(entry_block),
-            local_map: HashMap::new(),
-            vla_map: HashMap::new(),
-            label_map: HashMap::new(),
+            local_map: FxHashMap::default(),
+            vla_map: FxHashMap::default(),
+            label_map: FxHashMap::default(),
             break_target: None,
             break_depth: None,
             continue_target: None,
             continue_depth: None,
-            switch_case_map: HashMap::new(),
+            switch_case_map: FxHashMap::default(),
             scope_cleanup: Vec::new(),
         }
     }
@@ -74,9 +74,9 @@ pub(crate) struct MirGen<'a> {
     pub(crate) symbol_table: &'a SymbolTable, // Now immutable
     pub(crate) mb: MirBuilder,
     pub(crate) registry: &'a mut TypeRegistry,
-    pub(crate) global_map: HashMap<SymbolRef, GlobalId>,
-    pub(crate) type_cache: HashMap<TypeRef, TypeId>,
-    pub(crate) type_conversion_in_progress: HashSet<TypeRef>,
+    pub(crate) global_map: FxHashMap<SymbolRef, GlobalId>,
+    pub(crate) type_cache: FxHashMap<TypeRef, TypeId>,
+    pub(crate) type_conversion_in_progress: FxHashSet<TypeRef>,
     pub(crate) valist_mir_id: Option<TypeId>,
     pub(crate) current_scope_id: ScopeId,
     pub(crate) func_state: Option<FunctionState>,
@@ -239,9 +239,9 @@ impl<'a> MirGen<'a> {
             symbol_table,
             mb: MirBuilder::new(8),
             registry,
-            global_map: HashMap::new(),
-            type_cache: HashMap::new(),
-            type_conversion_in_progress: HashSet::new(),
+            global_map: FxHashMap::default(),
+            type_cache: FxHashMap::default(),
+            type_conversion_in_progress: FxHashSet::default(),
             valist_mir_id: None,
             keywords: MirGenKeywords::new(),
             current_scope_id: ScopeId::GLOBAL,
@@ -909,11 +909,9 @@ impl<'a> MirGen<'a> {
         return_type: TypeId,
         is_variadic: bool,
     ) -> MirFunctionId {
-        // Check if already declared
-        for (i, func) in self.mb.get_functions().iter().enumerate() {
-            if func.name == name {
-                return MirFunctionId::new((i + 1) as u32).unwrap();
-            }
+        // ⚡ Bolt: Use pre-populated name map in MirBuilder instead of linear scan.
+        if let Some(id) = self.mb.find_function_by_name(name) {
+            return id;
         }
         // Declare it
         self.mb.declare_function(name, param_types, return_type, is_variadic)

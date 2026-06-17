@@ -268,3 +268,8 @@ Learning: C11 6.5.16.1p1 requires that operands for assignment are pointers to q
 
 Learning: A `switch` statement can correctly contain zero or one `default` label. However, the parser and semantic analyzer must properly isolate `default` label checks to the innermost enclosing `switch`. The `switch_stack` needs to track `default_seen` correctly for nested switches without bleeding the state outward or inward across boundaries.
 Action: Add tests using `run_fail_with_diagnostic` targeting `CompilePhase::Mir` (since the lowering validates switch structure) to ensure a single `switch` rejects multiple `default` labels while properly allowing a nested `switch` to also define its own `default` label. Ensure the precise span (line, column) of the secondary `default` label is validated.
+
+2024-06-05 - [Parameter Storage Class Constraints]
+
+Learning: C11 §6.7.6.3p2 specifies that the only storage-class specifier that shall occur in a parameter declaration is `register`. The compiler correctly enforced this in lowering via `SemanticError::InvalidStorageClassForParameter`, but lacked dedicated integration tests to verify this exact rejection for `static`, `extern`, and `auto`. We implemented a dedicated test file to guarantee this semantic rule is always enforced properly.
+Action: Implement specific targeted tests for all invalid combinations of parameter storage classes to ensure regressions don't occur when refactoring the semantic analyzer or function parameter parsing logic.

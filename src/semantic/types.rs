@@ -659,27 +659,52 @@ impl TypeRef {
 
     #[inline]
     pub(crate) fn is_integer(self) -> bool {
-        self.is_enum() || self.builtin().is_some_and(|b| b.is_integer())
+        // Bolt ⚡: Optimization: Unified match on TypeClass to avoid redundant decoding.
+        match self.class() {
+            TypeClass::Enum => true,
+            TypeClass::Builtin => BuiltinType::from_u32(self.base()).is_some_and(|b| b.is_integer()),
+            _ => false,
+        }
     }
 
     #[inline]
     pub(crate) fn is_floating(self) -> bool {
-        self.is_complex() || self.builtin().is_some_and(|b| b.is_floating())
+        // Bolt ⚡: Floating types include real floating (float/double) and complex.
+        match self.class() {
+            TypeClass::Complex => true,
+            TypeClass::Builtin => BuiltinType::from_u32(self.base()).is_some_and(|b| b.is_floating()),
+            _ => false,
+        }
     }
 
     #[inline]
     pub(crate) fn is_arithmetic(self) -> bool {
-        self.is_integer() || self.is_floating()
+        // Bolt ⚡: Arithmetic = Integer | Floating (including complex).
+        match self.class() {
+            TypeClass::Enum | TypeClass::Complex => true,
+            TypeClass::Builtin => BuiltinType::from_u32(self.base()).is_some_and(|b| b.is_integer() || b.is_floating()),
+            _ => false,
+        }
     }
 
     #[inline]
     pub(crate) fn is_real(self) -> bool {
-        self.is_integer() || self.builtin().is_some_and(|b| b.is_floating())
+        // Bolt ⚡: Real types = Integer | Real floating (excludes complex).
+        match self.class() {
+            TypeClass::Enum => true,
+            TypeClass::Builtin => BuiltinType::from_u32(self.base()).is_some_and(|b| b.is_integer() || b.is_floating()),
+            _ => false,
+        }
     }
 
     #[inline]
     pub(crate) fn is_scalar(self) -> bool {
-        self.is_arithmetic() || self.is_pointer()
+        // Bolt ⚡: Scalar = Arithmetic | Pointer.
+        match self.class() {
+            TypeClass::Enum | TypeClass::Complex | TypeClass::Pointer => true,
+            TypeClass::Builtin => BuiltinType::from_u32(self.base()).is_some_and(|b| b.is_integer() || b.is_floating()),
+            _ => false,
+        }
     }
 }
 

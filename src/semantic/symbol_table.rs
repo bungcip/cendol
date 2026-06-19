@@ -551,23 +551,30 @@ impl SymbolTable {
 
     pub(crate) fn lookup(&self, name: NameId, start_scope: ScopeId, ns: Namespace) -> Option<(SymbolRef, ScopeId)> {
         let mut scope_id = start_scope;
-        loop {
-            let scope = self.get_scope(scope_id);
-            let result = match ns {
-                Namespace::Ordinary => scope.symbols.get(&name),
-                Namespace::Tag => scope.tags.get(&name),
-                Namespace::Label => scope.labels.get(&name),
-            };
-            if let Some(&sym) = result {
-                return Some((sym, scope_id));
-            }
-            if let Some(parent) = scope.parent {
-                scope_id = parent;
-            } else {
-                break;
-            }
+        // Bolt ⚡: Hoist Namespace match out of the loop to reduce branching in this hot path.
+        match ns {
+            Namespace::Ordinary => loop {
+                let scope = self.get_scope(scope_id);
+                if let Some(&sym) = scope.symbols.get(&name) {
+                    return Some((sym, scope_id));
+                }
+                scope_id = scope.parent?;
+            },
+            Namespace::Tag => loop {
+                let scope = self.get_scope(scope_id);
+                if let Some(&sym) = scope.tags.get(&name) {
+                    return Some((sym, scope_id));
+                }
+                scope_id = scope.parent?;
+            },
+            Namespace::Label => loop {
+                let scope = self.get_scope(scope_id);
+                if let Some(&sym) = scope.labels.get(&name) {
+                    return Some((sym, scope_id));
+                }
+                scope_id = scope.parent?;
+            },
         }
-        None
     }
 
     /// find a symbol in exact scope without looking to parent scope if not exist

@@ -550,24 +550,45 @@ impl SymbolTable {
     }
 
     pub(crate) fn lookup(&self, name: NameId, start_scope: ScopeId, ns: Namespace) -> Option<(SymbolRef, ScopeId)> {
+        // ⚡ Bolt: Hoist the namespace match out of the scope traversal loop.
+        // This reduces branching in identifier resolution, which is a hot path
+        // during both parsing and semantic analysis.
         let mut scope_id = start_scope;
-        loop {
-            let scope = self.get_scope(scope_id);
-            let result = match ns {
-                Namespace::Ordinary => scope.symbols.get(&name),
-                Namespace::Tag => scope.tags.get(&name),
-                Namespace::Label => scope.labels.get(&name),
-            };
-            if let Some(&sym) = result {
-                return Some((sym, scope_id));
-            }
-            if let Some(parent) = scope.parent {
-                scope_id = parent;
-            } else {
-                break;
-            }
+        match ns {
+            Namespace::Ordinary => loop {
+                let scope = self.get_scope(scope_id);
+                if let Some(&sym) = scope.symbols.get(&name) {
+                    return Some((sym, scope_id));
+                }
+                if let Some(parent) = scope.parent {
+                    scope_id = parent;
+                } else {
+                    return None;
+                }
+            },
+            Namespace::Tag => loop {
+                let scope = self.get_scope(scope_id);
+                if let Some(&sym) = scope.tags.get(&name) {
+                    return Some((sym, scope_id));
+                }
+                if let Some(parent) = scope.parent {
+                    scope_id = parent;
+                } else {
+                    return None;
+                }
+            },
+            Namespace::Label => loop {
+                let scope = self.get_scope(scope_id);
+                if let Some(&sym) = scope.labels.get(&name) {
+                    return Some((sym, scope_id));
+                }
+                if let Some(parent) = scope.parent {
+                    scope_id = parent;
+                } else {
+                    return None;
+                }
+            },
         }
-        None
     }
 
     /// find a symbol in exact scope without looking to parent scope if not exist

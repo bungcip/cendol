@@ -659,27 +659,49 @@ impl TypeRef {
 
     #[inline]
     pub(crate) fn is_integer(self) -> bool {
-        self.is_enum() || self.builtin().is_some_and(|b| b.is_integer())
+        // ⚡ Bolt: Use TypeClass-based dispatch to avoid multiple redundant bitfield decodings
+        // in type property checks. This provides a fast-path for terminal types.
+        match self.class() {
+            TypeClass::Enum => true,
+            TypeClass::Builtin => self.builtin().is_some_and(|b| b.is_integer()),
+            _ => false,
+        }
     }
 
     #[inline]
     pub(crate) fn is_floating(self) -> bool {
-        self.is_complex() || self.builtin().is_some_and(|b| b.is_floating())
+        match self.class() {
+            TypeClass::Complex => true,
+            TypeClass::Builtin => self.builtin().is_some_and(|b| b.is_floating()),
+            _ => false,
+        }
     }
 
     #[inline]
     pub(crate) fn is_arithmetic(self) -> bool {
-        self.is_integer() || self.is_floating()
+        match self.class() {
+            TypeClass::Enum | TypeClass::Complex => true,
+            TypeClass::Builtin => self.builtin().is_some_and(|b| b.is_integer() || b.is_floating()),
+            _ => false,
+        }
     }
 
     #[inline]
     pub(crate) fn is_real(self) -> bool {
-        self.is_integer() || self.builtin().is_some_and(|b| b.is_floating())
+        match self.class() {
+            TypeClass::Enum => true,
+            TypeClass::Builtin => self.builtin().is_some_and(|b| b.is_integer() || b.is_floating()),
+            _ => false,
+        }
     }
 
     #[inline]
     pub(crate) fn is_scalar(self) -> bool {
-        self.is_arithmetic() || self.is_pointer()
+        match self.class() {
+            TypeClass::Enum | TypeClass::Complex | TypeClass::Pointer => true,
+            TypeClass::Builtin => self.builtin().is_some_and(|b| b.is_integer() || b.is_floating()),
+            _ => false,
+        }
     }
 }
 

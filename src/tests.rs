@@ -171,3 +171,4 @@ pub mod semantic_binary_invalid_operands;
 pub mod semantic_conversions_uncovered;
 pub mod semantic_types_compatible;
 pub mod test_utils;
+pub mod guardian_conflicting_storage_classes;

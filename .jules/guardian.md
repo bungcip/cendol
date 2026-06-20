@@ -273,3 +273,7 @@ Action: Add tests using `run_fail_with_diagnostic` targeting `CompilePhase::Mir`
 
 Learning: C11 §6.7.6.3p2 specifies that the only storage-class specifier that shall occur in a parameter declaration is `register`. The compiler correctly enforced this in lowering via `SemanticError::InvalidStorageClassForParameter`, but lacked dedicated integration tests to verify this exact rejection for `static`, `extern`, and `auto`. We implemented a dedicated test file to guarantee this semantic rule is always enforced properly.
 Action: Implement specific targeted tests for all invalid combinations of parameter storage classes to ensure regressions don't occur when refactoring the semantic analyzer or function parameter parsing logic.
+
+2024-11-20 - [Conflicting Storage Classes]
+Learning: Cendol correctly rejects multiple mutually exclusive storage classes (C11 §6.7.1) via `SemanticError::ConflictingStorageClasses`. `_Thread_local` is appropriately allowed alongside `static` and `extern`, but conflicts with `auto`, `register`, and `typedef`. The spans emitted for the conflict align with the start of the declaration.
+Action: Add dedicated regression test (`guardian_conflicting_storage_classes.rs`) covering standard collisions and `_Thread_local` specific exceptions.

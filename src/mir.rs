@@ -13,7 +13,7 @@ use std::num::NonZeroU32;
 
 use crate::ast::NameId;
 use crate::semantic::FieldLayout;
-use hashbrown::HashMap;
+use rustc_hash::FxHashMap;
 
 pub mod dumper;
 pub mod validation;
@@ -447,7 +447,7 @@ pub(crate) enum UnaryFloatOp {
 // - No anonymous record types exist in MIR
 // - No anonymous members exist in MIR
 // - Field names are unique within a record
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub(crate) enum MirType {
     Void,
     Bool,
@@ -581,7 +581,7 @@ impl MirType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub(crate) struct MirFieldLayout {
     pub(crate) offset: u64,
     pub(crate) bit_width: Option<u16>,
@@ -622,14 +622,14 @@ impl MirFieldLayout {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub(crate) struct MirRecordLayout {
     pub(crate) size: u64,
     pub(crate) align: u16,
     pub(crate) fields: Vec<MirFieldLayout>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub(crate) struct MirArrayLayout {
     pub(crate) size: u64,
     pub(crate) align: u16,
@@ -772,7 +772,9 @@ pub(crate) struct MirBuilder {
     statements: Vec<MirStmt>,
     // ⚡ Bolt: Fast name lookup for functions and globals.
     // This avoids linear scans in projects with many functions (like sqlite).
-    function_name_map: HashMap<NameId, MirFunctionId>,
+    function_name_map: FxHashMap<NameId, MirFunctionId>,
+    // ⚡ Bolt: Fast type interning to avoid $O(N^2)$ linear scans in add_type.
+    type_interner: FxHashMap<MirType, TypeId>,
 }
 
 /// Builder for constructing a specific MIR function body
@@ -846,7 +848,8 @@ impl MirBuilder {
             types: Vec::new(),
             constants: Vec::new(),
             statements: Vec::new(),
-            function_name_map: HashMap::new(),
+            function_name_map: FxHashMap::default(),
+            type_interner: FxHashMap::default(),
         }
     }
 
@@ -1076,17 +1079,16 @@ impl MirBuilder {
 
     /// Add a type to the module with interning
     pub(crate) fn add_type(&mut self, mir_type: MirType) -> TypeId {
-        // Check if type already exists (type interning)
-        for (i, existing_type) in self.types.iter().enumerate() {
-            if existing_type == &mir_type {
-                return TypeId::new((i + 1) as u32).unwrap();
-            }
+        // ⚡ Bolt: Optimized type interning using a hash map lookup instead of a linear scan.
+        if let Some(&id) = self.type_interner.get(&mir_type) {
+            return id;
         }
 
         // Type doesn't exist, create new one
         let type_id = TypeId::new(self.next_type_id).unwrap();
         self.next_type_id += 1;
 
+        self.type_interner.insert(mir_type.clone(), type_id);
         self.types.push(mir_type.clone());
         self.module.types.push(mir_type);
 
@@ -1096,11 +1098,16 @@ impl MirBuilder {
     /// Update an existing type previously inserted with `add_type`.
     /// This replaces the type entry in both the internal map and the module vector.
     pub(crate) fn update_type(&mut self, type_id: TypeId, mir_type: MirType) {
-        self.types[type_id.index()] = mir_type.clone();
-        let idx = (type_id.get() - 1) as usize;
+        // ⚡ Bolt: Correctly update the interner map when replacing a recursive type placeholder.
+        let old_type = &self.types[type_id.index()];
+        self.type_interner.remove(old_type);
+        self.type_interner.insert(mir_type.clone(), type_id);
+
+        let idx = type_id.index();
         if idx < self.module.types.len() {
-            self.module.types[idx] = mir_type;
+            self.module.types[idx] = mir_type.clone();
         }
+        self.types[idx] = mir_type;
     }
 
     pub(crate) fn get_type(&self, type_id: TypeId) -> &MirType {

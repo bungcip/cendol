@@ -273,3 +273,7 @@ Action: Add tests using `run_fail_with_diagnostic` targeting `CompilePhase::Mir`
 
 Learning: C11 §6.7.6.3p2 specifies that the only storage-class specifier that shall occur in a parameter declaration is `register`. The compiler correctly enforced this in lowering via `SemanticError::InvalidStorageClassForParameter`, but lacked dedicated integration tests to verify this exact rejection for `static`, `extern`, and `auto`. We implemented a dedicated test file to guarantee this semantic rule is always enforced properly.
 Action: Implement specific targeted tests for all invalid combinations of parameter storage classes to ensure regressions don't occur when refactoring the semantic analyzer or function parameter parsing logic.
+
+2025-02-14 - [C11 §6.8.6.3: Break not in loop or switch]
+
+Learning: Break statements are rejected outside of loop or switch statements. This is tricky because standalone `if` statements or simple function bodies are not valid targets for `break`. A dedicated test ensures that `SemanticError::BreakNotInLoop` is correctly thrown in these cases, preventing miscompilation. Action: Add `guardian_break_not_in_loop_or_switch.rs` to validate this invariant, asserting correct phase (`SemanticLowering`), message, and precise line/column spans.

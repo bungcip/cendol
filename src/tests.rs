@@ -164,6 +164,7 @@ pub mod regr_typeof_ternary;
 pub mod regr_union_cast;
 
 // Test Helpers
+pub mod guardian_break_not_in_loop_or_switch;
 pub mod guardian_pointer_assignment_nested_qualifiers;
 pub mod guardian_switch_multiple_default;
 pub mod semantic_binary_conversion;

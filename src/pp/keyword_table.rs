@@ -278,42 +278,29 @@ impl PPKeywordTable {
     }
 
     pub(crate) fn is_directive(&self, symbol: StringId) -> Option<DirectiveKind> {
-        if symbol == self.define {
-            Some(DirectiveKind::Define)
-        } else if symbol == self.undef {
-            Some(DirectiveKind::Undef)
-        } else if symbol == self.include {
-            Some(DirectiveKind::Include)
-        } else if symbol == self.include_next {
-            Some(DirectiveKind::IncludeNext)
-        } else if symbol == self.if_ {
-            Some(DirectiveKind::If)
-        } else if symbol == self.ifdef {
-            Some(DirectiveKind::Ifdef)
-        } else if symbol == self.ifndef {
-            Some(DirectiveKind::Ifndef)
-        } else if symbol == self.elif {
-            Some(DirectiveKind::Elif)
-        } else if symbol == self.elifdef {
-            Some(DirectiveKind::Elifdef)
-        } else if symbol == self.elifndef {
-            Some(DirectiveKind::Elifndef)
-        } else if symbol == self.else_ {
-            Some(DirectiveKind::Else)
-        } else if symbol == self.endif {
-            Some(DirectiveKind::Endif)
-        } else if symbol == self.line {
-            Some(DirectiveKind::Line)
-        } else if symbol == self.pragma {
-            Some(DirectiveKind::Pragma)
-        } else if symbol == self.error {
-            Some(DirectiveKind::Error)
-        } else if symbol == self.warning {
-            Some(DirectiveKind::Warning)
-        } else if symbol == self.embed {
-            Some(DirectiveKind::Embed)
-        } else {
-            None
+        // Bolt ⚡: Optimized directive identification using a match statement reordered by frequency.
+        // Directives like #endif, #define, and #ifdef are significantly more common in large C projects
+        // like SQLite. Placing them at the top of the match (or if-else chain) reduces the average
+        // number of comparisons per line. Using match also provides better optimization hints to the compiler.
+        match symbol {
+            s if s == self.endif => Some(DirectiveKind::Endif),
+            s if s == self.define => Some(DirectiveKind::Define),
+            s if s == self.ifdef => Some(DirectiveKind::Ifdef),
+            s if s == self.ifndef => Some(DirectiveKind::Ifndef),
+            s if s == self.if_ => Some(DirectiveKind::If),
+            s if s == self.else_ => Some(DirectiveKind::Else),
+            s if s == self.elif => Some(DirectiveKind::Elif),
+            s if s == self.include => Some(DirectiveKind::Include),
+            s if s == self.undef => Some(DirectiveKind::Undef),
+            s if s == self.line => Some(DirectiveKind::Line),
+            s if s == self.error => Some(DirectiveKind::Error),
+            s if s == self.pragma => Some(DirectiveKind::Pragma),
+            s if s == self.warning => Some(DirectiveKind::Warning),
+            s if s == self.include_next => Some(DirectiveKind::IncludeNext),
+            s if s == self.elifdef => Some(DirectiveKind::Elifdef),
+            s if s == self.elifndef => Some(DirectiveKind::Elifndef),
+            s if s == self.embed => Some(DirectiveKind::Embed),
+            _ => None,
         }
     }
 }

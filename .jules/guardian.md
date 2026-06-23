@@ -277,3 +277,6 @@ Action: Implement specific targeted tests for all invalid combinations of parame
 2025-02-14 - [C11 §6.8.6.3: Break not in loop or switch]
 
 Learning: Break statements are rejected outside of loop or switch statements. This is tricky because standalone `if` statements or simple function bodies are not valid targets for `break`. A dedicated test ensures that `SemanticError::BreakNotInLoop` is correctly thrown in these cases, preventing miscompilation. Action: Add `guardian_break_not_in_loop_or_switch.rs` to validate this invariant, asserting correct phase (`SemanticLowering`), message, and precise line/column spans.
+2024-06-23 - [Duplicate Case Statement Testing]
+Learning: Cendol correctly checks for duplicate case values in switch statements but ensuring the test verifies the proper nested switch isolation is important for avoiding false positives. It uses SemanticError::DuplicateCase for this purpose.
+Action: Add a test guardian_duplicate_case.rs that checks both the rejection of duplicate cases within the same switch block and the allowance of identical case labels in nested switch blocks.

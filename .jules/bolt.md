@@ -129,3 +129,7 @@
 ## 2025-06-20 - UTF-8-Safe String Transformation via Slicing
 **Learning:** Transforming a `&str` by iterating over `as_bytes()` and casting to `char` (e.g., `bytes[i] as char`) is a major correctness bug that corrupts multi-byte UTF-8 sequences.
 **Action:** For performance-critical transformations like line-splice removal, use `memchr` to scan for ASCII triggers, then use string slicing and `push_str` to preserve the integrity of multi-byte UTF-8 sequences between triggers. This is both faster and correct.
+
+## 2026-06-24 - Preprocessor Hot-path Micro-optimizations
+**Learning:** Even small (1)$ operations like hash set lookups can add up in the preprocessor's hot path (e.g., `lex_token`). Furthermore, reordering linear search/comparison chains (like `is_directive`) based on project-specific directive frequency (e.g., SQLite's heavy use of `#endif` and `#define`) yields measurable gains.
+**Action:** Always provide fast-path guards (like `is_empty()` checks) for state-dependent lookups in token-processing loops. Order keyword/directive comparisons by expected frequency to minimize the average number of branches.

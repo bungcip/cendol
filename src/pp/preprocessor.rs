@@ -999,6 +999,7 @@ impl<'src> Preprocessor<'src> {
     pub(super) fn lex_token(&mut self) -> Option<PPToken> {
         let token = self.lex_token_internal()?;
         if let PPTokenKind::Identifier(sym) = token.kind
+            && !self.poisoned_identifiers.is_empty()
             && self.poisoned_identifiers.contains(&sym)
         {
             let err = self.error(PPError::PoisonedIdentifier(sym), token.location);

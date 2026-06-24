@@ -277,3 +277,7 @@ Action: Implement specific targeted tests for all invalid combinations of parame
 2025-02-14 - [C11 §6.8.6.3: Break not in loop or switch]
 
 Learning: Break statements are rejected outside of loop or switch statements. This is tricky because standalone `if` statements or simple function bodies are not valid targets for `break`. A dedicated test ensures that `SemanticError::BreakNotInLoop` is correctly thrown in these cases, preventing miscompilation. Action: Add `guardian_break_not_in_loop_or_switch.rs` to validate this invariant, asserting correct phase (`SemanticLowering`), message, and precise line/column spans.
+
+2024-06-25 - [Continue Not In Loop Validation]
+
+Learning: [Cendol correctly enforces C11 §6.8.6.2p1 by strictly rejecting `continue` statements that are not enclosed within a loop. This semantic check runs during the MIR generation phase (`CompilePhase::Mir`) since control flow checks are performed by the semantic analyzer alongside MIR construction. Spans and diagnostics correctly pinpoint the invalid `continue` token.] Action: [Ensure control flow checks like `break` and `continue` validation always use `CompilePhase::Mir` in test assertions instead of earlier phases, and explicitly test nested non-loop blocks (like `if` or `switch`) to avoid regressions where scoping logic might erroneously clear the "in loop" state.]

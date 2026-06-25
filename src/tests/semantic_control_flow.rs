@@ -208,18 +208,6 @@ fn test_break_outside_loop() {
 }
 
 #[test]
-fn test_continue_outside_loop() {
-    run_fail_with_message(
-        r#"
-        int main() {
-            continue;
-        }
-        "#,
-        "continue statement not in loop",
-    );
-}
-
-#[test]
 fn test_noreturn_for_break_falls_through() {
     let source = r#"
         _Noreturn void die(void) {

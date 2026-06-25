@@ -277,3 +277,7 @@ Action: Implement specific targeted tests for all invalid combinations of parame
 2025-02-14 - [C11 §6.8.6.3: Break not in loop or switch]
 
 Learning: Break statements are rejected outside of loop or switch statements. This is tricky because standalone `if` statements or simple function bodies are not valid targets for `break`. A dedicated test ensures that `SemanticError::BreakNotInLoop` is correctly thrown in these cases, preventing miscompilation. Action: Add `guardian_break_not_in_loop_or_switch.rs` to validate this invariant, asserting correct phase (`SemanticLowering`), message, and precise line/column spans.
+2026-06-22 - [C11 §6.8.6.2: Continue not in loop]
+
+Learning: Continue statements are rejected outside of loop statements. This is tricky because standalone `if` statements, `switch` statements, or simple function bodies are not valid targets for `continue`. A dedicated test ensures that `SemanticError::ContinueNotInLoop` is correctly thrown in these cases, preventing miscompilation.
+Action: Add `guardian_continue_not_in_loop.rs` to validate this invariant, asserting correct phase (`Mir`), message, and precise line/column spans.

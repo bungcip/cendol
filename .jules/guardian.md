@@ -277,3 +277,7 @@ Action: Implement specific targeted tests for all invalid combinations of parame
 2025-02-14 - [C11 §6.8.6.3: Break not in loop or switch]
 
 Learning: Break statements are rejected outside of loop or switch statements. This is tricky because standalone `if` statements or simple function bodies are not valid targets for `break`. A dedicated test ensures that `SemanticError::BreakNotInLoop` is correctly thrown in these cases, preventing miscompilation. Action: Add `guardian_break_not_in_loop_or_switch.rs` to validate this invariant, asserting correct phase (`SemanticLowering`), message, and precise line/column spans.
+2024-06-25 - Guardian: Added test for restrict keyword
+
+Learning: Restrict must be limited to a pointer type, the Cendol compiler was accurately guarding against misuse, but the tests were incomplete and we needed test coverage specifically for diagnostic message and source span errors on this keyword.
+Action: Migrated/Added test cases from simple `run_fail_with_message` to `run_fail_with_diagnostic` for `restrict requires a pointer type`, verifying correct span reporting.

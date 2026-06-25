@@ -2041,7 +2041,10 @@ impl TypeRegistry {
                             return false;
                         }
                         for (p_a, p_b) in params_a.iter().zip(params_b.iter()) {
-                            if !self.is_compatible(p_a.param_type.strip_for_parameter(), p_b.param_type.strip_for_parameter()) {
+                            if !self.is_compatible(
+                                p_a.param_type.strip_for_parameter(),
+                                p_b.param_type.strip_for_parameter(),
+                            ) {
                                 return false;
                             }
                         }

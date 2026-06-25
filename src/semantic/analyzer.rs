@@ -3336,6 +3336,12 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
     fn visit_node(&mut self, node: NodeRef) -> Option<QualType> {
+        // Bolt ⚡: Memoization - skip analysis if node was already visited.
+        // This avoids O(N^2) complexity in constructs like StatementExpr and GenericSelection.
+        if let Some(qt) = self.semantic_info.types[node.index()] {
+            return Some(qt);
+        }
+
         let node_kind = self.ast.get_kind(node);
 
         let result_type = match node_kind {

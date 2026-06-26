@@ -2858,8 +2858,8 @@ impl<'a> SemanticAnalyzer<'a> {
                 None
             }
             NodeKind::Switch(cond, body) => self.visit_switch_statement(*cond, *body, node),
-            NodeKind::Case(expr, stmt) => self.visit_case_statement(Some(*expr), None, *stmt),
-            NodeKind::CaseRange(start, end, stmt) => self.visit_case_statement(Some(*start), Some(*end), *stmt),
+            NodeKind::Case(expr, stmt) => self.visit_case_statement(Some(*expr), None, *stmt, node),
+            NodeKind::CaseRange(start, end, stmt) => self.visit_case_statement(Some(*start), Some(*end), *stmt, node),
             NodeKind::Default(stmt) => self.visit_default_statement(*stmt, node),
             NodeKind::Return(expr) => {
                 self.visit_return_statement(node, expr);
@@ -3000,9 +3000,10 @@ impl<'a> SemanticAnalyzer<'a> {
         start: Option<NodeRef>,
         end: Option<NodeRef>,
         stmt: NodeRef,
+        node: NodeRef,
     ) -> Option<QualType> {
         if self.switch_stack.is_empty() {
-            self.report_error(stmt, SemanticError::CaseNotInSwitch);
+            self.report_error(node, SemanticError::CaseNotInSwitch);
         }
 
         let mut start_val = start.and_then(|s| self.evaluate_case_value(s));

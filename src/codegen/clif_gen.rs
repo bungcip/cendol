@@ -13,7 +13,7 @@ use crate::mir::{
 };
 use cranelift::codegen::ir::{ArgumentPurpose, AtomicRmwOp, Inst, StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
-    AbiParam, Block, Configurable, FloatCC, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type,
+    AbiParam, Block, Configurable, FloatCC, FunctionBuilderContext, InstBuilder, IntCC, MemFlagsData, Signature, Type,
     Value, types,
 };
 use cranelift_frontend::FunctionBuilder;
@@ -660,11 +660,11 @@ fn emit_call_args(
                 let remaining = size.saturating_sub((i * 8) as u32);
 
                 let val = if remaining >= 8 {
-                    ctx.builder.ins().load(t, MemFlags::new(), struct_addr, offset)
+                    ctx.builder.ins().load(t, MemFlagsData::new(), struct_addr, offset)
                 } else {
                     let current_val = emit_partial_load(ctx.builder, struct_addr, offset, remaining);
                     if t.is_float() {
-                        ctx.builder.ins().bitcast(t, MemFlags::new(), current_val)
+                        ctx.builder.ins().bitcast(t, MemFlagsData::new(), current_val)
                     } else {
                         current_val
                     }
@@ -709,11 +709,13 @@ fn emit_call_args(
                         .unwrap_or(types::I64);
 
                     let value = if remaining_bytes >= 8 {
-                        ctx.builder.ins().load(cl_type, MemFlags::new(), struct_addr, offset)
+                        ctx.builder
+                            .ins()
+                            .load(cl_type, MemFlagsData::new(), struct_addr, offset)
                     } else {
                         let partial = emit_partial_load(ctx.builder, struct_addr, offset, remaining_bytes as u32);
                         if cl_type != types::I64 {
-                            ctx.builder.ins().bitcast(cl_type, MemFlags::new(), partial)
+                            ctx.builder.ins().bitcast(cl_type, MemFlagsData::new(), partial)
                         } else {
                             partial
                         }
@@ -986,11 +988,15 @@ fn emit_al_count_and_pass_addr(
         let count_global = ctx.module.declare_data_in_func(count_data_id, ctx.builder.func);
         let count_addr = ctx.builder.ins().global_value(types::I64, count_global);
         let count_val = ctx.builder.ins().iconst(types::I64, fp_arg_count as i64);
-        ctx.builder.ins().store(MemFlags::trusted(), count_val, count_addr, 0);
+        ctx.builder
+            .ins()
+            .store(MemFlagsData::trusted(), count_val, count_addr, 0);
 
         let target_global = ctx.module.declare_data_in_func(target_data_id, ctx.builder.func);
         let target_addr_val = ctx.builder.ins().global_value(types::I64, target_global);
-        ctx.builder.ins().store(MemFlags::trusted(), addr, target_addr_val, 0);
+        ctx.builder
+            .ins()
+            .store(MemFlagsData::trusted(), addr, target_addr_val, 0);
 
         let tramp_func_ref = ctx.module.declare_func_in_func(tramp_func_id, ctx.builder.func);
         ctx.builder.ins().func_addr(types::I64, tramp_func_ref)
@@ -1107,15 +1113,15 @@ fn emit_type_conversion(val: Value, from: Type, to: Type, is_signed: bool, build
         // Same width, diff types (e.g. I64 <-> F64 bitcast, or I32 <-> F32 bitcast, or Pointer types)
         // Note: Float bitcasts usually handled above if involving floats, but check standard bitcast rules.
         // Actually bitcast works for any same-sized types.
-        builder.ins().bitcast(to, MemFlags::new(), val)
+        builder.ins().bitcast(to, MemFlagsData::new(), val)
     }
 }
 
 /// Helper to convert a 16-byte x87 80-bit float (in memory) to a Cranelift F64 value.
 /// This is used as a workaround since Cranelift x64 backend lacks native F128/F80 support.
 fn emit_x87_to_f64(addr: Value, builder: &mut FunctionBuilder) -> Value {
-    let lo = builder.ins().load(types::I64, MemFlags::new(), addr, 0);
-    let hi = builder.ins().load(types::I64, MemFlags::new(), addr, 8);
+    let lo = builder.ins().load(types::I64, MemFlagsData::new(), addr, 0);
+    let hi = builder.ins().load(types::I64, MemFlagsData::new(), addr, 8);
 
     // x87 lo (8 bytes): Mantissa with explicit integer bit at 63
     // x87 hi (bits 0..14): Exponent (15-bit, 16383 bias)
@@ -1142,17 +1148,17 @@ fn emit_x87_to_f64(addr: Value, builder: &mut FunctionBuilder) -> Value {
     let res_i64 = builder.ins().bor(sign_f64, exp_f64_clamped);
     let res_i64 = builder.ins().bor(res_i64, mant_f64_masked);
 
-    builder.ins().bitcast(types::F64, MemFlags::new(), res_i64)
+    builder.ins().bitcast(types::F64, MemFlagsData::new(), res_i64)
 }
 
 /// Helper to convert a Cranelift F64 value to a 16-byte x87 80-bit float format and store it.
 fn emit_f64_to_x87(val: Value, addr: Value, builder: &mut FunctionBuilder) {
     // Zero the entire 16 bytes first to avoid garbage in padding (ABI requirement)
     let zero64 = builder.ins().iconst(types::I64, 0);
-    builder.ins().store(MemFlags::new(), zero64, addr, 0);
-    builder.ins().store(MemFlags::new(), zero64, addr, 8);
+    builder.ins().store(MemFlagsData::new(), zero64, addr, 0);
+    builder.ins().store(MemFlagsData::new(), zero64, addr, 8);
 
-    let val_i64 = builder.ins().bitcast(types::I64, MemFlags::new(), val);
+    let val_i64 = builder.ins().bitcast(types::I64, MemFlagsData::new(), val);
 
     let sign = builder.ins().ushr_imm(val_i64, 63);
     let exp_f64 = builder.ins().ushr_imm(val_i64, 52);
@@ -1177,11 +1183,11 @@ fn emit_f64_to_x87(val: Value, addr: Value, builder: &mut FunctionBuilder) {
     let integer_bit = builder.ins().select(is_not_zero, iconst8, iconst0);
     let mant_x87 = builder.ins().bor(mant_x87, integer_bit);
 
-    builder.ins().store(MemFlags::new(), mant_x87, addr, 0);
-    builder.ins().store(MemFlags::new(), hi, addr, 8);
+    builder.ins().store(MemFlagsData::new(), mant_x87, addr, 0);
+    builder.ins().store(MemFlagsData::new(), hi, addr, 8);
     // Clear the rest of the 16-byte slot (padding to 16 bytes for ABI)
     let zero = builder.ins().iconst(types::I16, 0);
-    builder.ins().store(MemFlags::new(), zero, addr, 10);
+    builder.ins().store(MemFlagsData::new(), zero, addr, 10);
 }
 
 /// Helper to emit a constant to anonymous memory and return its address
@@ -1270,7 +1276,7 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                         } else if matches!(mir_type, MirType::F80 | MirType::F128) && expected_type.is_float() {
                             return emit_x87_to_f64(addr, ctx.builder);
                         } else {
-                            return ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0);
+                            return ctx.builder.ins().load(expected_type, MemFlagsData::new(), addr, 0);
                         }
                     }
 
@@ -1347,7 +1353,7 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                     if matches!(place_type, MirType::F80 | MirType::F128) {
                         return emit_x87_to_f64(addr, ctx.builder);
                     }
-                    return ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0);
+                    return ctx.builder.ins().load(expected_type, MemFlagsData::new(), addr, 0);
                 }
                 return emit_type_conversion(addr, types::I64, expected_type, false, ctx.builder);
             }
@@ -1431,11 +1437,11 @@ fn emit_place(place: &Place, ctx: &mut BodyEmitContext, expected_type: Type) -> 
         }
         Place::Global(_global_id) => {
             let addr = emit_place_addr(place, ctx);
-            ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0)
+            ctx.builder.ins().load(expected_type, MemFlagsData::new(), addr, 0)
         }
         Place::Deref(operand) => {
             let addr = emit_operand(operand, ctx, types::I64);
-            ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0)
+            ctx.builder.ins().load(expected_type, MemFlagsData::new(), addr, 0)
         }
         Place::StructField(base_place, field_index, bit_info) => {
             let addr = emit_place_addr(&Place::StructField(base_place.clone(), *field_index, *bit_info), ctx);
@@ -1460,7 +1466,7 @@ fn emit_place(place: &Place, ctx: &mut BodyEmitContext, expected_type: Type) -> 
             };
 
             let raw_val = {
-                let v = ctx.builder.ins().load(load_type, MemFlags::new(), addr, 0);
+                let v = ctx.builder.ins().load(load_type, MemFlagsData::new(), addr, 0);
                 if load_type.bits() > 32 {
                     // println!("DEBUG: Loaded 64-bit value for bit-field");
                 }
@@ -1502,7 +1508,7 @@ fn emit_place(place: &Place, ctx: &mut BodyEmitContext, expected_type: Type) -> 
         }
         Place::ArrayIndex(base_place, index_operand) => {
             let addr = emit_place_addr(&Place::ArrayIndex(base_place.clone(), index_operand.clone()), ctx);
-            ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0)
+            ctx.builder.ins().load(expected_type, MemFlagsData::new(), addr, 0)
         }
     }
 }
@@ -1646,7 +1652,7 @@ fn lower_base_addr(base_place: &Place, ctx: &mut BodyEmitContext) -> (Value, Typ
     let base_type = ctx.mir.get_type(base_type_id);
 
     if let MirType::Pointer { pointee } = base_type {
-        let loaded_ptr = ctx.builder.ins().load(types::I64, MemFlags::new(), base_addr, 0);
+        let loaded_ptr = ctx.builder.ins().load(types::I64, MemFlagsData::new(), base_addr, 0);
         (loaded_ptr, *pointee)
     } else {
         (base_addr, base_type_id)
@@ -1656,7 +1662,9 @@ fn lower_base_addr(base_place: &Place, ctx: &mut BodyEmitContext) -> (Value, Typ
 fn emit_partial_load(builder: &mut FunctionBuilder, addr: Value, offset: i32, count: u32) -> Value {
     let mut current_val = builder.ins().iconst(types::I64, 0);
     for b in 0..count {
-        let byte_val = builder.ins().load(types::I8, MemFlags::new(), addr, offset + b as i32);
+        let byte_val = builder
+            .ins()
+            .load(types::I8, MemFlagsData::new(), addr, offset + b as i32);
         let byte_ext = builder.ins().uextend(types::I64, byte_val);
         let shift_amt = (b * 8) as i64;
         let shifted = builder.ins().ishl_imm(byte_ext, shift_amt);
@@ -1674,7 +1682,9 @@ fn emit_partial_store(builder: &mut FunctionBuilder, val: Value, addr: Value, of
             val
         };
         let byte_val = builder.ins().ireduce(types::I8, shifted);
-        builder.ins().store(MemFlags::new(), byte_val, addr, offset + b as i32);
+        builder
+            .ins()
+            .store(MemFlagsData::new(), byte_val, addr, offset + b as i32);
     }
 }
 
@@ -1690,7 +1700,7 @@ fn lower_atomic_rmw(
     let val_op = emit_operand(val, ctx, val_type);
     ctx.builder
         .ins()
-        .atomic_rmw(expected_type, MemFlags::new(), op, ptr_val, val_op)
+        .atomic_rmw(expected_type, MemFlagsData::new(), op, ptr_val, val_op)
 }
 
 fn emit_struct_literal(fields: &[(usize, Operand)], dest_addr: Value, type_id: TypeId, ctx: &mut BodyEmitContext) {
@@ -1729,7 +1739,7 @@ fn emit_struct_literal(fields: &[(usize, Operand)], dest_addr: Value, type_id: T
                 let original = ctx
                     .builder
                     .ins()
-                    .load(field_clif_type, MemFlags::new(), field_dest_addr, 0);
+                    .load(field_clif_type, MemFlagsData::new(), field_dest_addr, 0);
                 let mask = if bit_width == 64 {
                     !0u64
                 } else {
@@ -1742,9 +1752,11 @@ fn emit_struct_literal(fields: &[(usize, Operand)], dest_addr: Value, type_id: T
                 let shifted_new = ctx.builder.ins().ishl_imm(masked_new, bit_offset as i64);
                 let final_val = ctx.builder.ins().bor(masked_original, shifted_new);
 
-                ctx.builder.ins().store(MemFlags::new(), final_val, field_dest_addr, 0);
+                ctx.builder
+                    .ins()
+                    .store(MemFlagsData::new(), final_val, field_dest_addr, 0);
             } else {
-                ctx.builder.ins().store(MemFlags::new(), val, field_dest_addr, 0);
+                ctx.builder.ins().store(MemFlagsData::new(), val, field_dest_addr, 0);
             }
         }
     }
@@ -1778,7 +1790,7 @@ fn emit_array_literal(elements: &[Operand], dest_addr: Value, type_id: TypeId, c
             emit_memcpy(element_dest_addr, src_addr, size, ctx.builder, ctx.module);
         } else {
             let val = emit_operand(element_op, ctx, element_clif_type.unwrap());
-            ctx.builder.ins().store(MemFlags::new(), val, element_dest_addr, 0);
+            ctx.builder.ins().store(MemFlagsData::new(), val, element_dest_addr, 0);
         }
     }
 }
@@ -1840,7 +1852,7 @@ fn emit_place_store(place: &Place, value: Value, expected_type: Type, ctx: &mut 
                 expected_type
             };
 
-            let original = ctx.builder.ins().load(load_type, MemFlags::new(), addr, 0);
+            let original = ctx.builder.ins().load(load_type, MemFlagsData::new(), addr, 0);
 
             let mask = if bit_info.width >= 64 {
                 !0u64
@@ -1865,14 +1877,14 @@ fn emit_place_store(place: &Place, value: Value, expected_type: Type, ctx: &mut 
             let shifted_new = ctx.builder.ins().ishl_imm(masked_new, bit_info.offset as i64);
             let final_val = ctx.builder.ins().bor(masked_original, shifted_new);
 
-            ctx.builder.ins().store(MemFlags::new(), final_val, addr, 0);
+            ctx.builder.ins().store(MemFlagsData::new(), final_val, addr, 0);
         }
         _ => {
             let addr = emit_place_addr(place, ctx);
             if matches!(place_mir_type, MirType::F80 | MirType::F128) && expected_type == types::F64 {
                 emit_f64_to_x87(value, addr, ctx.builder);
             } else {
-                ctx.builder.ins().store(MemFlags::new(), value, addr, 0);
+                ctx.builder.ins().store(MemFlagsData::new(), value, addr, 0);
             }
         }
     }
@@ -1960,7 +1972,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                                 64 => types::I64,
                                 _ => types::I64, // Fallback for F80/F128 which we treated as F64
                             };
-                            let val_bits = ctx.builder.ins().bitcast(ity, MemFlags::new(), val);
+                            let val_bits = ctx.builder.ins().bitcast(ity, MemFlagsData::new(), val);
                             let sign_bit = ctx.builder.ins().ushr_imm(val_bits, (width - 1) as i64);
                             emit_type_conversion(sign_bit, ity, expected_type, false, ctx.builder)
                         }
@@ -2199,8 +2211,8 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     let ap_addr = emit_place_addr(ap, ctx);
 
                     // Load fields from va_list
-                    let gp_offset = ctx.builder.ins().load(types::I32, MemFlags::new(), ap_addr, 0);
-                    let reg_save_area = ctx.builder.ins().load(types::I64, MemFlags::new(), ap_addr, 16);
+                    let gp_offset = ctx.builder.ins().load(types::I32, MemFlagsData::new(), ap_addr, 0);
+                    let reg_save_area = ctx.builder.ins().load(types::I64, MemFlagsData::new(), ap_addr, 16);
 
                     let mir_type = ctx.mir.get_type(*type_id);
                     let cl_type = lower_type(mir_type).unwrap_or(types::I64);
@@ -2260,18 +2272,18 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     let needed_gp = va_arg_type_size.max(8).div_ceil(8) * 8;
                     let next_gp_increment = ctx.builder.ins().iconst(types::I32, needed_gp as i64);
                     let next_gp = ctx.builder.ins().iadd(aligned_gp, next_gp_increment);
-                    ctx.builder.ins().store(MemFlags::new(), next_gp, ap_addr, 0);
+                    ctx.builder.ins().store(MemFlagsData::new(), next_gp, ap_addr, 0);
 
                     // Sync overflow_area to point to the next slot (just in case)
                     let next_gp_64 = ctx.builder.ins().uextend(types::I64, next_gp);
                     let overflow_ptr = ctx.builder.ins().iadd(reg_save_area, next_gp_64);
-                    ctx.builder.ins().store(MemFlags::new(), overflow_ptr, ap_addr, 8);
+                    ctx.builder.ins().store(MemFlagsData::new(), overflow_ptr, ap_addr, 8);
 
                     ctx.builder.ins().jump(join_block, &[]);
 
                     // Path B: overflow area
                     ctx.builder.switch_to_block(overflow_block);
-                    let overflow_addr = ctx.builder.ins().load(types::I64, MemFlags::new(), ap_addr, 8);
+                    let overflow_addr = ctx.builder.ins().load(types::I64, MemFlagsData::new(), ap_addr, 8);
 
                     // Align overflow_addr if needed (CRITICAL for 16-byte types)
                     let aligned_overflow = if align > 8 {
@@ -2288,7 +2300,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     let needed_overflow = va_arg_type_size.max(8).div_ceil(8) * 8;
                     let next_overflow_increment = ctx.builder.ins().iconst(types::I64, needed_overflow as i64);
                     let next_overflow = ctx.builder.ins().iadd(aligned_overflow, next_overflow_increment);
-                    ctx.builder.ins().store(MemFlags::new(), next_overflow, ap_addr, 8);
+                    ctx.builder.ins().store(MemFlagsData::new(), next_overflow, ap_addr, 8);
                     ctx.builder.ins().jump(join_block, &[]);
 
                     ctx.builder.seal_block(gp_block);
@@ -2302,7 +2314,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                         // small ones are in reg_save_area, large ones in overflow_arg_area
                         addr
                     } else {
-                        ctx.builder.ins().load(cl_type, MemFlags::new(), addr, 0)
+                        ctx.builder.ins().load(cl_type, MemFlagsData::new(), addr, 0)
                     }
                 }
                 Rvalue::ArrayLiteral(elements) => {
@@ -2323,7 +2335,9 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                 }
                 Rvalue::AtomicLoad(ptr, _order) => {
                     let ptr_val = emit_operand(ptr, ctx, types::I64);
-                    ctx.builder.ins().atomic_load(expected_type, MemFlags::new(), ptr_val)
+                    ctx.builder
+                        .ins()
+                        .atomic_load(expected_type, MemFlagsData::new(), ptr_val)
                 }
                 Rvalue::AtomicExchange(ptr, val, _order) => {
                     lower_atomic_rmw(ptr, val, AtomicRmwOp::Xchg, expected_type, ctx)
@@ -2335,7 +2349,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
 
                     ctx.builder
                         .ins()
-                        .atomic_cas(MemFlags::new(), ptr_val, expected_val, desired_val)
+                        .atomic_cas(MemFlagsData::new(), ptr_val, expected_val, desired_val)
                 }
                 Rvalue::AtomicFetchOp(op, ptr, val, _order) => {
                     let rmw_op = match op {
@@ -2424,27 +2438,27 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                 // Clamp to 48 (max GPR registers)
                 let effective_gp = std::cmp::min(gp_val, 48);
                 let gp_const = ctx.builder.ins().iconst(types::I32, effective_gp as i64);
-                ctx.builder.ins().store(MemFlags::new(), gp_const, ap_addr, 0);
+                ctx.builder.ins().store(MemFlagsData::new(), gp_const, ap_addr, 0);
 
                 // 2. fp_offset = 176 (all FP args are passed in GPRs due to variadic hack)
                 let fp_val = ctx.builder.ins().iconst(types::I32, 176);
-                ctx.builder.ins().store(MemFlags::new(), fp_val, ap_addr, 4);
+                ctx.builder.ins().store(MemFlagsData::new(), fp_val, ap_addr, 4);
 
                 // 3. overflow_arg_area
                 // If gp < 48, overflow starts at 48.
                 // If gp >= 48, overflow starts at gp.
                 let overflow_offset = std::cmp::max(gp_val, 48) as i64;
                 let overflow_ptr = ctx.builder.ins().iadd_imm(spill_addr, overflow_offset);
-                ctx.builder.ins().store(MemFlags::new(), overflow_ptr, ap_addr, 8);
+                ctx.builder.ins().store(MemFlagsData::new(), overflow_ptr, ap_addr, 8);
 
                 // 4. reg_save_area
                 // Points to the start of spill slot where we saved all params
-                ctx.builder.ins().store(MemFlags::new(), spill_addr, ap_addr, 16);
+                ctx.builder.ins().store(MemFlagsData::new(), spill_addr, ap_addr, 16);
             } else {
                 // Fallback (should not happen for variadic functions)
                 let zero = ctx.builder.ins().iconst(types::I64, 0);
-                ctx.builder.ins().store(MemFlags::new(), zero, ap_addr, 8); // overflow
-                ctx.builder.ins().store(MemFlags::new(), zero, ap_addr, 16); // reg_save
+                ctx.builder.ins().store(MemFlagsData::new(), zero, ap_addr, 8); // overflow
+                ctx.builder.ins().store(MemFlagsData::new(), zero, ap_addr, 16); // reg_save
             }
         }
         MirStmt::AtomicStore(ptr, val, _order) => {
@@ -2452,7 +2466,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             let val_type = lower_operand_type(val, ctx.mir, ctx.pointee_to_pointer);
             let val_op = emit_operand(val, ctx, val_type);
 
-            ctx.builder.ins().atomic_store(MemFlags::new(), val_op, ptr_val);
+            ctx.builder.ins().atomic_store(MemFlagsData::new(), val_op, ptr_val);
         }
         MirStmt::BuiltinVaEnd(_place) => {
             // No-op for x86_64
@@ -2515,7 +2529,7 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
                         let mut ret_values = Vec::new();
                         for (i, &t) in types_list.iter().enumerate() {
                             let offset = (i * 8) as i32;
-                            let val = ctx.builder.ins().load(t, MemFlags::new(), addr, offset);
+                            let val = ctx.builder.ins().load(t, MemFlagsData::new(), addr, offset);
                             ret_values.push(val);
                         }
                         ctx.builder.ins().return_(&ret_values);
@@ -2951,7 +2965,7 @@ impl ClifGen {
                                 } else {
                                     // Partial store
                                     let current_val_i64 = if t.is_float() {
-                                        builder.ins().bitcast(types::I64, MemFlags::new(), val)
+                                        builder.ins().bitcast(types::I64, MemFlagsData::new(), val)
                                     } else {
                                         val
                                     };

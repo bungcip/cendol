@@ -208,65 +208,65 @@ fn test_f128_constant_promotion() {
                 v0 = symbol_value.i64 gv0
                 v1 = load.i64 v0
                 v2 = load.i64 v0+8
-                v56 = iconst.i64 15
-                v3 = ushr v2, v56  ; v56 = 15
-                v55 = iconst.i64 1
-                v4 = band v3, v55  ; v55 = 1
-                v54 = iconst.i64 63
-                v5 = ishl v4, v54  ; v54 = 63
-                v53 = iconst.i64 0x7fff
-                v6 = band v2, v53  ; v53 = 0x7fff
-                v52 = iconst.i64 0x7fff
-                v7 = icmp eq v6, v52  ; v52 = 0x7fff
-                v51 = iconst.i64 -15360
-                v8 = iadd v6, v51  ; v51 = -15360
-                v9 = iconst.i64 2047
-                v10 = select v7, v9, v8  ; v9 = 2047
-                v50 = iconst.i64 52
-                v11 = ishl v10, v50  ; v50 = 52
-                v49 = iconst.i64 0x7fff_ffff_ffff_ffff
-                v12 = band v1, v49  ; v49 = 0x7fff_ffff_ffff_ffff
-                v48 = iconst.i64 11
-                v13 = ushr v12, v48  ; v48 = 11
-                v47 = iconst.i64 0x000f_ffff_ffff_ffff
-                v14 = band v13, v47  ; v47 = 0x000f_ffff_ffff_ffff
-                v15 = bor v5, v11
-                v16 = bor v15, v14
-                v17 = bitcast.f64 v16
-                v18 = stack_addr.i64 ss0
-                v19 = iconst.i64 0
-                store v19, v18  ; v19 = 0
-                store v19, v18+8  ; v19 = 0
-                v20 = bitcast.i64 v17
-                v46 = iconst.i64 63
-                v21 = ushr v20, v46  ; v46 = 63
-                v45 = iconst.i64 52
-                v22 = ushr v20, v45  ; v45 = 52
-                v44 = iconst.i64 2047
-                v23 = band v22, v44  ; v44 = 2047
-                v43 = iconst.i64 0x000f_ffff_ffff_ffff
-                v24 = band v20, v43  ; v43 = 0x000f_ffff_ffff_ffff
-                v42 = iconst.i64 2047
-                v25 = icmp eq v23, v42  ; v42 = 2047
+                v3 = iconst.i64 15
+                v4 = ushr v2, v3  ; v3 = 15
+                v5 = iconst.i64 1
+                v6 = band v4, v5  ; v5 = 1
+                v7 = iconst.i64 63
+                v8 = ishl v6, v7  ; v7 = 63
+                v9 = iconst.i64 0x7fff
+                v10 = band v2, v9  ; v9 = 0x7fff
+                v11 = iconst.i64 0x7fff
+                v12 = icmp eq v10, v11  ; v11 = 0x7fff
+                v13 = iconst.i64 -15360
+                v14 = iadd v10, v13  ; v13 = -15360
+                v15 = iconst.i64 2047
+                v16 = select v12, v15, v14  ; v15 = 2047
+                v17 = iconst.i64 52
+                v18 = ishl v16, v17  ; v17 = 52
+                v19 = iconst.i64 0x7fff_ffff_ffff_ffff
+                v20 = band v1, v19  ; v19 = 0x7fff_ffff_ffff_ffff
+                v21 = iconst.i64 11
+                v22 = ushr v20, v21  ; v21 = 11
+                v23 = iconst.i64 0x000f_ffff_ffff_ffff
+                v24 = band v22, v23  ; v23 = 0x000f_ffff_ffff_ffff
+                v25 = bor v8, v18
+                v26 = bor v25, v24
+                v27 = bitcast.f64 v26
+                v28 = stack_addr.i64 ss0
+                v29 = iconst.i64 0
+                store v29, v28  ; v29 = 0
+                store v29, v28+8  ; v29 = 0
+                v30 = bitcast.i64 v27
+                v31 = iconst.i64 63
+                v32 = ushr v30, v31  ; v31 = 63
+                v33 = iconst.i64 52
+                v34 = ushr v30, v33  ; v33 = 52
+                v35 = iconst.i64 2047
+                v36 = band v34, v35  ; v35 = 2047
+                v37 = iconst.i64 0x000f_ffff_ffff_ffff
+                v38 = band v30, v37  ; v37 = 0x000f_ffff_ffff_ffff
+                v39 = iconst.i64 2047
+                v40 = icmp eq v36, v39  ; v39 = 2047
                 v41 = iconst.i64 0x3c00
-                v26 = iadd v23, v41  ; v41 = 0x3c00
-                v27 = iconst.i64 0x7fff
-                v28 = select v25, v27, v26  ; v27 = 0x7fff
-                v40 = iconst.i64 15
-                v29 = ishl v21, v40  ; v40 = 15
-                v30 = bor v29, v28
-                v39 = iconst.i64 11
-                v31 = ishl v24, v39  ; v39 = 11
-                v38 = iconst.i64 0
-                v32 = icmp ne v23, v38  ; v38 = 0
-                v33 = iconst.i64 -9223372036854775808
-                v34 = iconst.i64 0
-                v35 = select v32, v33, v34  ; v33 = -9223372036854775808, v34 = 0
-                v36 = bor v31, v35
-                store v36, v18
-                store v30, v18+8
-                v37 = iconst.i16 0
-                store v37, v18+10  ; v37 = 0
+                v42 = iadd v36, v41  ; v41 = 0x3c00
+                v43 = iconst.i64 0x7fff
+                v44 = select v40, v43, v42  ; v43 = 0x7fff
+                v45 = iconst.i64 15
+                v46 = ishl v32, v45  ; v45 = 15
+                v47 = bor v46, v44
+                v48 = iconst.i64 11
+                v49 = ishl v38, v48  ; v48 = 11
+                v50 = iconst.i64 0
+                v51 = icmp ne v36, v50  ; v50 = 0
+                v52 = iconst.i64 -9223372036854775808
+                v53 = iconst.i64 0
+                v54 = select v51, v52, v53  ; v52 = -9223372036854775808, v53 = 0
+                v55 = bor v49, v54
+                store v55, v28
+                store v47, v28+8
+                v56 = iconst.i16 0
+                store v56, v28+10  ; v56 = 0
                 return
             }
             ");

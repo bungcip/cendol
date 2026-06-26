@@ -281,3 +281,8 @@ Learning: Break statements are rejected outside of loop or switch statements. Th
 
 Learning: Continue statements are rejected outside of loop statements. This is tricky because standalone `if` statements, `switch` statements, or simple function bodies are not valid targets for `continue`. A dedicated test ensures that `SemanticError::ContinueNotInLoop` is correctly thrown in these cases, preventing miscompilation.
 Action: Add `guardian_continue_not_in_loop.rs` to validate this invariant, asserting correct phase (`Mir`), message, and precise line/column spans.
+
+2026-06-26 - [C11 §6.8.4.2: Case and Default not in Switch]
+
+Learning: `case` and `default` statements must be enclosed within a `switch` statement. A dedicated test ensures that `SemanticError::CaseNotInSwitch` is correctly thrown in these cases (like standalone or nested inside an `if` but outside a `switch`), preventing miscompilation. We also fixed a span issue where the diagnostic previously pointed to the inner statement instead of the actual `case` or `default` keyword.
+Action: Add `guardian_case_not_in_switch.rs` to validate this invariant, asserting correct phase (`Mir`), message, and precise line/column spans.

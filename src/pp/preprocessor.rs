@@ -998,7 +998,11 @@ impl<'src> Preprocessor<'src> {
     /// Lex the next token
     pub(super) fn lex_token(&mut self) -> Option<PPToken> {
         let token = self.lex_token_internal()?;
+        // Bolt ⚡: Optimization: added fast-path check !self.poisoned_identifiers.is_empty()
+        // before calling contains. This avoids redundant hashing and set lookups for
+        // identifier tokens in projects that do not use #pragma GCC poison.
         if let PPTokenKind::Identifier(sym) = token.kind
+            && !self.poisoned_identifiers.is_empty()
             && self.poisoned_identifiers.contains(&sym)
         {
             let err = self.error(PPError::PoisonedIdentifier(sym), token.location);

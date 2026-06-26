@@ -782,7 +782,10 @@ impl<'src> Lexer<'src> {
             }
 
             let mut prefix = "";
-            let mut content = String::new();
+            // ⚡ Bolt: Pre-allocate content buffer using the total raw length of all adjacent literals
+            // as an upper bound to avoid multiple reallocations during concatenation.
+            let total_raw_len: usize = string_tokens.iter().map(|t| t.length as usize).sum();
+            let mut content = String::with_capacity(total_raw_len);
             let mut merged_span = span;
 
             for (i, t) in string_tokens.iter().enumerate() {

@@ -782,8 +782,11 @@ impl<'src> Lexer<'src> {
             }
 
             let mut prefix = "";
-            let mut content = String::new();
             let mut merged_span = span;
+
+            // Bolt ⚡: Pre-calculate total capacity to avoid multiple reallocations during concatenation.
+            let total_len = string_tokens.iter().map(|t| t.length as usize).sum();
+            let mut content = String::with_capacity(total_len);
 
             for (i, t) in string_tokens.iter().enumerate() {
                 let text = t.get_text(self.preprocessor.sm);

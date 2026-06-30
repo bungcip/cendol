@@ -286,3 +286,8 @@ Action: Add `guardian_continue_not_in_loop.rs` to validate this invariant, asser
 
 Learning: `case` and `default` statements must be enclosed within a `switch` statement. A dedicated test ensures that `SemanticError::CaseNotInSwitch` is correctly thrown in these cases (like standalone or nested inside an `if` but outside a `switch`), preventing miscompilation. We also fixed a span issue where the diagnostic previously pointed to the inner statement instead of the actual `case` or `default` keyword.
 Action: Add `guardian_case_not_in_switch.rs` to validate this invariant, asserting correct phase (`Mir`), message, and precise line/column spans.
+
+2026-07-01 - [Invalid Storage Class for Function Constraints]
+
+Learning: C11 restricts which storage class specifiers can be used with function declarations. `auto` and `register` are invalid for function declarations in all scopes, `_Thread_local` is not allowed for functions, and block-scope function declarations cannot have `static` linkage. The compiler correctly enforced these during semantic lowering via `SemanticError::InvalidStorageClassForFunction` and `SemanticError::ThreadLocalNotAllowed`, but lacked a dedicated integration test specifically targeting all of these function-specific storage class constraints.
+Action: Add `guardian_invalid_storage_class_for_function.rs` to explicitly validate these rejections, asserting the correct error kind, phase (`SemanticLowering`), and precise span.

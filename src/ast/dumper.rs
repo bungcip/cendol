@@ -306,7 +306,7 @@ impl AstDumper {
             PNK::StaticAssert(cond, msg) => {
                 let message_str = match msg.map(|m| &ast.get_node(m).kind) {
                     Some(PNK::Literal(lit)) => match lit.get_val() {
-                        LitVal::String { value, .. } => value.clone(),
+                        LitVal::String { value, .. } => value,
                         _ => "<invalid>".to_string(),
                     },
                     Some(_) => "<invalid>".to_string(),
@@ -441,7 +441,7 @@ impl AstDumper {
             NodeKind::StaticAssert(cond, msg) => {
                 let message_str = match msg.map(|m| ast.get_kind(m)) {
                     Some(NodeKind::Literal(lit)) => match lit.get_val() {
-                        LitVal::String { value, .. } => value.clone(),
+                        LitVal::String { value, .. } => value,
                         _ => "<not-a-string-literal>".to_string(),
                     },
                     Some(_) => "<invalid>".to_string(),

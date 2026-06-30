@@ -176,3 +176,4 @@ pub mod semantic_cleanup_coverage;
 pub mod semantic_conversions_uncovered;
 pub mod semantic_types_compatible;
 pub mod test_utils;
+pub mod guardian_invalid_storage_class_for_function;

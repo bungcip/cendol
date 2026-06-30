@@ -346,6 +346,22 @@ impl PPLexer {
 
     /// Check if the next character matches, and consume it if it does.
     fn consume_if(&mut self, ch: u8) -> bool {
+        // ⚡ Bolt: Fast-path for common non-splice characters.
+        // This avoids the overhead of peek_char/next_char for simple punctuation.
+        let pos = self.position as usize;
+        if pos < self.buffer.len() {
+            let next = self.buffer[pos];
+            if next == ch && next != b'\\' {
+                self.position += 1;
+                // Operators never contain newlines in practice, but we maintain
+                // at_start_of_line correctly just in case.
+                if next == b'\n' {
+                    self.at_start_of_line = true;
+                }
+                return true;
+            }
+        }
+
         if self.peek_char() == Some(ch) {
             self.next_char();
             true

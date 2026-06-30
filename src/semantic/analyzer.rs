@@ -3021,11 +3021,25 @@ impl<'a> SemanticAnalyzer<'a> {
                 && let Some(ctx) = self.switch_stack.last_mut()
             {
                 let range = CaseRangeInterval { start: s_v, end: e_v };
-                if let Some(existing) = ctx.cases.iter().find(|c| c.overlaps(&range)) {
+
+                // Bolt ⚡: Binary search for overlap and insertion position.
+                // ctx.cases is maintained in sorted order by start value.
+                // partition_point finds the first element whose start is >= range.start.
+                let idx = ctx.cases.partition_point(|c| c.start < range.start);
+
+                // Check overlap with the found element (it's the first one that could overlap from the right)
+                let mut overlapped = ctx.cases.get(idx).filter(|c| c.overlaps(&range));
+
+                // Check overlap with the previous element (it's the only one that could overlap from the left)
+                if overlapped.is_none() && idx > 0 {
+                    overlapped = ctx.cases.get(idx - 1).filter(|c| c.overlaps(&range));
+                }
+
+                if let Some(existing) = overlapped {
                     let duplicate = std::cmp::max(existing.start, range.start);
                     self.report_error(stmt, SemanticError::DuplicateCase { value: duplicate });
                 } else {
-                    ctx.cases.push(range);
+                    ctx.cases.insert(idx, range);
                 }
             }
         }

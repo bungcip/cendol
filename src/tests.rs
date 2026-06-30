@@ -169,6 +169,7 @@ pub mod guardian_case_not_in_switch;
 pub mod guardian_continue_not_in_loop;
 pub mod guardian_pointer_assignment_nested_qualifiers;
 pub mod guardian_switch_multiple_default;
+pub mod parser_struct_pragmas;
 pub mod semantic_binary_conversion;
 pub mod semantic_binary_invalid_operands;
 pub mod semantic_cleanup_coverage;

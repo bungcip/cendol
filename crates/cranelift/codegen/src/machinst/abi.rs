@@ -429,6 +429,16 @@ pub trait ABIMachineSpec {
     /// registers.
     fn gen_args(args: Vec<ArgPair>) -> Self::I;
 
+    /// Generate setup instructions before a call.
+    fn gen_call_setup(
+        _call_conv: isa::CallConv,
+        _sig: &SigData,
+        _vregs: &mut VRegAllocator<Self::I>,
+        _uses: &mut CallArgList,
+    ) -> SmallInstVec<Self::I> {
+        smallvec![]
+    }
+
     /// Generate a "rets" pseudo-instruction that moves vregs to return
     /// registers.
     fn gen_rets(rets: Vec<RetPair>) -> Self::I;
@@ -736,6 +746,9 @@ pub struct SigData {
 
     /// Calling convention used.
     call_conv: isa::CallConv,
+
+    pub is_variadic: bool,
+    pub num_xmm_args: u8,
 }
 
 impl SigData {
@@ -955,6 +968,17 @@ impl SigSet {
         );
 
         let stack_ret_arg = stack_ret_arg.map(|s| u16::try_from(s).unwrap());
+
+        let mut num_xmm_args = 0;
+        for param in &sig.params {
+            if param.value_type.is_float() || param.value_type.is_vector() {
+                num_xmm_args += 1;
+            }
+        }
+        if num_xmm_args > 8 {
+            num_xmm_args = 8;
+        }
+
         Ok(SigData {
             args_end,
             rets_end,
@@ -962,6 +986,8 @@ impl SigSet {
             sized_stack_ret_space,
             stack_ret_arg,
             call_conv: sig.call_conv,
+            is_variadic: sig.is_variadic,
+            num_xmm_args,
         })
     }
 
@@ -1801,6 +1827,7 @@ impl<M: ABIMachineSpec> Callee<M> {
         assert_eq!(args.len(), sigs.num_args(sig));
 
         let call_conv = sigs[sig].call_conv;
+        insts.extend(M::gen_call_setup(call_conv, &sigs[sig], vregs, &mut uses));
         let stack_arg_space = sigs[sig].sized_stack_arg_space;
         let stack_arg = |offset| {
             if is_tail_call {

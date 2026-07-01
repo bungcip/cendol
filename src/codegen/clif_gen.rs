@@ -121,16 +121,11 @@ pub(crate) struct BodyEmitContext<'a, 'b> {
     pub worklist: &'a mut Vec<MirBlockId>,
     pub return_types: Vec<Type>,
     pub return_ptr: Option<Value>,
-    pub va_spill_slot: Option<StackSlot>,
     pub func: &'a MirFunction,
     pub func_id_map: &'a HashMap<MirFunctionId, FuncId>,
     pub data_id_map: &'a HashMap<GlobalId, DataId>,
     pub triple: &'a Triple,
-    pub vararg_count_data: &'a mut Option<DataId>,
-    pub vararg_target_data: &'a mut Option<DataId>,
-    pub vararg_trampoline_func: &'a mut Option<FuncId>,
     pub pointee_to_pointer: &'a HashMap<TypeId, TypeId>,
-    pub use_variadic_hack: bool,
     pub fixed_params_count: usize,
 }
 
@@ -511,7 +506,7 @@ fn lower_abi_param(
     // Only used for external calls (use_variadic_hack=false).
     // Internal calls pad the signature and expand into I64 registers.
     let size = lower_type_size(mir_type, mir);
-    if !split_f128 && (size > 16 || matches!(mir_type, MirType::F80 | MirType::F128)) {
+    if size > 16 || matches!(mir_type, MirType::F80 | MirType::F128) {
         let aligned_size = (size + 7) & !7;
         sig.params.push(AbiParam::special(
             types::I64,
@@ -579,9 +574,7 @@ fn lower_call_signature(
     return_type_id: TypeId,
     param_types: &[TypeId],
     args: &[Operand],
-    is_variadic: bool,
-    use_variadic_hack: bool,
-    padded: bool,
+    _is_variadic: bool,
     ctx: &SignatureLoweringContext,
 ) -> (Signature, bool) {
     let mut sig = Signature::new(call_conv);
@@ -599,7 +592,7 @@ fn lower_call_signature(
             ctx.mir,
             &mut sig,
             &mut actual_param_types,
-            use_variadic_hack,
+            false,
         );
     }
 
@@ -610,14 +603,8 @@ fn lower_call_signature(
             ctx.mir,
             &mut sig,
             &mut actual_param_types,
-            use_variadic_hack,
+            false,
         );
-    }
-
-    if is_variadic && padded {
-        while sig.params.len() < 128 {
-            sig.params.push(AbiParam::new(types::I64));
-        }
     }
 
     (sig, has_hidden_ptr)
@@ -629,7 +616,6 @@ fn emit_call_args(
     fixed_param_count: usize,
     sig: &Signature,
     ctx: &mut BodyEmitContext,
-    split_f128: bool,
     start_sig_idx: usize,
 ) -> Vec<Value> {
     let mut arg_values = Vec::new();
@@ -685,7 +671,7 @@ fn emit_call_args(
 
             // 1. Memory class (large aggregates or long double)
             // For external calls (split_f128=false), use StructArgument (stack).
-            if !split_f128 && (size > 16 || matches!(mir_type, MirType::F80 | MirType::F128)) {
+            if size > 16 || matches!(mir_type, MirType::F80 | MirType::F128) {
                 arg_values.push(struct_addr);
                 sig_idx += 1;
                 continue;
@@ -693,11 +679,7 @@ fn emit_call_args(
 
             // 2. Small aggregates in registers (Standard SysV or Internal hack)
             let num_slots = size.div_ceil(8) as usize;
-            let types_list = if !split_f128 {
-                get_struct_packing(mir_type, ctx.mir)
-            } else {
-                None
-            };
+            let types_list = get_struct_packing(mir_type, ctx.mir);
 
             for slot in 0..num_slots {
                 if sig_idx < sig.params.len() {
@@ -724,14 +706,6 @@ fn emit_call_args(
                     sig_idx += 1;
                 }
             }
-            continue;
-        }
-
-        // C. Handle variadic aggregates for hack (pass by pointer)
-        if mir_type.is_aggregate() && split_f128 {
-            let addr = emit_operand(arg, ctx, types::I64);
-            arg_values.push(addr);
-            sig_idx += 1;
             continue;
         }
 
@@ -790,66 +764,60 @@ fn get_call_result(ctx: &mut BodyEmitContext, call_inst: Inst, return_type_id: T
 
 fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut BodyEmitContext) -> Value {
     // 1. Determine function properties and callee address if indirect/variadic
-    let (return_type_id, param_types, is_variadic, name_linkage, target_addr, use_variadic_hack, visibility) =
-        match call_target {
-            CallTarget::Direct(func_id) => {
-                let func = ctx.mir.get_function(*func_id);
-                let param_types: Vec<TypeId> = func.params.iter().map(|&p| ctx.mir.get_local(p).type_id).collect();
-                let name_linkage = Some((func.name, func.linkage));
-                let use_hack = func.is_variadic
-                    && ctx.triple.architecture == target_lexicon::Architecture::X86_64
-                    && func.linkage != MirLinkage::Import;
-                (
-                    func.return_type,
-                    param_types,
-                    func.is_variadic,
-                    name_linkage,
-                    None,
-                    use_hack,
-                    func.visibility,
-                )
-            }
-            CallTarget::Indirect(func_operand) => {
-                let func_ptr_type_id = lower_operand_type_id(func_operand, ctx.mir, ctx.pointee_to_pointer);
-                let func_ptr_type = ctx.mir.get_type(func_ptr_type_id);
+    let (return_type_id, param_types, is_variadic, name_linkage, target_addr, visibility) = match call_target {
+        CallTarget::Direct(func_id) => {
+            let func = ctx.mir.get_function(*func_id);
+            let param_types: Vec<TypeId> = func.params.iter().map(|&p| ctx.mir.get_local(p).type_id).collect();
+            let name_linkage = Some((func.name, func.linkage));
+            (
+                func.return_type,
+                param_types,
+                func.is_variadic,
+                name_linkage,
+                None,
+                func.visibility,
+            )
+        }
+        CallTarget::Indirect(func_operand) => {
+            let func_ptr_type_id = lower_operand_type_id(func_operand, ctx.mir, ctx.pointee_to_pointer);
+            let func_ptr_type = ctx.mir.get_type(func_ptr_type_id);
 
-                let ((return_type_id, param_types), is_function_type, is_variadic_call) = match func_ptr_type {
-                    MirType::Pointer { pointee } => match ctx.mir.get_type(*pointee) {
-                        MirType::Function {
-                            return_type,
-                            params,
-                            is_variadic,
-                        } => ((*return_type, params.clone()), false, *is_variadic),
-                        _ => panic!("Indirect call operand points to non-function type"),
-                    },
+            let ((return_type_id, param_types), is_function_type, is_variadic_call) = match func_ptr_type {
+                MirType::Pointer { pointee } => match ctx.mir.get_type(*pointee) {
                     MirType::Function {
                         return_type,
                         params,
                         is_variadic,
-                    } => ((*return_type, params.clone()), true, *is_variadic),
-                    _ => panic!("Indirect call operand is not a pointer"),
-                };
+                    } => ((*return_type, params.clone()), false, *is_variadic),
+                    _ => panic!("Indirect call operand points to non-function type"),
+                },
+                MirType::Function {
+                    return_type,
+                    params,
+                    is_variadic,
+                } => ((*return_type, params.clone()), true, *is_variadic),
+                _ => panic!("Indirect call operand is not a pointer"),
+            };
 
-                let callee_val = if is_function_type {
-                    match func_operand {
-                        Operand::Copy(place) => emit_place_addr(place, ctx),
-                        _ => emit_operand(func_operand, ctx, types::I64),
-                    }
-                } else {
-                    emit_operand(func_operand, ctx, types::I64)
-                };
+            let callee_val = if is_function_type {
+                match func_operand {
+                    Operand::Copy(place) => emit_place_addr(place, ctx),
+                    _ => emit_operand(func_operand, ctx, types::I64),
+                }
+            } else {
+                emit_operand(func_operand, ctx, types::I64)
+            };
 
-                (
-                    return_type_id,
-                    param_types,
-                    is_variadic_call,
-                    None,
-                    Some(callee_val),
-                    is_variadic_call && ctx.triple.architecture == target_lexicon::Architecture::X86_64,
-                    ctx.mir.visibility,
-                )
-            }
-        };
+            (
+                return_type_id,
+                param_types,
+                is_variadic_call,
+                None,
+                Some(callee_val),
+                ctx.mir.visibility,
+            )
+        }
+    };
 
     // 2. Prepare call site signature and resolve arguments
     let lower_ctx = SignatureLoweringContext {
@@ -857,16 +825,15 @@ fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut Body
         pointee_to_pointer: ctx.pointee_to_pointer,
     };
 
-    let (sig, has_hidden_ptr) = lower_call_signature(
+    let (mut sig, has_hidden_ptr) = lower_call_signature(
         ctx.builder.func.signature.call_conv,
         return_type_id,
         &param_types,
         args,
         is_variadic,
-        use_variadic_hack,
-        use_variadic_hack, // padded if hack is used
         &lower_ctx,
     );
+    sig.is_variadic = is_variadic;
 
     let mut start_sig_idx = 0;
     let mut arg_values = Vec::new();
@@ -882,24 +849,22 @@ fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut Body
         start_sig_idx = 1;
     }
 
-    let split_f128 = use_variadic_hack;
-    let other_arg_values = emit_call_args(args, param_types.len(), &sig, ctx, split_f128, start_sig_idx);
+    let other_arg_values = emit_call_args(args, param_types.len(), &sig, ctx, start_sig_idx);
     arg_values.extend(other_arg_values);
 
     // 3. Emit the call
     let call_inst = if is_variadic {
         if let Some((name, linkage)) = name_linkage {
             // Variadic direct calls must be indirect to use the custom signature
-            let (canonical_sig, _) = lower_call_signature(
+            let (mut canonical_sig, _) = lower_call_signature(
                 ctx.builder.func.signature.call_conv,
                 return_type_id,
                 &param_types,
                 &[],
                 is_variadic,
-                use_variadic_hack,
-                use_variadic_hack,
                 &lower_ctx,
             );
+            canonical_sig.is_variadic = is_variadic;
             let decl = ctx
                 .module
                 .declare_function(name.as_str(), lower_mir_linkage(linkage, visibility), &canonical_sig)
@@ -908,12 +873,9 @@ fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut Body
             let addr = ctx.builder.ins().func_addr(types::I64, func_ref);
             let sig_ref = ctx.builder.import_signature(sig);
 
-            let addr = emit_al_count_and_pass_addr(args, &param_types, addr, use_variadic_hack, ctx);
-
             ctx.builder.ins().call_indirect(sig_ref, addr, &arg_values)
         } else if let Some(addr) = target_addr {
             let sig_ref = ctx.builder.import_signature(sig);
-            let addr = emit_al_count_and_pass_addr(args, &param_types, addr, use_variadic_hack, ctx);
             ctx.builder.ins().call_indirect(sig_ref, addr, &arg_values)
         } else {
             panic!("Variadic call without target");
@@ -935,76 +897,7 @@ fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut Body
     get_call_result(ctx, call_inst, return_type_id)
 }
 
-/// Helper function to convert boolean to integer (0 or 1)
-fn emit_al_count_and_pass_addr(
-    args: &[Operand],
-    param_types: &[TypeId],
-    addr: Value,
-    use_variadic_hack: bool,
-    ctx: &mut BodyEmitContext,
-) -> Value {
-    if ctx.triple.architecture == target_lexicon::Architecture::X86_64
-        && ctx.builder.func.signature.call_conv == cranelift::codegen::isa::CallConv::SystemV
-    {
-        let mut fp_arg_count = 0;
-        if !use_variadic_hack {
-            for (i, arg) in args.iter().enumerate() {
-                if i >= param_types.len() {
-                    let arg_mir_type = ctx
-                        .mir
-                        .get_type(lower_operand_type_id(arg, ctx.mir, ctx.pointee_to_pointer));
-                    if matches!(arg_mir_type, MirType::F32 | MirType::F64) {
-                        fp_arg_count += 1;
-                    }
-                }
-            }
-        }
-
-        let fp_arg_count = fp_arg_count.min(8);
-
-        if ctx.vararg_count_data.is_none() {
-            *ctx.vararg_count_data = Some(
-                ctx.module
-                    .declare_data("__cendol_vararg_al_count", Linkage::Import, true, false)
-                    .unwrap(),
-            );
-            *ctx.vararg_target_data = Some(
-                ctx.module
-                    .declare_data("__cendol_vararg_target_addr", Linkage::Import, true, false)
-                    .unwrap(),
-            );
-            let dummy_sig = Signature::new(cranelift::codegen::isa::CallConv::SystemV);
-            *ctx.vararg_trampoline_func = Some(
-                ctx.module
-                    .declare_function("__cendol_vararg_trampoline", Linkage::Import, &dummy_sig)
-                    .unwrap(),
-            );
-        }
-
-        let count_data_id = ctx.vararg_count_data.unwrap();
-        let target_data_id = ctx.vararg_target_data.unwrap();
-        let tramp_func_id = ctx.vararg_trampoline_func.unwrap();
-
-        let count_global = ctx.module.declare_data_in_func(count_data_id, ctx.builder.func);
-        let count_addr = ctx.builder.ins().global_value(types::I64, count_global);
-        let count_val = ctx.builder.ins().iconst(types::I64, fp_arg_count as i64);
-        ctx.builder
-            .ins()
-            .store(MemFlagsData::trusted(), count_val, count_addr, 0);
-
-        let target_global = ctx.module.declare_data_in_func(target_data_id, ctx.builder.func);
-        let target_addr_val = ctx.builder.ins().global_value(types::I64, target_global);
-        ctx.builder
-            .ins()
-            .store(MemFlagsData::trusted(), addr, target_addr_val, 0);
-
-        let tramp_func_ref = ctx.module.declare_func_in_func(tramp_func_id, ctx.builder.func);
-        ctx.builder.ins().func_addr(types::I64, tramp_func_ref)
-    } else {
-        addr
-    }
-}
-
+//
 fn emit_bool_to_int(val: Value, target_type: Type, builder: &mut FunctionBuilder) -> Value {
     let one = builder.ins().iconst(target_type, 1);
     let zero = builder.ins().iconst(target_type, 0i64);
@@ -1600,7 +1493,7 @@ fn lower_place_type_id(place: &Place, mir: &MirProgram, pointee_to_pointer: &Has
     }
 }
 
-/// Helper function to resolve a MIR place to a memory address
+/// Helper function to resolve a MIR place to a Cranelift memory address
 fn emit_place_addr(place: &Place, ctx: &mut BodyEmitContext) -> Value {
     match place {
         Place::Local(local_id) => {
@@ -2230,11 +2123,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     let mir_type = ctx.mir.get_type(*type_id);
                     let cl_type = lower_type(mir_type).unwrap_or(types::I64);
                     let va_arg_type_size = lower_type_size(mir_type, ctx.mir);
-                    let align = if ctx.use_variadic_hack {
-                        8
-                    } else {
-                        lower_type_alignment(mir_type, ctx.mir)
-                    };
+                    let align = lower_type_alignment(mir_type, ctx.mir);
 
                     // GP arg check: if gp_offset < 48, fetch from reg_save_area + gp_offset
                     //               else fetch from overflow_arg_area
@@ -2249,10 +2138,8 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     // Check if the type can EVER be in the GP area (SysV rules)
                     // Memory class (large aggregates or long double) - MUST match lower_abi_param
                     // For internal hack, everything is in I64 slots (which we treat as GP area here)
-                    let is_memory_class = !ctx.use_variadic_hack
-                        && (va_arg_type_size > 16 || matches!(mir_type, MirType::F80 | MirType::F128));
-                    let can_be_in_gp = ctx.use_variadic_hack
-                        || (!is_memory_class && (!mir_type.is_aggregate() || va_arg_type_size <= 16));
+                    let is_memory_class = va_arg_type_size > 16 || matches!(mir_type, MirType::F80 | MirType::F128);
+                    let can_be_in_gp = !is_memory_class && (!mir_type.is_aggregate() || va_arg_type_size <= 16);
                     let is_fp = matches!(mir_type, MirType::F32 | MirType::F64);
 
                     if can_be_in_gp && !is_fp {
@@ -2461,40 +2348,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
 
         MirStmt::BuiltinVaStart(place, _operand) => {
             let ap_addr = emit_place_addr(place, ctx);
-
-            if let Some(spill_slot) = ctx.va_spill_slot {
-                let spill_addr = ctx.builder.ins().stack_addr(types::I64, spill_slot, 0);
-
-                // 1. gp_offset
-                // Calculate how many bytes are consumed by fixed parameters
-                let fixed_count = ctx.fixed_params_count;
-                let gp_val = fixed_count * 8;
-
-                // Clamp to 48 (max GPR registers)
-                let effective_gp = std::cmp::min(gp_val, 48);
-                let gp_const = ctx.builder.ins().iconst(types::I32, effective_gp as i64);
-                ctx.builder.ins().store(MemFlagsData::new(), gp_const, ap_addr, 0);
-
-                // 2. fp_offset = 176 (all FP args are passed in GPRs due to variadic hack)
-                let fp_val = ctx.builder.ins().iconst(types::I32, 176);
-                ctx.builder.ins().store(MemFlagsData::new(), fp_val, ap_addr, 4);
-
-                // 3. overflow_arg_area
-                // If gp < 48, overflow starts at 48.
-                // If gp >= 48, overflow starts at gp.
-                let overflow_offset = std::cmp::max(gp_val, 48) as i64;
-                let overflow_ptr = ctx.builder.ins().iadd_imm(spill_addr, overflow_offset);
-                ctx.builder.ins().store(MemFlagsData::new(), overflow_ptr, ap_addr, 8);
-
-                // 4. reg_save_area
-                // Points to the start of spill slot where we saved all params
-                ctx.builder.ins().store(MemFlagsData::new(), spill_addr, ap_addr, 16);
-            } else {
-                // Fallback (should not happen for variadic functions)
-                let zero = ctx.builder.ins().iconst(types::I64, 0);
-                ctx.builder.ins().store(MemFlagsData::new(), zero, ap_addr, 8); // overflow
-                ctx.builder.ins().store(MemFlagsData::new(), zero, ap_addr, 16); // reg_save
-            }
+            ctx.builder.ins().v_a_start(ap_addr);
         }
         MirStmt::AtomicStore(ptr, val, _order) => {
             let ptr_val = emit_operand(ptr, ctx, types::I64);
@@ -2712,14 +2566,10 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
     }
 }
 
-fn lower_function_signature(
-    func: &MirFunction,
-    mir: &MirProgram,
-    sig: &mut Signature,
-    use_variadic_hack: bool,
-) -> (Vec<Type>, Vec<Type>, bool) {
+fn lower_function_signature(func: &MirFunction, mir: &MirProgram, sig: &mut Signature) -> (Vec<Type>, Vec<Type>, bool) {
     sig.params.clear();
     sig.returns.clear();
+    sig.is_variadic = func.is_variadic;
 
     let mut return_types = Vec::new();
     let has_hidden_return_ptr = lower_abi_return(mir.get_type(func.return_type), mir, sig, &mut return_types);
@@ -2731,19 +2581,7 @@ fn lower_function_signature(
 
     for &param_id in &func.params {
         let param_local = mir.get_local(param_id);
-        lower_abi_param(
-            mir.get_type(param_local.type_id),
-            mir,
-            sig,
-            &mut param_types,
-            use_variadic_hack,
-        );
-    }
-
-    if func.is_variadic && use_variadic_hack {
-        while sig.params.len() < 128 {
-            sig.params.push(AbiParam::new(types::I64));
-        }
+        lower_abi_param(mir.get_type(param_local.type_id), mir, sig, &mut param_types, false);
     }
 
     (param_types, return_types, has_hidden_return_ptr)
@@ -2824,9 +2662,6 @@ pub struct ClifGen {
     pub(crate) data_id_map: HashMap<GlobalId, DataId>,
     pub(crate) pointee_to_pointer: HashMap<TypeId, TypeId>,
 
-    // Variadic spill area for the current function
-    va_spill_slot: Option<StackSlot>,
-
     triple: Triple,
     vararg_count_data: Option<DataId>,
     vararg_target_data: Option<DataId>,
@@ -2869,7 +2704,6 @@ impl ClifGen {
             emit_kind: EmitKind::Object,
             func_id_map: HashMap::new(),
             data_id_map: HashMap::new(),
-            va_spill_slot: None,
             triple,
             vararg_count_data: None,
             vararg_target_data: None,
@@ -2922,10 +2756,7 @@ impl ClifGen {
 
             // Calculate signature for declaration
             let mut sig = self.module.make_signature();
-            let use_hack = func.is_variadic
-                && self.triple.architecture == target_lexicon::Architecture::X86_64
-                && func.linkage != MirLinkage::Import;
-            let (..) = lower_function_signature(func, &self.mir, &mut sig, use_hack);
+            let (..) = lower_function_signature(func, &self.mir, &mut sig);
 
             let clif_func_id = self
                 .module
@@ -3024,12 +2855,8 @@ impl ClifGen {
         // Create a fresh context for this function
         let mut func_ctx = self.module.make_context();
 
-        let (param_types, return_types, has_hidden_ptr) = lower_function_signature(
-            func,
-            &self.mir,
-            &mut func_ctx.func.signature,
-            func.is_variadic && self.triple.architecture == target_lexicon::Architecture::X86_64,
-        );
+        let (param_types, return_types, has_hidden_ptr) =
+            lower_function_signature(func, &self.mir, &mut func_ctx.func.signature);
 
         // Create a function builder with the fresh context
         let mut builder = FunctionBuilder::new(&mut func_ctx.func, &mut self.builder_context);
@@ -3044,8 +2871,6 @@ impl ClifGen {
         }
 
         // PHASE 2️⃣ — Lower block content (without sealing)
-        let mut va_spill_slot = None;
-
         // Use worklist algorithm for proper traversal
         let mut worklist = vec![func.entry_block.expect("Defined function must have entry block")];
         let mut visited = HashSet::new();
@@ -3066,17 +2891,6 @@ impl ClifGen {
                     builder.append_block_param(*clif_block, param_type);
                 }
 
-                // Step 2: Add variadic block parameters if needed (still before any instructions)
-                if func.is_variadic {
-                    let total_variadic_slots = 128; // Must match lower_function_signature
-                    if param_types.len() < total_variadic_slots {
-                        let extra_count = total_variadic_slots - param_types.len();
-                        for _ in 0..extra_count {
-                            builder.append_block_param(*clif_block, types::I64);
-                        }
-                    }
-                }
-
                 // Step 3: NOW emit instructions - store fixed params to stack slots
                 let param_values: Vec<Value> = builder.block_params(*clif_block).to_vec();
                 let mut param_iter = param_values.iter().copied();
@@ -3090,14 +2904,8 @@ impl ClifGen {
                     let local = self.mir.get_local(param_id);
                     let mir_type = self.mir.get_type(local.type_id);
 
-                    // Check for struct packing or variadic hack splitting
-                    let use_hack = func.is_variadic && self.triple.architecture == target_lexicon::Architecture::X86_64;
-                    if let Some(types_list) = get_struct_packing(mir_type, &self.mir).or_else(|| {
-                        (use_hack && mir_type.is_aggregate()).then(|| {
-                            let size = lower_type_size(mir_type, &self.mir);
-                            vec![types::I64; size.div_ceil(8) as usize]
-                        })
-                    }) {
+                    // Check for struct packing
+                    if let Some(types_list) = get_struct_packing(mir_type, &self.mir) {
                         if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
                             let size = lower_type_size(mir_type, &self.mir);
                             for (i, &t) in types_list.iter().enumerate() {
@@ -3127,18 +2935,6 @@ impl ClifGen {
                         continue;
                     }
 
-                    if use_hack && matches!(mir_type, MirType::F80 | MirType::F128) {
-                        // Consumes 2 slots
-                        let lo = param_iter.next().unwrap();
-                        let hi = param_iter.next().unwrap();
-
-                        if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
-                            builder.ins().stack_store(lo, *stack_slot, 0);
-                            builder.ins().stack_store(hi, *stack_slot, 8);
-                        }
-                        continue;
-                    }
-
                     let param_value = param_iter.next().unwrap();
                     if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
                         if mir_type.is_aggregate() {
@@ -3150,26 +2946,6 @@ impl ClifGen {
                             builder.ins().stack_store(param_value, *stack_slot, 0);
                         }
                     }
-                }
-
-                // Step 4: Handle variadic spill area - save all 32 slots
-                if func.is_variadic {
-                    let total_slots = 128;
-                    let spill_size = total_slots * 8; // 256 bytes for 32 I64 slots
-                    let spill_slot = builder.create_sized_stack_slot(StackSlotData::new(
-                        StackSlotKind::ExplicitSlot,
-                        spill_size as u32,
-                        4, // 16-byte aligned (2^4)
-                    ));
-                    let all_param_values = builder.block_params(*clif_block).to_vec();
-                    for (i, val) in all_param_values
-                        .iter()
-                        .enumerate()
-                        .take(total_slots.min(all_param_values.len()))
-                    {
-                        builder.ins().stack_store(*val, spill_slot, (i * 8) as i32);
-                    }
-                    va_spill_slot = Some(spill_slot);
                 }
             }
 
@@ -3197,7 +2973,6 @@ impl ClifGen {
                 mir: &self.mir,
                 stack_slots: &self.clif_stack_slots,
                 module: &mut self.module,
-                va_spill_slot,
                 func,
                 clif_blocks: &clif_blocks,
                 worklist: &mut worklist,
@@ -3206,11 +2981,7 @@ impl ClifGen {
                 func_id_map: &self.func_id_map,
                 data_id_map: &self.data_id_map,
                 triple: &self.triple,
-                vararg_count_data: &mut self.vararg_count_data,
-                vararg_target_data: &mut self.vararg_target_data,
-                vararg_trampoline_func: &mut self.vararg_trampoline_func,
                 pointee_to_pointer: &self.pointee_to_pointer,
-                use_variadic_hack: func.is_variadic && self.triple.architecture == target_lexicon::Architecture::X86_64,
                 fixed_params_count: param_types.len(),
             };
 
@@ -3223,8 +2994,6 @@ impl ClifGen {
             // SECTION 2: Process terminator (control flow)
             // ========================================================================
             visit_terminator(&mir_block.terminator, &mut ctx);
-
-            va_spill_slot = ctx.va_spill_slot;
         }
 
         // PHASE 3️⃣ — Seal blocks with correct order
@@ -3235,7 +3004,6 @@ impl ClifGen {
 
         // Finalize the function
         builder.finalize();
-        self.va_spill_slot = va_spill_slot;
 
         finalize_function_processing(
             func,

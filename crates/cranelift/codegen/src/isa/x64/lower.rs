@@ -349,6 +349,83 @@ impl LowerBackend for X64Backend {
             });
             return Some(smallvec![]);
         }
+        if ctx.dfg().insts[ir_inst].opcode() == crate::ir::Opcode::VAStart {
+            let arg = match ctx.dfg().insts[ir_inst] {
+                crate::ir::InstructionData::Unary { arg, .. } => arg,
+                _ => unreachable!(),
+            };
+            let ptr = ctx.put_value_in_regs(arg).only_reg().unwrap();
+
+            let sig = ctx.abi().signature();
+            let mut num_fixed_gpr: u32 = 0;
+            let mut num_fixed_xmm: u32 = 0;
+            for param in &sig.params {
+                if param.value_type.is_float() || param.value_type.is_vector() {
+                    num_fixed_xmm += 1;
+                } else {
+                    num_fixed_gpr += 1;
+                }
+            }
+            if num_fixed_gpr > 6 {
+                num_fixed_gpr = 6;
+            }
+            if num_fixed_xmm > 8 {
+                num_fixed_xmm = 8;
+            }
+
+            let gp_offset = num_fixed_gpr * 8;
+            let fp_offset = 48 + num_fixed_xmm * 16;
+
+            let tmp = ctx.alloc_tmp(crate::ir::types::I32).only_reg().unwrap();
+            ctx.emit(Inst::imm(OperandSize::Size32, u64::from(gp_offset), tmp));
+            ctx.emit(Inst::store(
+                crate::ir::types::I32,
+                tmp.to_reg(),
+                Amode::imm_reg(0, ptr),
+            ));
+
+            let tmp2 = ctx.alloc_tmp(crate::ir::types::I32).only_reg().unwrap();
+            ctx.emit(Inst::imm(OperandSize::Size32, u64::from(fp_offset), tmp2));
+            ctx.emit(Inst::store(
+                crate::ir::types::I32,
+                tmp2.to_reg(),
+                Amode::imm_reg(4, ptr),
+            ));
+
+            let overflow_tmp = ctx.alloc_tmp(crate::ir::types::I64).only_reg().unwrap();
+            let overflow_tmp_gpr =
+                crate::isa::x64::inst::args::WritableGpr::from_writable_reg(overflow_tmp).unwrap();
+            ctx.emit(Inst::External {
+                inst: cranelift_assembler_x64::inst::leaq_rm::new(
+                    overflow_tmp_gpr,
+                    Amode::imm_reg(16, regs::rbp()),
+                )
+                .into(),
+            });
+            ctx.emit(Inst::store(
+                crate::ir::types::I64,
+                overflow_tmp.to_reg(),
+                Amode::imm_reg(8, ptr),
+            ));
+
+            let reg_save_tmp = ctx.alloc_tmp(crate::ir::types::I64).only_reg().unwrap();
+            let reg_save_tmp_gpr =
+                crate::isa::x64::inst::args::WritableGpr::from_writable_reg(reg_save_tmp).unwrap();
+            ctx.emit(Inst::External {
+                inst: cranelift_assembler_x64::inst::leaq_rm::new(
+                    reg_save_tmp_gpr,
+                    Amode::imm_reg(-176, regs::rbp()),
+                )
+                .into(),
+            });
+            ctx.emit(Inst::store(
+                crate::ir::types::I64,
+                reg_save_tmp.to_reg(),
+                Amode::imm_reg(16, ptr),
+            ));
+
+            return Some(smallvec::smallvec![]);
+        }
         isle::lower(ctx, self, ir_inst)
     }
 

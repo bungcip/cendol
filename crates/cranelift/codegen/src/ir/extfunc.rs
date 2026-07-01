@@ -32,6 +32,9 @@ pub struct Signature {
 
     /// Calling convention.
     pub call_conv: CallConv,
+
+    /// Whether this function is variadic (takes a variable number of arguments).
+    pub is_variadic: bool,
 }
 
 impl Signature {
@@ -41,6 +44,7 @@ impl Signature {
             params: Vec::new(),
             returns: Vec::new(),
             call_conv,
+            is_variadic: false,
         }
     }
 
@@ -49,6 +53,7 @@ impl Signature {
         self.params.clear();
         self.returns.clear();
         self.call_conv = call_conv;
+        self.is_variadic = false;
     }
 
     /// Find the index of a presumed unique special-purpose parameter.

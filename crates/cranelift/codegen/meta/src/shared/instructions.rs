@@ -3674,4 +3674,18 @@ pub(crate) fn define(
         .can_load()
         .can_store(),
     );
+    ig.push(
+        Inst::new(
+            "v_a_start",
+            r#"
+            Initialize the `va_list` structure at the given address.
+            "#,
+            &formats.unary,
+        )
+        .operands_in(vec![
+            Operand::new("va_list_addr", iAddr).with_doc("Address of the `va_list` structure"),
+        ])
+        .other_side_effects()
+        .can_store(),
+    );
 }

@@ -455,6 +455,31 @@ impl ABIMachineSpec for X64ABIMachineSpec {
         }
     }
 
+    fn gen_call_setup(
+        call_conv: isa::CallConv,
+        sig: &SigData,
+        vregs: &mut VRegAllocator<Self::I>,
+        uses: &mut CallArgList,
+    ) -> SmallInstVec<Self::I> {
+        let mut insts = SmallVec::new();
+        if sig.is_variadic && call_conv == CallConv::SystemV {
+            let tmp = vregs
+                .alloc_with_deferred_error(types::I64)
+                .only_reg()
+                .unwrap();
+            insts.push(Inst::imm(
+                OperandSize::Size64,
+                sig.num_xmm_args as u64,
+                Writable::from_reg(tmp),
+            ));
+            uses.push(CallArgPair {
+                vreg: tmp,
+                preg: regs::rax().into(),
+            });
+        }
+        insts
+    }
+
     fn gen_args(args: Vec<ArgPair>) -> Inst {
         Inst::Args { args }
     }
@@ -555,7 +580,7 @@ impl ABIMachineSpec for X64ABIMachineSpec {
         if flags.unwind_info() {
             insts.push(Inst::Unwind {
                 inst: UnwindInst::PushFrameRegs {
-                    offset_upward_to_caller_sp: frame_layout.setup_area_size,
+                    offset_upward_to_caller_sp: 16,
                 },
             });
         }
@@ -565,6 +590,59 @@ impl ABIMachineSpec for X64ABIMachineSpec {
         insts.push(Inst::External {
             inst: asm::inst::movq_mr::new(w_rbp, r_rsp).into(),
         });
+
+        if _call_conv == CallConv::SystemV && frame_layout.setup_area_size == 192 {
+            insts.push(Inst::subq_mi(Writable::from_reg(regs::rsp()), 176));
+            insts.push(Inst::store(
+                I64,
+                regs::rdi(),
+                Amode::imm_reg(-176, regs::rbp()),
+            ));
+            insts.push(Inst::store(
+                I64,
+                regs::rsi(),
+                Amode::imm_reg(-168, regs::rbp()),
+            ));
+            insts.push(Inst::store(
+                I64,
+                regs::rdx(),
+                Amode::imm_reg(-160, regs::rbp()),
+            ));
+            insts.push(Inst::store(
+                I64,
+                regs::rcx(),
+                Amode::imm_reg(-152, regs::rbp()),
+            ));
+            insts.push(Inst::store(
+                I64,
+                regs::r8(),
+                Amode::imm_reg(-144, regs::rbp()),
+            ));
+            insts.push(Inst::store(
+                I64,
+                regs::r9(),
+                Amode::imm_reg(-136, regs::rbp()),
+            ));
+
+            for i in 0..8 {
+                let xmm = match i {
+                    0 => regs::xmm0(),
+                    1 => regs::xmm1(),
+                    2 => regs::xmm2(),
+                    3 => regs::xmm3(),
+                    4 => regs::xmm4(),
+                    5 => regs::xmm5(),
+                    6 => regs::xmm6(),
+                    7 => regs::xmm7(),
+                    _ => unreachable!(),
+                };
+                insts.push(Inst::store(
+                    types::I8X16,
+                    xmm,
+                    Amode::imm_reg(-128 + i * 16, regs::rbp()),
+                ));
+            }
+        }
 
         insts
     }
@@ -952,7 +1030,10 @@ impl ABIMachineSpec for X64ABIMachineSpec {
         let clobber_size = compute_clobber_size(&regs);
 
         // Compute setup area size.
-        let setup_area_size = 16; // RBP, return address
+        let mut setup_area_size = 16; // RBP, return address
+        if call_conv == CallConv::SystemV && _sig.is_variadic {
+            setup_area_size += 176;
+        }
 
         // Return FrameLayout structure.
         FrameLayout {

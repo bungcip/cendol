@@ -397,3 +397,13 @@ cargo bench --bench compiler_benches
 3.  **Statistical Stability**: If results are noisy, increase the `sample_size` in `benches/compiler_benches.rs` (default is 30 for SQLite).
 4.  **Baseline Comparison**: Criterion automatically compares results against the last run. "Performance has improved/regressed" messages indicate statistical significance.
 5.  **Direct Execution**: Use `run_pipeline()` instead of `run()` in new benchmarks to avoid CLI/IO overhead.
+
+## Cranelift Fork Conventions
+
+Since Cendol maintains a fork of Cranelift (`crates/cranelift`), adhere to the following when modifying it:
+
+1. **Register Allocation Constraints**: 
+   - **Never** emit instructions that define or write directly to an allocatable physical register (e.g., `%rax`) before register allocation (such as in ABI lowering `gen_call_setup`). Doing so will cause `regalloc2` to panic. 
+   - **Instead**: Load the value into a Virtual Register (`VReg`) using the `VRegAllocator`. To constrain the value to a physical register for a function call, add it to the `uses` array (e.g., passing a `CallArgPair { vreg, preg: regs::rax().into() }`).
+2. **Formatting**: 
+   - Upstream Cranelift formatting must be preserved. Avoid running `cargo fmt` on `crates/cranelift` using Cendol's root `rustfmt.toml`. Ensure that any `rustfmt.toml` configuration inside `crates/cranelift` exactly mirrors upstream to prevent excessive diffs.

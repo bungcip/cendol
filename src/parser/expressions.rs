@@ -214,6 +214,13 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
         | TokenKind::Real
         | TokenKind::Imag => parse_unary_operator(parser, token),
 
+        TokenKind::LogicAnd => {
+            parser.advance();
+            let (label, _) = parser.expect_name()?;
+            let span = SourceSpan::new(token.span.start(), parser.previous_token_span().end());
+            Ok(parser.push_node(ParsedNodeKind::LabelAddr(label), span))
+        }
+
         TokenKind::Generic => parse_generic_selection(parser),
         TokenKind::Alignof => parse_alignof(parser),
         TokenKind::Sizeof => parse_sizeof(parser),

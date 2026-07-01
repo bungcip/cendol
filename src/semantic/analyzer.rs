@@ -2413,6 +2413,21 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
                 }
             }
+            BuiltinFunctionKind::AddOverflow | BuiltinFunctionKind::SubOverflow | BuiltinFunctionKind::MulOverflow => {
+                if i == 0 || i == 1 {
+                    if !arg_qt.is_integer() {
+                        self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: arg_qt });
+                    }
+                } else if i == 2 {
+                    if let Some(pointee) = self.registry.get_pointee(arg_qt.ty()) {
+                        if !pointee.is_integer() {
+                            self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: pointee });
+                        }
+                    } else {
+                        self.report_error(arg_node, SemanticError::IndirectionRequiresPointer { ty: arg_qt });
+                    }
+                }
+            }
             _ => {
                 if let Some(op) = kind.to_atomic_op() {
                     self.validate_atomic_arg(op, i, arg_node, arg_qt, atomic_pointee);
@@ -2872,9 +2887,21 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 None
             }
-            NodeKind::AsmStmt(expr) => {
-                self.report_warning(node, SemanticError::InlineAsmIgnored);
-                self.visit_node(*expr);
+            NodeKind::AsmStmt(data) => {
+                for op_node in data.output_start.range(data.output_len) {
+                    if let NodeKind::AsmConstraint(c) = self.ast.get_kind(op_node) {
+                        self.visit_node(c.expr);
+                        if !self.is_lvalue(c.expr) {
+                            self.report_error(c.expr, SemanticError::NotAnLvalue);
+                        }
+                    }
+                }
+                for op_node in data.input_start.range(data.input_len) {
+                    if let NodeKind::AsmConstraint(c) = self.ast.get_kind(op_node) {
+                        self.visit_node(c.expr);
+                        self.apply_lvalue_conversion(c.expr);
+                    }
+                }
                 None
             }
             NodeKind::StaticAssert(_expr, _msg) => {
@@ -2895,6 +2922,16 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::Goto(_, _) => {
                 self.goto_vla_state.push((node, self.active_vlas.clone()));
+                None
+            }
+            NodeKind::ComputedGoto(expr) => {
+                self.goto_vla_state.push((node, self.active_vlas.clone()));
+                let ty = self.visit_node(*expr);
+                if let Some(t) = ty {
+                    if !t.is_pointer() {
+                        self.report_error(node, SemanticError::ExpectedPointerType { found: t });
+                    }
+                }
                 None
             }
             NodeKind::Label(_, stmt, sym) => {
@@ -3137,6 +3174,7 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
                 self.visit_builtin_choose_expr(*cond, *true_expr, *false_expr, node)
             }
+            NodeKind::LabelAddr(_, _) => Some(QualType::unqualified(self.registry.type_void_ptr)),
             _ => None,
         }
     }

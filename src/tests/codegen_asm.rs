@@ -1,7 +1,5 @@
 use crate::driver::artifact::CompilePhase;
 use crate::tests::codegen_common::run_c_code_with_output;
-use crate::tests::test_utils::run_pass_with_diagnostic_message;
-
 #[test]
 fn test_asm_ignored() {
     let output = run_c_code_with_output(
@@ -27,14 +25,13 @@ fn test_asm_ignored() {
 }
 
 #[test]
-fn test_asm_warning() {
-    run_pass_with_diagnostic_message(
+fn test_asm_supported() {
+    crate::tests::test_utils::run_pass(
         r#"
         void fn(void) {
-          asm("fninit");
+          asm("nop");
         }
         "#,
         CompilePhase::Mir,
-        "inline assembly is currently ignored by cendol",
     );
 }

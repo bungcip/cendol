@@ -274,6 +274,14 @@ impl<'a> MirValidator<'a> {
                 self.validate_operand(ptr);
                 self.validate_operand(val);
             }
+            MirStmt::InlineAsm { outputs, inputs, .. } => {
+                for (_, place) in outputs {
+                    self.validate_place(place);
+                }
+                for (_, operand) in inputs {
+                    self.validate_operand(operand);
+                }
+            }
             MirStmt::BuiltinPrefetch { addr, .. } => {
                 self.validate_operand(addr);
             }
@@ -301,6 +309,7 @@ impl<'a> MirValidator<'a> {
                     | BinaryFloatOp::Gt
                     | BinaryFloatOp::Ge
             ),
+            Rvalue::BuiltinOverflow(..) => true,
             _ => false,
         };
 
@@ -583,6 +592,18 @@ impl<'a> MirValidator<'a> {
                 self.validate_operand(val);
                 None
             }
+            Rvalue::BuiltinOverflow(_, lhs, rhs, res_ptr, _) => {
+                self.validate_operand(lhs);
+                self.validate_operand(rhs);
+                self.validate_operand(res_ptr);
+                None
+            }
+            Rvalue::LabelAddr(bid) => {
+                if self.mir.blocks.get(bid.index()).is_none() {
+                    self.errors.push(ValidationError::BlockNotFound(*bid));
+                }
+                None
+            }
         }
     }
 
@@ -608,6 +629,9 @@ impl<'a> MirValidator<'a> {
                 if self.mir.blocks.get(bid.index()).is_none() {
                     self.errors.push(ValidationError::BlockNotFound(*bid));
                 }
+            }
+            Terminator::GotoIndirect(op) => {
+                self.validate_operand(op);
             }
             Terminator::If(cond, then_bb, else_bb) => {
                 self.validate_operand(cond);

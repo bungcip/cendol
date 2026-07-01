@@ -1030,11 +1030,7 @@ impl<'src> Preprocessor<'src> {
                         let text = token.get_text(self.sm);
                         if text.contains('$') {
                             let err = self.error(PPError::DollarInIdentifier, token.location);
-                            if self.pedantic_errors {
-                                self.report_pp_error(err);
-                            } else {
-                                self.report_pp_warning(err);
-                            }
+                            self.report_pp_warning(err);
                         }
                     }
                     return Some(token);

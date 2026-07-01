@@ -297,7 +297,7 @@ impl AstDumper {
             PNK::Goto(label) => write!(f, "{}", label)?,
             PNK::Label(label, stmt) => write!(f, "{}, {}", label, stmt.get())?,
             PNK::ExpressionStmt(expr) => optional(f, *expr, "empty")?,
-            PNK::AsmStmt(expr) => write!(f, "{}", expr.get())?,
+            PNK::AsmStmt(_) => write!(f, "asm")?,
 
             PNK::EnumConstant(name, val) => {
                 write!(f, "{}, ", name)?;
@@ -426,7 +426,7 @@ impl AstDumper {
             NodeKind::Goto(label, _) => write!(f, "{}", label)?,
             NodeKind::Label(label, stmt, _) => write!(f, "{}, {}", label, stmt.raw())?,
             NodeKind::ExpressionStmt(expr) => optional(f, *expr, "none")?,
-            NodeKind::AsmStmt(expr) => write!(f, "{}", expr.raw())?,
+            NodeKind::AsmStmt(_) => write!(f, "asm")?,
 
             NodeKind::FunctionDef(data) => {
                 write!(f, "name=")?;

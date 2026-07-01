@@ -91,6 +91,9 @@ pub enum BuiltinFunctionKind {
     SignbitL,
     FrameAddress,
     Pause,
+    AddOverflow,
+    SubOverflow,
+    MulOverflow,
 }
 
 impl BuiltinFunctionKind {
@@ -153,6 +156,9 @@ impl BuiltinFunctionKind {
             Self::SignbitL => "__builtin_signbitl",
             Self::FrameAddress => "__builtin_frame_address",
             Self::Pause => "__builtin_ia32_pause",
+            Self::AddOverflow => "__builtin_add_overflow",
+            Self::SubOverflow => "__builtin_sub_overflow",
+            Self::MulOverflow => "__builtin_mul_overflow",
         }
     }
 
@@ -214,6 +220,9 @@ impl BuiltinFunctionKind {
         Self::SignbitL,
         Self::FrameAddress,
         Self::Pause,
+        Self::AddOverflow,
+        Self::SubOverflow,
+        Self::MulOverflow,
     ];
 
     pub fn is_bitwise(self) -> bool {

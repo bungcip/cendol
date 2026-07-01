@@ -2071,10 +2071,57 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 lower_simple!(NodeKind::ExpressionStmt(e.map(|x| self.visit_expression(x))))
             }
             ParsedNodeKind::AsmStmt(e) => {
-                lower_simple!(NodeKind::AsmStmt(self.visit_expression(*e)))
+                let mut output_ops = Vec::new();
+                for op in &e.outputs {
+                    let expr = self.visit_expression(op.expr);
+                    output_ops.push((op.constraint, expr, self.parsed_ast.get_node(op.expr).span));
+                }
+
+                let mut input_ops = Vec::new();
+                for op in &e.inputs {
+                    let expr = self.visit_expression(op.expr);
+                    input_ops.push((op.constraint, expr, self.parsed_ast.get_node(op.expr).span));
+                }
+
+                let output_start = self.ast.next_node_ref();
+                for (constraint, expr, op_span) in output_ops {
+                    self.ast
+                        .push_node(NodeKind::AsmConstraint(AsmConstraintData { constraint, expr }), op_span);
+                }
+                let output_len = e.outputs.len() as u16;
+
+                let input_start = self.ast.next_node_ref();
+                for (constraint, expr, op_span) in input_ops {
+                    self.ast
+                        .push_node(NodeKind::AsmConstraint(AsmConstraintData { constraint, expr }), op_span);
+                }
+                let input_len = e.inputs.len() as u16;
+
+                let clobber_start = self.ast.next_node_ref();
+                for &clobber in &e.clobbers {
+                    self.ast.push_node(NodeKind::AsmClobber(clobber), span);
+                }
+                let clobber_len = e.clobbers.len() as u16;
+
+                lower_simple!(NodeKind::AsmStmt(AsmStmtData {
+                    template: e.template,
+                    output_start,
+                    output_len,
+                    input_start,
+                    input_len,
+                    clobber_start,
+                    clobber_len,
+                    is_volatile: e.is_volatile,
+                }))
             }
             ParsedNodeKind::Goto(n) => {
                 lower_simple!(NodeKind::Goto(*n, self.resolve_label(*n, span)))
+            }
+            ParsedNodeKind::ComputedGoto(e) => {
+                lower_simple!(NodeKind::ComputedGoto(self.visit_expression(*e)))
+            }
+            ParsedNodeKind::LabelAddr(n) => {
+                lower_simple!(NodeKind::LabelAddr(*n, self.resolve_label(*n, span)))
             }
             ParsedNodeKind::Label(n, i) => {
                 let sym = self.define_label(*n, span);

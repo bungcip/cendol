@@ -261,6 +261,13 @@ pub(crate) enum MirStmt {
     BuiltinVaEnd(Place),
     BuiltinVaCopy(Place, Place),
     AtomicStore(Operand, Operand, AtomicMemOrder),
+    InlineAsm {
+        template: crate::ast::literal::LitRef,
+        outputs: Vec<(crate::ast::literal::LitRef, Place)>,
+        inputs: Vec<(crate::ast::literal::LitRef, Operand)>,
+        clobbers: Vec<crate::ast::literal::LitRef>,
+        is_volatile: bool,
+    },
     BuiltinPrefetch {
         addr: Operand,
         rw: u32,
@@ -282,6 +289,7 @@ pub(crate) enum AtomicMemOrder {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) enum Terminator {
     Goto(MirBlockId),
+    GotoIndirect(Operand),
     If(Operand, MirBlockId, MirBlockId),
     Return(Option<Operand>),
     Unreachable,
@@ -356,6 +364,8 @@ pub(crate) enum Rvalue {
     AtomicExchange(Operand, Operand, AtomicMemOrder),
     AtomicCompareExchange(Operand, Operand, Operand, bool, AtomicMemOrder, AtomicMemOrder),
     AtomicFetchOp(BinaryIntOp, Operand, Operand, AtomicMemOrder),
+    BuiltinOverflow(BinaryIntOp, Operand, Operand, Operand, TypeId),
+    LabelAddr(MirBlockId),
 }
 
 /// Call target - represents how a function is called

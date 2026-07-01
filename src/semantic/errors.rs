@@ -39,7 +39,6 @@ impl SemanticDiag {
             | SemanticError::GnuTypeof
             | SemanticError::GnuDesignatedInitializerRange
             | SemanticError::GnuCaseRange
-            | SemanticError::InlineAsmIgnored
             | SemanticError::ExcessElements { .. } => DiagnosticLevel::Warning,
             _ => DiagnosticLevel::Error,
         });
@@ -346,6 +345,9 @@ pub enum SemanticError {
     ExpectedScalarType {
         found: QualType,
     },
+    ExpectedPointerType {
+        found: QualType,
+    },
     ExpectedIntegerType {
         found: QualType,
     },
@@ -413,7 +415,6 @@ pub enum SemanticError {
     GnuDesignatedInitializerRange,
     GnuCaseRange,
     GnuZeroLengthArray,
-    InlineAsmIgnored,
     InvalidEnumUnderlyingType {
         ty: QualType,
     },
@@ -458,7 +459,6 @@ impl SemanticError {
             SemanticError::GnuDesignatedInitializerRange => Some("gnu-designated-init"),
             SemanticError::GnuCaseRange => Some("gnu-case-range"),
             SemanticError::GnuZeroLengthArray => Some("gnu-zero-length-array"),
-            SemanticError::InlineAsmIgnored => Some("inline-asm"),
             SemanticError::AttributeCleanupOnType => Some("attributes"),
             SemanticError::AttributeCleanupOnNonLocal => Some("ignored-attributes"),
             SemanticError::VoidReturnWithVoidExpr { .. } => Some("pedantic"),
@@ -714,6 +714,13 @@ impl DiagDisplay for SemanticError {
                     f.display_qual_type(*found)
                 )
             }
+            SemanticError::ExpectedPointerType { found } => {
+                write!(
+                    f,
+                    "type mismatch: expected pointer type, found {}",
+                    f.display_qual_type(*found)
+                )
+            }
             SemanticError::ExpectedFloatingType { found } => {
                 write!(
                     f,
@@ -945,7 +952,6 @@ impl DiagDisplay for SemanticError {
             }
             SemanticError::GnuCaseRange => write!(f, "use of GNU case range extension"),
             SemanticError::GnuZeroLengthArray => write!(f, "use of GNU zero-length array extension"),
-            SemanticError::InlineAsmIgnored => write!(f, "inline assembly is currently ignored by cendol"),
             SemanticError::AttributeCleanupOnType => write!(f, "attribute '__cleanup__' ignored on type"),
             SemanticError::AttributeCleanupOnNonLocal => {
                 write!(f, "'__cleanup__' attribute only applies to local variables")

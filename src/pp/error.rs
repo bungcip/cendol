@@ -151,8 +151,13 @@ impl crate::diagnostic::IntoDiagnostic for PPDiag {
             PPError::UnknownPragma(_) => Some("unknown-pragmas"),
             _ => None,
         };
+        let level = if warning_name.is_some() {
+            DiagnosticLevel::Warning
+        } else {
+            DiagnosticLevel::Error
+        };
         let mut diag = Diagnostic {
-            level: DiagnosticLevel::Error,
+            level,
             message: format_diag_without_registry(&kind),
             span,
             warning_name,

@@ -72,7 +72,9 @@ pub(crate) enum NodeKind {
     Return(Option<NodeRef>),
     Break,
     Continue,
-    Goto(NameId, SymbolRef),                           // resolved symbol after semantic analysis
+    Goto(NameId, SymbolRef), // resolved symbol after semantic analysis
+    ComputedGoto(NodeRef),
+    LabelAddr(NameId, SymbolRef),
     Label(NameId, NodeRef /* statement */, SymbolRef), // resolved symbol after semantic analysis
 
     Switch(NodeRef /* condition */, NodeRef /* body statement */),
@@ -85,7 +87,9 @@ pub(crate) enum NodeKind {
     Default(NodeRef /* statement */),
 
     ExpressionStmt(Option<NodeRef> /* expression */), // Expression followed by ';'
-    AsmStmt(NodeRef),
+    AsmStmt(AsmStmtData),
+    AsmConstraint(AsmConstraintData),
+    AsmClobber(LitRef),
 
     // --- Declarations & Definitions ---
     // Removed Parser-only Declaration and FunctionDef variants.
@@ -156,6 +160,8 @@ impl NodeKind {
             NodeKind::Break => "Break",
             NodeKind::Continue => "Continue",
             NodeKind::Goto(..) => "Goto",
+            NodeKind::ComputedGoto(..) => "ComputedGoto",
+            NodeKind::LabelAddr(..) => "LabelAddr",
             NodeKind::Label(..) => "Label",
             NodeKind::Switch(..) => "Switch",
             NodeKind::Case(..) => "Case",
@@ -177,6 +183,8 @@ impl NodeKind {
             NodeKind::InitializerList(..) => "InitializerList",
             NodeKind::InitializerItem(..) => "InitializerItem",
             NodeKind::Designator(..) => "Designator",
+            NodeKind::AsmConstraint(..) => "AsmConstraint",
+            NodeKind::AsmClobber(..) => "AsmClobber",
             NodeKind::Dummy => "Dummy",
         }
     }
@@ -212,6 +220,7 @@ impl NodeKind {
             | NodeKind::Break
             | NodeKind::Continue
             | NodeKind::Goto(..)
+            | NodeKind::LabelAddr(..)
             | NodeKind::TypedefDecl(_)
             | NodeKind::FieldDecl(_)
             | NodeKind::EnumMember(_)
@@ -231,6 +240,7 @@ impl NodeKind {
             | NodeKind::BuiltinConvertVector(child, _)
             | NodeKind::CompoundLiteral(_, child)
             | NodeKind::Label(_, child, _)
+            | NodeKind::ComputedGoto(child)
             | NodeKind::Default(child) => f(*child),
 
             NodeKind::BuiltinComplex(l, r) => {
@@ -324,7 +334,19 @@ impl NodeKind {
                 }
             }
 
-            NodeKind::AsmStmt(expr) => f(*expr),
+            NodeKind::AsmStmt(data) => {
+                for c in data.output_start.range(data.output_len) {
+                    f(c);
+                }
+                for c in data.input_start.range(data.input_len) {
+                    f(c);
+                }
+                for c in data.clobber_start.range(data.clobber_len) {
+                    f(c);
+                }
+            }
+            NodeKind::AsmConstraint(data) => f(data.expr),
+            NodeKind::AsmClobber(_) => {}
 
             NodeKind::VarDecl(data) => {
                 if let Some(init) = data.init {
@@ -674,4 +696,22 @@ pub(crate) struct GenericSelection {
 pub(crate) struct GenericAssociation {
     pub(crate) ty: Option<QualType>, // None for 'default:'
     pub(crate) result_expr: NodeRef,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub(crate) struct AsmStmtData {
+    pub(crate) template: LitRef,
+    pub(crate) output_start: NodeRef,
+    pub(crate) output_len: u16,
+    pub(crate) input_start: NodeRef,
+    pub(crate) input_len: u16,
+    pub(crate) clobber_start: NodeRef,
+    pub(crate) clobber_len: u16,
+    pub(crate) is_volatile: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub(crate) struct AsmConstraintData {
+    pub(crate) constraint: LitRef,
+    pub(crate) expr: NodeRef,
 }

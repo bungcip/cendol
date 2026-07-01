@@ -232,6 +232,11 @@ fn parse_for_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> 
 
 fn parse_goto_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Goto)?.span;
+    if parser.accept(TokenKind::Star).is_some() {
+        let expr = parser.parse_expr_min()?;
+        let end = parser.expect(TokenKind::Semicolon)?.span;
+        return Ok(parser.push_node(ParsedNodeKind::ComputedGoto(expr), start.merge(end)));
+    }
     let (label, _) = parser.expect_name()?;
     let end = parser.expect(TokenKind::Semicolon)?.span;
     Ok(parser.push_node(ParsedNodeKind::Goto(label), start.merge(end)))
@@ -308,28 +313,139 @@ fn parse_expression_statement(parser: &mut Parser) -> Result<ParsedNodeRef, Pars
 fn parse_asm_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Asm)?.span;
 
+    let mut is_volatile = false;
     // consume qualifiers like volatile, inline, goto
     while !parser.is_token(TokenKind::LeftParen) && !parser.is_token(TokenKind::Semicolon) && !parser.at_eof() {
+        if parser.is_token(TokenKind::Volatile) {
+            is_volatile = true;
+        }
         parser.advance();
     }
 
     parser.expect(TokenKind::LeftParen)?;
-    let mut depth = 1;
-    while depth > 0 && !parser.at_eof() {
-        if parser.is_token(TokenKind::LeftParen) {
-            depth += 1;
-        } else if parser.is_token(TokenKind::RightParen) {
-            depth -= 1;
-        }
 
-        if depth == 0 {
-            break;
+    // Parse template
+    let template = match parser.current_token()?.kind {
+        TokenKind::Literal(lit) => {
+            parser.advance();
+            lit
         }
+        _ => {
+            return Err(ParseDiag {
+                span: parser.current_token_span()?,
+                kind: crate::parser::errors::ParseError::UnexpectedToken {
+                    expected: "string literal",
+                    found: parser.current_token()?.kind,
+                },
+            });
+        }
+    };
+
+    let mut outputs = Vec::new();
+    let mut inputs = Vec::new();
+    let mut clobbers = Vec::new();
+
+    let parse_operands = |parser: &mut Parser| -> Result<Vec<ParsedAsmOperand>, ParseDiag> {
+        let mut ops = Vec::new();
+        if parser.is_token(TokenKind::RightParen) || parser.is_token(TokenKind::Colon) {
+            return Ok(ops);
+        }
+        loop {
+            // Optional [ name ]
+            if parser.is_token(TokenKind::LeftBracket) {
+                parser.advance();
+                parser.expect_name()?;
+                parser.expect(TokenKind::RightBracket)?;
+            }
+
+            let constraint = match parser.current_token()?.kind {
+                TokenKind::Literal(lit) => {
+                    parser.advance();
+                    lit
+                }
+                _ => {
+                    return Err(ParseDiag {
+                        span: parser.current_token_span()?,
+                        kind: crate::parser::errors::ParseError::UnexpectedToken {
+                            expected: "string literal",
+                            found: parser.current_token()?.kind,
+                        },
+                    });
+                }
+            };
+
+            parser.expect(TokenKind::LeftParen)?;
+            let expr = parser.parse_expr_min()?;
+            parser.expect(TokenKind::RightParen)?;
+
+            ops.push(ParsedAsmOperand { constraint, expr });
+
+            if parser.is_token(TokenKind::Comma) {
+                parser.advance();
+            } else {
+                break;
+            }
+        }
+        Ok(ops)
+    };
+
+    if parser.is_token(TokenKind::Colon) {
         parser.advance();
+        outputs = parse_operands(parser)?;
     }
+
+    if parser.is_token(TokenKind::Colon) {
+        parser.advance();
+        inputs = parse_operands(parser)?;
+    }
+
+    if parser.is_token(TokenKind::Colon) {
+        parser.advance();
+        if !parser.is_token(TokenKind::RightParen) && !parser.is_token(TokenKind::Colon) {
+            loop {
+                let clobber = match parser.current_token()?.kind {
+                    TokenKind::Literal(lit) => {
+                        parser.advance();
+                        lit
+                    }
+                    _ => {
+                        return Err(ParseDiag {
+                            span: parser.current_token_span()?,
+                            kind: crate::parser::errors::ParseError::UnexpectedToken {
+                                expected: "string literal",
+                                found: parser.current_token()?.kind,
+                            },
+                        });
+                    }
+                };
+                clobbers.push(clobber);
+
+                if parser.is_token(TokenKind::Comma) {
+                    parser.advance();
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    // Ignore any remaining colons for goto labels, etc.
+    while parser.is_token(TokenKind::Colon) {
+        parser.advance();
+        while !parser.is_token(TokenKind::Colon) && !parser.is_token(TokenKind::RightParen) && !parser.at_eof() {
+            parser.advance();
+        }
+    }
+
     parser.expect(TokenKind::RightParen)?;
     let end = parser.expect(TokenKind::Semicolon)?.span;
 
-    let dummy_expr = parser.push_dummy();
-    Ok(parser.push_node(ParsedNodeKind::AsmStmt(dummy_expr), start.merge(end)))
+    let asm_stmt = Box::new(ParsedAsmStmt {
+        template,
+        outputs,
+        inputs,
+        clobbers,
+        is_volatile,
+    });
+    Ok(parser.push_node(ParsedNodeKind::AsmStmt(asm_stmt), start.merge(end)))
 }

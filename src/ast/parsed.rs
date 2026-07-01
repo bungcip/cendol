@@ -121,6 +121,8 @@ pub enum ParsedNodeKind {
     Break,
     Continue,
     Goto(NameId),
+    ComputedGoto(ParsedNodeRef),
+    LabelAddr(NameId),
     Label(NameId, ParsedNodeRef),
 
     Switch(ParsedNodeRef, ParsedNodeRef),
@@ -130,7 +132,7 @@ pub enum ParsedNodeKind {
 
     ExpressionStmt(Option<ParsedNodeRef>),
     EmptyStmt,
-    AsmStmt(ParsedNodeRef),
+    AsmStmt(Box<ParsedAsmStmt>),
 
     // --- Declarations & Definitions ---
     Declaration(ParsedDecl),
@@ -181,6 +183,21 @@ pub struct ParsedInitDeclarator {
     pub declarator: super::DeclaratorRef,
     pub initializer: Option<ParsedNodeRef>,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParsedAsmOperand {
+    pub constraint: LitRef,
+    pub expr: ParsedNodeRef,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParsedAsmStmt {
+    pub template: LitRef,
+    pub outputs: Vec<ParsedAsmOperand>,
+    pub inputs: Vec<ParsedAsmOperand>,
+    pub clobbers: Vec<LitRef>,
+    pub is_volatile: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -457,6 +474,8 @@ impl ParsedNodeKind {
             ParsedNodeKind::Break => "Break",
             ParsedNodeKind::Continue => "Continue",
             ParsedNodeKind::Goto(..) => "Goto",
+            ParsedNodeKind::ComputedGoto(..) => "ComputedGoto",
+            ParsedNodeKind::LabelAddr(..) => "LabelAddr",
             ParsedNodeKind::Label(..) => "Label",
             ParsedNodeKind::Switch(..) => "Switch",
             ParsedNodeKind::Case(..) => "Case",
@@ -491,6 +510,7 @@ impl ParsedNodeKind {
             | ParsedNodeKind::Break
             | ParsedNodeKind::Continue
             | ParsedNodeKind::Goto(_)
+            | ParsedNodeKind::LabelAddr(_)
             | ParsedNodeKind::EmptyStmt
             | ParsedNodeKind::PragmaPack(_)
             | ParsedNodeKind::PragmaVisibility(_)
@@ -507,6 +527,7 @@ impl ParsedNodeKind {
             | ParsedNodeKind::AlignOfExpr(e)
             | ParsedNodeKind::CompoundLiteral(_, e)
             | ParsedNodeKind::Label(_, e)
+            | ParsedNodeKind::ComputedGoto(e)
             | ParsedNodeKind::Default(e)
             | ParsedNodeKind::BuiltinConvertVector(e, _)
             | ParsedNodeKind::GnuStatementExpr(e, _) => f(*e),
@@ -582,7 +603,14 @@ impl ParsedNodeKind {
                     f(*e);
                 }
             }
-            ParsedNodeKind::AsmStmt(e) => f(*e),
+            ParsedNodeKind::AsmStmt(e) => {
+                for op in &e.outputs {
+                    f(op.expr);
+                }
+                for op in &e.inputs {
+                    f(op.expr);
+                }
+            }
             ParsedNodeKind::EnumConstant(_, e) => {
                 if let Some(e) = e {
                     f(*e);

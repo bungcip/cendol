@@ -1046,6 +1046,9 @@ impl TypeRegistry {
             | BuiltinFunctionKind::AtomicAndFetch
             | BuiltinFunctionKind::AtomicOrFetch
             | BuiltinFunctionKind::AtomicXorFetch => (vec![], self.type_void_ptr, true, false),
+            BuiltinFunctionKind::AddOverflow | BuiltinFunctionKind::SubOverflow | BuiltinFunctionKind::MulOverflow => {
+                (vec![], self.type_bool, true, false)
+            }
             BuiltinFunctionKind::Complex => {
                 let d = self.type_double;
                 (vec![p(d), p(d)], self.type_complex_double, false, false)

@@ -320,9 +320,45 @@ impl<'a> MirDumper<'a> {
                 &[
                     &|out| self.write_operand(out, ptr),
                     &|out| self.write_operand(out, val),
-                    &|out| write!(out, "{:?}", order),
+                    &|out| write!(out, "{:?}", order).map_err(Into::into),
                 ],
             ),
+            MirStmt::InlineAsm {
+                template,
+                outputs,
+                inputs,
+                clobbers,
+                is_volatile,
+            } => {
+                let v = if *is_volatile { "volatile " } else { "" };
+                write!(output, "asm {:?}({:?})", v, template)?;
+                if !outputs.is_empty() || !inputs.is_empty() || !clobbers.is_empty() {
+                    write!(output, " : ")?;
+                    for (i, (c, p)) in outputs.iter().enumerate() {
+                        if i > 0 {
+                            write!(output, ", ")?;
+                        }
+                        write!(output, "{:?} ", c)?;
+                        self.write_place(output, p)?;
+                    }
+                    write!(output, " : ")?;
+                    for (i, (c, op)) in inputs.iter().enumerate() {
+                        if i > 0 {
+                            write!(output, ", ")?;
+                        }
+                        write!(output, "{:?} ", c)?;
+                        self.write_operand(output, op)?;
+                    }
+                    write!(output, " : ")?;
+                    for (i, c) in clobbers.iter().enumerate() {
+                        if i > 0 {
+                            write!(output, ", ")?;
+                        }
+                        write!(output, "{:?}", c)?;
+                    }
+                }
+                Ok(())
+            }
             MirStmt::BuiltinPrefetch { addr, rw, locality } => self.write_call(
                 output,
                 "prefetch",
@@ -341,6 +377,10 @@ impl<'a> MirDumper<'a> {
             Terminator::Goto(block_id) => {
                 write!(output, "br ")?;
                 self.write_block(output, *block_id)
+            }
+            Terminator::GotoIndirect(op) => {
+                write!(output, "br_indirect ")?;
+                self.write_operand(output, op)
             }
             Terminator::If(cond, then_block, else_block) => {
                 write!(output, "cond_br ")?;
@@ -682,6 +722,23 @@ impl<'a> MirDumper<'a> {
                         &|out| write!(out, "{:?}", order),
                     ],
                 )
+            }
+            Rvalue::BuiltinOverflow(op, lhs, rhs, res_ptr, ty) => {
+                let name = format!("{}_overflow", self.binary_int_op_to_string(op));
+                self.write_call(
+                    output,
+                    &name,
+                    &[
+                        &|out| self.write_operand(out, lhs),
+                        &|out| self.write_operand(out, rhs),
+                        &|out| self.write_operand(out, res_ptr),
+                        &|out| write!(out, "{:?}", ty),
+                    ],
+                )
+            }
+            Rvalue::LabelAddr(block_id) => {
+                write!(output, "&&")?;
+                self.write_block(output, *block_id)
             }
         }
     }

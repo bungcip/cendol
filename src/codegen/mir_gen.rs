@@ -331,8 +331,37 @@ impl<'a> MirGen<'a> {
                 // Expression statement: value not needed, only side-effects
                 self.visit_expression(expr, false);
             }
-            NodeKind::AsmStmt(_) => {
-                // Ignore inline assembly in Cranelift backend for now
+            NodeKind::AsmStmt(data) => {
+                let mut outputs = Vec::new();
+                for op_node in data.output_start.range(data.output_len) {
+                    if let NodeKind::AsmConstraint(c) = self.ast.get_kind(op_node) {
+                        let place = self.visit_expression_as_place(c.expr);
+                        outputs.push((c.constraint, place));
+                    }
+                }
+
+                let mut inputs = Vec::new();
+                for op_node in data.input_start.range(data.input_len) {
+                    if let NodeKind::AsmConstraint(c) = self.ast.get_kind(op_node) {
+                        let expr_op = self.visit_expression(c.expr, true);
+                        inputs.push((c.constraint, expr_op));
+                    }
+                }
+
+                let mut clobbers = Vec::new();
+                for op_node in data.clobber_start.range(data.clobber_len) {
+                    if let NodeKind::AsmClobber(c) = self.ast.get_kind(op_node) {
+                        clobbers.push(*c);
+                    }
+                }
+
+                self.add_stmt(MirStmt::InlineAsm {
+                    template: data.template,
+                    outputs,
+                    inputs,
+                    clobbers,
+                    is_volatile: data.is_volatile,
+                });
             }
             NodeKind::Break => {
                 let target = self.func_state_mut().break_target.unwrap();
@@ -365,6 +394,7 @@ impl<'a> MirGen<'a> {
                 self.set_terminator(Terminator::Goto(target));
             }
             NodeKind::Goto(label_name, _) => self.visit_goto_stmt(label_name),
+            NodeKind::ComputedGoto(expr) => self.visit_computed_goto_stmt(expr),
             NodeKind::Label(label_name, stmt, _) => self.visit_label_stmt(label_name, stmt),
             NodeKind::Switch(cond, body) => self.visit_switch_stmt(cond, body),
             NodeKind::Case(_, stmt) => self.visit_case_default_stmt(node, stmt),
@@ -2311,6 +2341,11 @@ impl<'a> MirGen<'a> {
         }
 
         self.set_terminator(Terminator::Goto(label_info.block_id));
+    }
+
+    fn visit_computed_goto_stmt(&mut self, expr: NodeRef) {
+        let operand = self.visit_expression(expr, false);
+        self.set_terminator(Terminator::GotoIndirect(operand));
     }
 
     fn visit_label_stmt(&mut self, label_name: NameId, statement: NodeRef) {

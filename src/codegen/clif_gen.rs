@@ -1311,7 +1311,11 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                         .declare_data(global.name.as_str(), linkage, true, global.is_tls)
                         .expect("Failed to declare global data");
                     let local_id = ctx.module.declare_data_in_func(global_val, ctx.builder.func);
-                    let addr = ctx.builder.ins().global_value(types::I64, local_id);
+                    let addr = if global.is_tls {
+                        ctx.builder.ins().tls_value(types::I64, local_id)
+                    } else {
+                        ctx.builder.ins().global_value(types::I64, local_id)
+                    };
                     let addr = if addend != 0 {
                         let addend_val = ctx.builder.ins().iconst(types::I64, addend);
                         ctx.builder.ins().iadd(addr, addend_val)
@@ -1614,7 +1618,11 @@ fn emit_place_addr(place: &Place, ctx: &mut BodyEmitContext) -> Value {
                 .declare_data(global.name.as_str(), linkage, true, global.is_tls)
                 .expect("Failed to declare global data");
             let local_id = ctx.module.declare_data_in_func(global_val, ctx.builder.func);
-            ctx.builder.ins().global_value(types::I64, local_id)
+            if global.is_tls {
+                ctx.builder.ins().tls_value(types::I64, local_id)
+            } else {
+                ctx.builder.ins().global_value(types::I64, local_id)
+            }
         }
         Place::Deref(operand) => emit_operand(operand, ctx, types::I64),
         Place::StructField(base_place, field_index, _) => {
@@ -1904,6 +1912,11 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
 
             // Process the rvalue to get a Cranelift value first
             let rvalue_result = match rvalue {
+                Rvalue::LabelAddr(block_id) => {
+                    let pos = ctx.func.blocks.iter().position(|b| b == block_id).unwrap();
+                    let val = ctx.builder.ins().iconst(types::I32, pos as i64);
+                    emit_type_conversion(val, types::I32, expected_type, false, ctx.builder)
+                }
                 Rvalue::Use(operand) => emit_operand(operand, ctx, expected_type),
                 Rvalue::UnaryIntOp(op, operand) => {
                     let operand_clif_type = lower_operand_type(operand, ctx.mir, ctx.pointee_to_pointer);
@@ -2362,6 +2375,28 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     };
                     lower_atomic_rmw(ptr, val, rmw_op, expected_type, ctx)
                 }
+                Rvalue::BuiltinOverflow(op, lhs, rhs, res_ptr, ty) => {
+                    let mir_ty = ctx.mir.get_type(*ty);
+                    let val_type = lower_type(mir_ty).unwrap();
+                    let lhs_val = emit_operand(lhs, ctx, val_type);
+                    let rhs_val = emit_operand(rhs, ctx, val_type);
+                    let res_ptr_val = emit_operand(res_ptr, ctx, types::I64);
+                    let is_signed = mir_ty.is_signed();
+
+                    let (res, overflow) = match (op, is_signed) {
+                        (BinaryIntOp::Add, true) => ctx.builder.ins().sadd_overflow(lhs_val, rhs_val),
+                        (BinaryIntOp::Add, false) => ctx.builder.ins().uadd_overflow(lhs_val, rhs_val),
+                        (BinaryIntOp::Sub, true) => ctx.builder.ins().ssub_overflow(lhs_val, rhs_val),
+                        (BinaryIntOp::Sub, false) => ctx.builder.ins().usub_overflow(lhs_val, rhs_val),
+                        (BinaryIntOp::Mul, true) => ctx.builder.ins().smul_overflow(lhs_val, rhs_val),
+                        (BinaryIntOp::Mul, false) => ctx.builder.ins().umul_overflow(lhs_val, rhs_val),
+                        _ => panic!("Unsupported builtin overflow op: {:?}", op),
+                    };
+
+                    ctx.builder.ins().store(MemFlagsData::trusted(), res, res_ptr_val, 0);
+
+                    emit_bool_to_int(overflow, expected_type, ctx.builder)
+                }
             };
 
             // Decide how to store the result based on whether the rvalue produced a value or an address
@@ -2477,6 +2512,103 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             // va_list is 24 bytes on x86_64
             emit_memcpy(dest_addr, src_addr, 24, ctx.builder, ctx.module);
         }
+        MirStmt::InlineAsm {
+            template,
+            outputs,
+            inputs,
+            clobbers,
+            is_volatile,
+        } => {
+            use crate::ast::literal::LitVal;
+            use cranelift::codegen::ir::{AsmConstraintKind, AsmOperand, InlineAsmData};
+            use cranelift::prelude::*;
+
+            let mut asm_operands = Vec::new();
+
+            // Collect outputs
+            let mut output_values = Vec::new();
+            for (constraint, place) in outputs {
+                let constraint_str = match constraint.get_val() {
+                    LitVal::String { value, .. } => value,
+                    _ => unimplemented!(),
+                };
+                let asm_constraint = match constraint_str.as_str() {
+                    "r" => AsmConstraintKind::GeneralReg,
+                    "f" => AsmConstraintKind::FloatReg,
+                    "m" => AsmConstraintKind::Memory,
+                    "i" => AsmConstraintKind::Immediate,
+                    fixed => AsmConstraintKind::FixedReg(fixed.to_string()),
+                };
+
+                asm_operands.push(AsmOperand {
+                    constraint: asm_constraint,
+                    is_output: true,
+                    is_read_write: false,
+                });
+
+                output_values.push(place);
+            }
+
+            // Collect inputs
+            let mut input_values = Vec::new();
+            for (constraint, operand) in inputs {
+                let constraint_str = match constraint.get_val() {
+                    LitVal::String { value, .. } => value,
+                    _ => unimplemented!(),
+                };
+                let asm_constraint = match constraint_str.as_str() {
+                    "r" => AsmConstraintKind::GeneralReg,
+                    "f" => AsmConstraintKind::FloatReg,
+                    "m" => AsmConstraintKind::Memory,
+                    "i" => AsmConstraintKind::Immediate,
+                    fixed => AsmConstraintKind::FixedReg(fixed.to_string()),
+                };
+
+                asm_operands.push(AsmOperand {
+                    constraint: asm_constraint,
+                    is_output: false,
+                    is_read_write: false,
+                });
+
+                let val = emit_operand(operand, ctx, types::I64);
+                input_values.push(val);
+            }
+
+            // Collect clobbers
+            let mut clobber_strings = Vec::new();
+            for clobber in clobbers {
+                let clobber_str = match clobber.get_val() {
+                    LitVal::String { value, .. } => value,
+                    _ => unimplemented!(),
+                };
+                clobber_strings.push(clobber_str);
+            }
+
+            let template_str = match template.get_val() {
+                LitVal::String { value, .. } => value,
+                _ => unimplemented!("Non-string asm template"),
+            };
+
+            let asm_data = InlineAsmData {
+                template: template_str,
+                operands: asm_operands,
+                clobbers: clobber_strings,
+                is_volatile: *is_volatile,
+            };
+
+            let asm_id = ctx.builder.func.dfg.inline_asms.push(asm_data);
+
+            let inst = ctx.builder.ins().inline_asm(asm_id, &input_values);
+
+            let results = ctx.builder.inst_results(inst).to_vec();
+            for (i, place) in output_values.iter().enumerate() {
+                if i < results.len() {
+                    let val = results[i];
+                    let addr = emit_place_addr(place, ctx);
+                    ctx.builder.ins().store(MemFlagsData::new(), val, addr, 0);
+                }
+            }
+        }
         MirStmt::BuiltinPrefetch { addr, .. } => {
             let _ = emit_operand(addr, ctx, types::I64);
             // Cranelift doesn't have a stable prefetch intrinsic in InstBuilder yet.
@@ -2493,6 +2625,19 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
             });
             ctx.builder.ins().jump(*target_cl_block, &[]);
             ctx.worklist.push(*target);
+        }
+        Terminator::GotoIndirect(op) => {
+            let val = emit_operand(op, ctx, types::I32);
+            for block_id in &ctx.func.blocks {
+                let clif_target = ctx.clif_blocks.get(block_id).unwrap();
+                let pos = ctx.func.blocks.iter().position(|b| b == block_id).unwrap();
+                let pos_val = ctx.builder.ins().iconst(types::I32, pos as i64);
+                let cmp = ctx.builder.ins().icmp(IntCC::Equal, val, pos_val);
+                let next_block = ctx.builder.create_block();
+                ctx.builder.ins().brif(cmp, *clif_target, &[], next_block, &[]);
+                ctx.builder.switch_to_block(next_block);
+            }
+            ctx.builder.ins().trap(cranelift::prelude::TrapCode::unwrap_user(1));
         }
 
         Terminator::If(cond, then_bb, else_bb) => {
@@ -3209,6 +3354,14 @@ impl ClifGen {
             MirStmt::BuiltinPrefetch { addr, .. } => {
                 self.collect_operand_reachability(addr, wf, rf, rg, wg);
             }
+            MirStmt::InlineAsm { outputs, inputs, .. } => {
+                for (_, place) in outputs {
+                    self.collect_place_reachability(place, wf, rf, rg, wg);
+                }
+                for (_, operand) in inputs {
+                    self.collect_operand_reachability(operand, wf, rf, rg, wg);
+                }
+            }
         }
     }
 
@@ -3227,6 +3380,7 @@ impl ClifGen {
                 }
             }
             Terminator::If(cond, _, _) => self.collect_operand_reachability(cond, wf, rf, rg, wg),
+            Terminator::GotoIndirect(op) => self.collect_operand_reachability(op, wf, rf, rg, wg),
             Terminator::Goto(_) | Terminator::Unreachable | Terminator::Trap => {}
         }
     }
@@ -3280,6 +3434,7 @@ impl ClifGen {
         wg: &mut Vec<GlobalId>,
     ) {
         match rvalue {
+            Rvalue::LabelAddr(_) => {}
             Rvalue::Use(op)
             | Rvalue::UnaryIntOp(_, op)
             | Rvalue::UnaryFloatOp(_, op)
@@ -3299,6 +3454,11 @@ impl ClifGen {
                 self.collect_operand_reachability(p, wf, rf, rg, wg);
                 self.collect_operand_reachability(e, wf, rf, rg, wg);
                 self.collect_operand_reachability(d, wf, rf, rg, wg);
+            }
+            Rvalue::BuiltinOverflow(_, l, r, res, _) => {
+                self.collect_operand_reachability(l, wf, rf, rg, wg);
+                self.collect_operand_reachability(r, wf, rf, rg, wg);
+                self.collect_operand_reachability(res, wf, rf, rg, wg);
             }
             Rvalue::StructLiteral(fields) => {
                 for (_, op) in fields {

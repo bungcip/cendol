@@ -1,0 +1,30 @@
+--- crates/cranelift/codegen/src/isa/x64/inst/mod.rs
++++ crates/cranelift/codegen/src/isa/x64/inst/mod.rs
+@@ -264,6 +265,9 @@
+         match inst {
+         Inst::CallKnown { info }
+             => write!(w, "call {:?}", info.dest),
++        Inst::InlineAsm { data }
++            => write!(w, "inline_asm {:?}", data.asm_id),
++
+         Inst::CallUnknown { info } => {
+             write!(w, "call ")?;
+             info.dest.pretty_print(0, w)?;
+@@ -984,6 +988,17 @@
+         Inst::CallKnown { info } => {
+             // Probestack is special and is only inserted after
+             // regalloc, so we do not need to represent its ABI to the
++            // register allocator. Assert that we don't alter that
++            // arrangement.
++            let CallInfo {
++                uses,
++                defs,
++                clobbers,
++                dest,
++                try_call_info,
++                ..
++            } = &mut **info;
++            debug_assert_ne!(*dest, ExternalName::LibCall(LibCall::Probestack));
+ 
+ 
+ 

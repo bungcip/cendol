@@ -15,7 +15,7 @@ use crate::semantic::{
 };
 
 impl<'a> MirGen<'a> {
-    fn visit_expression_as_place(&mut self, expr: NodeRef) -> Place {
+    pub(crate) fn visit_expression_as_place(&mut self, expr: NodeRef) -> Place {
         let node_kind = self.ast.get_kind(expr);
         match node_kind {
             NodeKind::Ident(_, sym) => {
@@ -93,6 +93,7 @@ impl<'a> MirGen<'a> {
             NodeKind::FunctionCall(call_expr) => {
                 self.visit_function_call_expression(call_expr, expr, mir_ty, need_value)
             }
+            NodeKind::LabelAddr(name, _) => self.visit_label_addr(*name, mir_ty),
             _ if node_kind.is_type_query() => self.visit_type_query_expression(&node_kind, expr, mir_ty, need_value),
             NodeKind::StatementExpr(stmt, result_expr) => self.visit_gnu_stmt_expr(*stmt, *result_expr, need_value),
             NodeKind::Cast(_ty, operand) => self.visit_cast(*operand, mir_ty),
@@ -1970,5 +1971,18 @@ impl<'a> MirGen<'a> {
             }
             _ => None,
         }
+    }
+
+    fn visit_label_addr(&mut self, name: NameId, expected_ty: TypeId) -> Operand {
+        let label_info = self
+            .func_state()
+            .label_map
+            .get(&name)
+            .cloned()
+            .expect("Label was not pre-scanned");
+        let rvalue = Rvalue::LabelAddr(label_info.block_id);
+        let (_, place) = self.create_temp_local(expected_ty);
+        self.add_stmt(crate::mir::MirStmt::Assign(place.clone(), rvalue));
+        Operand::Copy(Box::new(place))
     }
 }

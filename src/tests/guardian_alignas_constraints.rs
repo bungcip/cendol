@@ -52,3 +52,19 @@ fn test_alignas_on_register_prohibited() {
         "alignment specifier cannot be used in a register object",
     );
 }
+
+#[test]
+fn test_alignas_invalid_values() {
+    run_fail_with_message(
+        "_Alignas(3) int x;",
+        "requested alignment is not a positive power of 2: 3",
+    );
+    run_fail_with_message(
+        "_Alignas(100000) int x;",
+        "requested alignment is not a positive power of 2: 100000",
+    );
+    run_fail_with_message(
+        "int a = 4; _Alignas(a) int x;",
+        "requested alignment is not a constant expression",
+    );
+}

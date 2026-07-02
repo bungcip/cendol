@@ -286,3 +286,9 @@ Action: Add `guardian_continue_not_in_loop.rs` to validate this invariant, asser
 
 Learning: `case` and `default` statements must be enclosed within a `switch` statement. A dedicated test ensures that `SemanticError::CaseNotInSwitch` is correctly thrown in these cases (like standalone or nested inside an `if` but outside a `switch`), preventing miscompilation. We also fixed a span issue where the diagnostic previously pointed to the inner statement instead of the actual `case` or `default` keyword.
 Action: Add `guardian_case_not_in_switch.rs` to validate this invariant, asserting correct phase (`Mir`), message, and precise line/column spans.
+
+## 2024-07-02 - Invalid Unary Operand Analysis
+
+Learning: The `SemanticError::InvalidUnaryOperand` diagnostic is correctly emitted by `SemanticAnalyzer` during `CompilePhase::Mir` (where semantic analysis executes). It effectively guards against invalid unary operations like bitwise NOT on floats, unary plus/minus on non-arithmetic types (like pointers), and increment/decrement on non-scalar types or pointers to incomplete/function types. The diagnostic formatting uses `f.display_qual_type(*ty)`, which results in string representations like `"void*"` or `"void()*"` rather than the exact source spelling `"void *"`.
+
+Action: When asserting `SemanticError::InvalidUnaryOperand`, always use `CompilePhase::Mir` and expect the diagnostic text to use the compiler's normalized type representation. I have created `guardian_invalid_unary_operand.rs` to ensure these behaviors remain strictly enforced.

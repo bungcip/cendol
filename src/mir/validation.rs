@@ -309,7 +309,6 @@ impl<'a> MirValidator<'a> {
                     | BinaryFloatOp::Gt
                     | BinaryFloatOp::Ge
             ),
-            Rvalue::BuiltinOverflow(..) => true,
             _ => false,
         };
 
@@ -590,12 +589,6 @@ impl<'a> MirValidator<'a> {
             Rvalue::AtomicFetchOp(_, ptr, val, _) => {
                 self.validate_operand(ptr);
                 self.validate_operand(val);
-                None
-            }
-            Rvalue::BuiltinOverflow(_, lhs, rhs, res_ptr, _) => {
-                self.validate_operand(lhs);
-                self.validate_operand(rhs);
-                self.validate_operand(res_ptr);
                 None
             }
             Rvalue::LabelAddr(bid) => {

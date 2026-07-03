@@ -124,9 +124,8 @@ pub(crate) struct BodyEmitContext<'a, 'b> {
     pub func: &'a MirFunction,
     pub func_id_map: &'a HashMap<MirFunctionId, FuncId>,
     pub data_id_map: &'a HashMap<GlobalId, DataId>,
-    pub triple: &'a Triple,
+
     pub pointee_to_pointer: &'a HashMap<TypeId, TypeId>,
-    pub fixed_params_count: usize,
 }
 
 /// Context for lowering call signatures
@@ -2262,28 +2261,6 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     };
                     lower_atomic_rmw(ptr, val, rmw_op, expected_type, ctx)
                 }
-                Rvalue::BuiltinOverflow(op, lhs, rhs, res_ptr, ty) => {
-                    let mir_ty = ctx.mir.get_type(*ty);
-                    let val_type = lower_type(mir_ty).unwrap();
-                    let lhs_val = emit_operand(lhs, ctx, val_type);
-                    let rhs_val = emit_operand(rhs, ctx, val_type);
-                    let res_ptr_val = emit_operand(res_ptr, ctx, types::I64);
-                    let is_signed = mir_ty.is_signed();
-
-                    let (res, overflow) = match (op, is_signed) {
-                        (BinaryIntOp::Add, true) => ctx.builder.ins().sadd_overflow(lhs_val, rhs_val),
-                        (BinaryIntOp::Add, false) => ctx.builder.ins().uadd_overflow(lhs_val, rhs_val),
-                        (BinaryIntOp::Sub, true) => ctx.builder.ins().ssub_overflow(lhs_val, rhs_val),
-                        (BinaryIntOp::Sub, false) => ctx.builder.ins().usub_overflow(lhs_val, rhs_val),
-                        (BinaryIntOp::Mul, true) => ctx.builder.ins().smul_overflow(lhs_val, rhs_val),
-                        (BinaryIntOp::Mul, false) => ctx.builder.ins().umul_overflow(lhs_val, rhs_val),
-                        _ => panic!("Unsupported builtin overflow op: {:?}", op),
-                    };
-
-                    ctx.builder.ins().store(MemFlagsData::trusted(), res, res_ptr_val, 0);
-
-                    emit_bool_to_int(overflow, expected_type, ctx.builder)
-                }
             };
 
             // Decide how to store the result based on whether the rvalue produced a value or an address
@@ -2661,11 +2638,6 @@ pub struct ClifGen {
     pub(crate) func_id_map: HashMap<MirFunctionId, FuncId>,
     pub(crate) data_id_map: HashMap<GlobalId, DataId>,
     pub(crate) pointee_to_pointer: HashMap<TypeId, TypeId>,
-
-    triple: Triple,
-    vararg_count_data: Option<DataId>,
-    vararg_target_data: Option<DataId>,
-    vararg_trampoline_func: Option<FuncId>,
 }
 
 /// NOTE: we use panic!() to ICE because codegen rely on correct MIR, so if we give invalid MIR, then problem is in previous phase
@@ -2704,10 +2676,6 @@ impl ClifGen {
             emit_kind: EmitKind::Object,
             func_id_map: HashMap::new(),
             data_id_map: HashMap::new(),
-            triple,
-            vararg_count_data: None,
-            vararg_target_data: None,
-            vararg_trampoline_func: None,
             pointee_to_pointer: mir
                 .types
                 .iter()
@@ -2980,9 +2948,8 @@ impl ClifGen {
                 return_ptr,
                 func_id_map: &self.func_id_map,
                 data_id_map: &self.data_id_map,
-                triple: &self.triple,
+
                 pointee_to_pointer: &self.pointee_to_pointer,
-                fixed_params_count: param_types.len(),
             };
 
             // Process statements
@@ -3222,11 +3189,6 @@ impl ClifGen {
                 self.collect_operand_reachability(p, wf, rf, rg, wg);
                 self.collect_operand_reachability(e, wf, rf, rg, wg);
                 self.collect_operand_reachability(d, wf, rf, rg, wg);
-            }
-            Rvalue::BuiltinOverflow(_, l, r, res, _) => {
-                self.collect_operand_reachability(l, wf, rf, rg, wg);
-                self.collect_operand_reachability(r, wf, rf, rg, wg);
-                self.collect_operand_reachability(res, wf, rf, rg, wg);
             }
             Rvalue::StructLiteral(fields) => {
                 for (_, op) in fields {

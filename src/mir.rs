@@ -364,7 +364,6 @@ pub(crate) enum Rvalue {
     AtomicExchange(Operand, Operand, AtomicMemOrder),
     AtomicCompareExchange(Operand, Operand, Operand, bool, AtomicMemOrder, AtomicMemOrder),
     AtomicFetchOp(BinaryIntOp, Operand, Operand, AtomicMemOrder),
-    BuiltinOverflow(BinaryIntOp, Operand, Operand, Operand, TypeId),
     LabelAddr(MirBlockId),
 }
 

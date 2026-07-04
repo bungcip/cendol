@@ -723,19 +723,6 @@ impl<'a> MirDumper<'a> {
                     ],
                 )
             }
-            Rvalue::BuiltinOverflow(op, lhs, rhs, res_ptr, ty) => {
-                let name = format!("{}_overflow", self.binary_int_op_to_string(op));
-                self.write_call(
-                    output,
-                    &name,
-                    &[
-                        &|out| self.write_operand(out, lhs),
-                        &|out| self.write_operand(out, rhs),
-                        &|out| self.write_operand(out, res_ptr),
-                        &|out| write!(out, "{:?}", ty),
-                    ],
-                )
-            }
             Rvalue::LabelAddr(block_id) => {
                 write!(output, "&&")?;
                 self.write_block(output, *block_id)

@@ -1321,26 +1321,28 @@ impl Iterator for PPLexer {
 /// This uses memchr to fast-scan for backslashes and appends slices of the original
 /// string, which is both faster and correctly preserves multi-byte UTF-8 sequences.
 pub(crate) fn de_splice(raw: &str) -> String {
-    let bytes = raw.as_bytes();
-
     let mut result = String::with_capacity(raw.len());
+    de_splice_into(raw, &mut result);
+    result
+}
+
+/// ⚡ Bolt: Appends de-spliced text to an existing String.
+pub(crate) fn de_splice_into(raw: &str, result: &mut String) {
+    let bytes = raw.as_bytes();
     let mut last_end = 0;
     let mut i = 0;
 
     while let Some(pos) = memchr::memchr(b'\\', &bytes[i..]) {
         let backslash_pos = i + pos;
 
-        // Check if it's a splice: \ [ws] \n or \ [ws] \r [\n]
         let mut j = backslash_pos + 1;
         while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
             j += 1;
         }
 
         if j < bytes.len() && (bytes[j] == b'\n' || bytes[j] == b'\r') {
-            // Found a splice! Append the text before the backslash.
             result.push_str(&raw[last_end..backslash_pos]);
 
-            // Skip the backslash and the newline (and optional whitespace)
             if bytes[j] == b'\r' && j + 1 < bytes.len() && bytes[j + 1] == b'\n' {
                 i = j + 2;
             } else {
@@ -1348,15 +1350,41 @@ pub(crate) fn de_splice(raw: &str) -> String {
             }
             last_end = i;
         } else {
-            // Not a splice, just a regular backslash.
-            // Continue scanning after this backslash.
             i = backslash_pos + 1;
         }
     }
-
-    // Append the remaining part
     result.push_str(&raw[last_end..]);
-    result
+}
+
+/// ⚡ Bolt: Appends de-spliced text to an existing byte vector.
+/// This avoids intermediate String allocations when building a byte buffer.
+pub(crate) fn de_splice_into_bytes(raw: &str, result: &mut Vec<u8>) {
+    let bytes = raw.as_bytes();
+    let mut last_end = 0;
+    let mut i = 0;
+
+    while let Some(pos) = memchr::memchr(b'\\', &bytes[i..]) {
+        let backslash_pos = i + pos;
+
+        let mut j = backslash_pos + 1;
+        while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
+            j += 1;
+        }
+
+        if j < bytes.len() && (bytes[j] == b'\n' || bytes[j] == b'\r') {
+            result.extend_from_slice(&bytes[last_end..backslash_pos]);
+
+            if bytes[j] == b'\r' && j + 1 < bytes.len() && bytes[j + 1] == b'\n' {
+                i = j + 2;
+            } else {
+                i = j + 1;
+            }
+            last_end = i;
+        } else {
+            i = backslash_pos + 1;
+        }
+    }
+    result.extend_from_slice(&bytes[last_end..]);
 }
 
 #[cfg(test)]

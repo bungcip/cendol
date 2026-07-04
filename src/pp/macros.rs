@@ -106,7 +106,7 @@ impl<'src> Preprocessor<'src> {
             if i > 0 && token.flags.contains(PPTokenFlags::LEADING_SPACE) {
                 result.push(' ');
             }
-            result.push_str(&cache.get_token_text(token));
+            cache.append_token_to_string(token, &mut result);
         }
         result
     }
@@ -596,9 +596,8 @@ impl<'src> Preprocessor<'src> {
                 result.push(b' ');
             }
 
-            let text = cache.get_token_text(token);
-
             if matches!(token.kind, PPTokenKind::StringLiteral | PPTokenKind::CharLiteral(_)) {
+                let text = cache.get_token_text(token);
                 // Bolt ⚡: High-speed byte-based iteration for escaping.
                 for &b in text.as_bytes() {
                     if b == b'"' || b == b'\\' {
@@ -607,7 +606,7 @@ impl<'src> Preprocessor<'src> {
                     result.push(b);
                 }
             } else {
-                result.extend_from_slice(text.as_bytes());
+                cache.append_token_to_bytes(token, &mut result);
             }
         }
 
@@ -1219,5 +1218,61 @@ impl<'a> SourceBufferCache<'a> {
     fn get_token_text<'b>(&'b mut self, token: &'b PPToken) -> Cow<'b, str> {
         let buffer = self.get_buffer(token.location.source_id()).unwrap_or(&[]);
         token.get_text_from_buffer(buffer)
+    }
+
+    /// ⚡ Bolt: Appends token text directly to a String, avoiding intermediate allocations for splices.
+    fn append_token_to_string(&mut self, token: &PPToken, result: &mut String) {
+        if let PPTokenKind::Identifier(sym) = &token.kind {
+            result.push_str(sym.as_str());
+            return;
+        }
+
+        if let Some(fixed) = token.kind.get_fixed_text() {
+            result.push_str(fixed);
+            return;
+        }
+
+        let buffer = self.get_buffer(token.location.source_id()).unwrap_or(&[]);
+        let start = token.location.offset() as usize;
+        let end = start + token.length as usize;
+        let raw = if end <= buffer.len() {
+            unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) }
+        } else {
+            ""
+        };
+
+        if token.flags.contains(PPTokenFlags::HAS_SPLICES) {
+            crate::pp::pp_lexer::de_splice_into(raw, result);
+        } else {
+            result.push_str(raw);
+        }
+    }
+
+    /// ⚡ Bolt: Appends token text directly to a byte vector.
+    fn append_token_to_bytes(&mut self, token: &PPToken, result: &mut Vec<u8>) {
+        if let PPTokenKind::Identifier(sym) = &token.kind {
+            result.extend_from_slice(sym.as_str().as_bytes());
+            return;
+        }
+
+        if let Some(fixed) = token.kind.get_fixed_text() {
+            result.extend_from_slice(fixed.as_bytes());
+            return;
+        }
+
+        let buffer = self.get_buffer(token.location.source_id()).unwrap_or(&[]);
+        let start = token.location.offset() as usize;
+        let end = start + token.length as usize;
+        let raw = if end <= buffer.len() {
+            unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) }
+        } else {
+            ""
+        };
+
+        if token.flags.contains(PPTokenFlags::HAS_SPLICES) {
+            crate::pp::pp_lexer::de_splice_into_bytes(raw, result);
+        } else {
+            result.extend_from_slice(raw.as_bytes());
+        }
     }
 }

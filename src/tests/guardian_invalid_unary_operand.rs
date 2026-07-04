@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::{run_fail_with_diagnostic};
+use crate::tests::test_utils::run_fail_with_diagnostic;
 
 #[test]
 fn bitnot_float() {

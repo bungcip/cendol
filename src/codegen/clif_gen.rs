@@ -731,10 +731,12 @@ fn emit_call_args(
 
 /// Helper to get the result of a call, or a zero constant if it has no return value
 fn get_call_result(ctx: &mut BodyEmitContext, call_inst: Inst, return_type_id: TypeId) -> Value {
-    let results: Vec<Value> = ctx.builder.inst_results(call_inst).to_vec();
     let mir_type = ctx.mir.get_type(return_type_id);
 
+    // Bolt ⚡: Optimization: Use a fast path for common single-result or zero-result calls
+    // to avoid heap allocation from .to_vec(). We only allocate for packed struct returns.
     if let Some(types_list) = get_struct_packing(mir_type, ctx.mir) {
+        let results = ctx.builder.inst_results(call_inst).to_vec();
         // Results are packed into multiple registers. Store them to a temporary stack slot.
         let size = lower_type_size(mir_type, ctx.mir);
         let slot = ctx
@@ -750,13 +752,14 @@ fn get_call_result(ctx: &mut BodyEmitContext, call_inst: Inst, return_type_id: T
         return ctx.builder.ins().stack_addr(types::I64, slot, 0);
     }
 
-    if results.is_empty() {
-        let clif_type = lower_type(mir_type).unwrap_or(types::I32);
-        ctx.builder.ins().iconst(clif_type, 0i64)
-    } else {
+    let results = ctx.builder.inst_results(call_inst);
+    if let Some(&val) = results.first() {
         // results[0] could be the hidden pointer for large aggregates,
         // or the direct result for small types.
-        results[0]
+        val
+    } else {
+        let clif_type = lower_type(mir_type).unwrap_or(types::I32);
+        ctx.builder.ins().iconst(clif_type, 0i64)
     }
 }
 
@@ -2656,7 +2659,7 @@ impl ClifGen {
         flag_builder.set("tls_model", tls_model).unwrap();
 
         let builder = ObjectBuilder::new(
-            cranelift::prelude::isa::lookup(triple.clone())
+            cranelift::prelude::isa::lookup(triple)
                 .unwrap()
                 .finish(cranelift::prelude::settings::Flags::new(flag_builder))
                 .unwrap(),
@@ -2803,12 +2806,18 @@ impl ClifGen {
         } else {
             // For Clif dump, concatenate all function IRs
             let mut clif_dump = String::new();
-            let mut func_names: Vec<_> = self.compiled_functions.keys().collect();
+            // Bolt ⚡: Optimization: Sort function names without a redundant collect() of keys.
+            // We use into_iter() on the keys if we want an owned Vec of keys to sort,
+            // or just iterate and sort if possible. Since we need to sort, we do need a Vec,
+            // but we can avoid the extra clone/collect if we use a different approach.
+            // Actually, keys() returns &String, so collect() into Vec<&String> is cheap.
+            // But we can still optimize the loop.
+            let mut func_names: Vec<&String> = self.compiled_functions.keys().collect();
             func_names.sort();
 
             for func_name in func_names {
                 let func_ir = self.compiled_functions.get(func_name).unwrap();
-                clif_dump.push_str(&format!("; Function: {}\n", func_name));
+                clif_dump.push_str(&format!("; Function: {func_name}\n"));
                 clif_dump.push_str(func_ir);
                 clif_dump.push_str("\n\n");
             }

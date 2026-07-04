@@ -167,6 +167,7 @@ pub mod regr_union_cast;
 pub mod guardian_break_not_in_loop_or_switch;
 pub mod guardian_case_not_in_switch;
 pub mod guardian_continue_not_in_loop;
+pub mod guardian_invalid_storage_class_for_function;
 pub mod guardian_pointer_assignment_nested_qualifiers;
 pub mod guardian_switch_multiple_default;
 pub mod parser_struct_pragmas;

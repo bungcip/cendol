@@ -35,6 +35,7 @@ pub enum TokenKind {
     // Type specifiers
     Bool,
     Char,
+    Char8,
     Double,
     Float,
     Int,
@@ -280,6 +281,7 @@ impl TokenKind {
             Atomic => "_Atomic",
             Bool => "_Bool",
             Char => "char",
+            Char8 => "char8_t",
             Double => "double",
             Float => "float",
             Int => "int",
@@ -522,6 +524,7 @@ fn is_keyword(symbol: StringId, std: crate::lang_options::CStandard) -> Option<T
             TokenKind::Alignof if symbol == sk.alignof => return None,
             TokenKind::ThreadLocal if symbol == sk.thread_local => return None,
             TokenKind::Constexpr if symbol == sk.constexpr => return None,
+            TokenKind::Char8 if symbol == sk.char8_t => return None,
             _ => {}
         }
     }
@@ -537,6 +540,7 @@ struct SpecialKeywords {
     alignof: StringId,
     thread_local: StringId,
     constexpr: StringId,
+    char8_t: StringId,
 }
 
 fn special_keywords() -> &'static SpecialKeywords {
@@ -549,6 +553,7 @@ fn special_keywords() -> &'static SpecialKeywords {
         alignof: StringId::new("alignof"),
         thread_local: StringId::new("thread_local"),
         constexpr: StringId::new("constexpr"),
+        char8_t: StringId::new("char8_t"),
     })
 }
 
@@ -560,6 +565,7 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("break"), TokenKind::Break);
         m.insert(StringId::new("case"), TokenKind::Case);
         m.insert(StringId::new("char"), TokenKind::Char);
+        m.insert(StringId::new("char8_t"), TokenKind::Char8);
         m.insert(StringId::new("const"), TokenKind::Const);
         m.insert(StringId::new("continue"), TokenKind::Continue);
         m.insert(StringId::new("default"), TokenKind::Default);

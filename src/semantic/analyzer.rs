@@ -66,7 +66,9 @@ struct FunctionCtx {
 #[derive(Debug, Clone, Default)]
 pub struct SemanticInfo {
     pub types: Vec<Option<QualType>>,
-    pub conversions: Vec<SmallVec<[Conversion; 1]>>,
+    // Bolt ⚡: Optimization: Use a sparse HashMap for conversions to save memory.
+    // Most nodes do not have implicit conversions.
+    pub conversions: FxHashMap<usize, SmallVec<[Conversion; 1]>>,
     pub value_categories: Vec<ValueCategory>,
     pub generic_selections: FxHashMap<usize, NodeRef>, // Maps NodeIndex of GenericSelection to selected result_expr
     pub choose_expressions: FxHashMap<usize, NodeRef>, // Maps NodeIndex of BuiltinChooseExpr to selected branch
@@ -78,7 +80,7 @@ impl SemanticInfo {
     fn with_capacity(n: usize) -> Self {
         Self {
             types: vec![None; n],
-            conversions: vec![SmallVec::new(); n],
+            conversions: FxHashMap::default(),
             value_categories: vec![ValueCategory::RValue; n],
             generic_selections: FxHashMap::default(),
             choose_expressions: FxHashMap::default(),
@@ -212,7 +214,7 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn push_conversion(&mut self, node: NodeRef, conv: Conversion) {
-        let conversions = &mut self.semantic_info.conversions[node.index()];
+        let conversions = self.semantic_info.conversions.entry(node.index()).or_default();
         // Avoid redundant identical conversions pushed multiple times to the same node.
         // This handles cases where semantic rules might be applied twice (e.g. in compound assignments)
         // or during double-visits of the same expression node.
@@ -1528,7 +1530,7 @@ impl<'a> SemanticAnalyzer<'a> {
         if lhs_promoted.ty() != lhs_target || self.is_numeric_literal(lhs) {
             // Check if this conversion is already the last one to avoid duplicates
             // resolve_binary_operation_types might be called multiple times in some complex nested scenarios
-            let needs_push = match self.semantic_info.conversions[lhs.index()].last() {
+            let needs_push = match self.semantic_info.conversions.get(&lhs.index()).and_then(|v| v.last()) {
                 Some(Conversion::IntegerCast { to, .. }) => *to != lhs_target,
                 Some(Conversion::FloatingCast { to, .. }) => *to != lhs_target,
                 Some(Conversion::ComplexCast { to, .. }) => *to != lhs_target,
@@ -1542,7 +1544,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         let rhs_target = common_qt.ty();
         if rhs_promoted.ty() != rhs_target || self.is_numeric_literal(rhs) {
-            let needs_push = match self.semantic_info.conversions[rhs.index()].last() {
+            let needs_push = match self.semantic_info.conversions.get(&rhs.index()).and_then(|v| v.last()) {
                 Some(Conversion::IntegerCast { to, .. }) => *to != rhs_target,
                 Some(Conversion::FloatingCast { to, .. }) => *to != rhs_target,
                 Some(Conversion::ComplexCast { to, .. }) => *to != rhs_target,

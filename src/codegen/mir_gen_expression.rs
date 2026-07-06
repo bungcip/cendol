@@ -1223,9 +1223,11 @@ impl<'a> MirGen<'a> {
 
         // Handle implicit conversions (like array-to-pointer decay) for arrow access
         let record_ty = if is_arrow {
-            for conv in &self.ast.semantic_info.conversions[obj.index()] {
-                if let Conversion::PointerDecay { to } = conv {
-                    obj_qt = QualType::unqualified(*to);
+            if let Some(conversions) = self.ast.semantic_info.conversions.get(&obj.index()) {
+                for conv in conversions {
+                    if let Conversion::PointerDecay { to } = conv {
+                        obj_qt = QualType::unqualified(*to);
+                    }
                 }
             }
             self.registry

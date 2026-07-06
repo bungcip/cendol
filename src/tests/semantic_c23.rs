@@ -6,7 +6,6 @@ use crate::tests::test_utils::*;
 fn test_c23_char8_t_and_utf8_literal() {
     run_pass_with_std(
         r#"
-        typedef unsigned char char8_t;
         int main() {
             char8_t c = u8'a';
             return 0;

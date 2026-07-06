@@ -2927,7 +2927,9 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::ComputedGoto(expr) => {
                 self.goto_vla_state.push((node, self.active_vlas.clone()));
                 let ty = self.visit_node(*expr);
-                if let Some(t) = ty.filter(|t| !t.is_pointer()) {
+                if let Some(t) = ty
+                    && !t.is_pointer()
+                {
                     self.report_error(node, SemanticError::ExpectedPointerType { found: t });
                 }
                 None

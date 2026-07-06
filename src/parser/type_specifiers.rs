@@ -21,6 +21,7 @@ pub(super) fn parse_type_spec(parser: &mut Parser) -> Result<TypeSpec, ParseDiag
     match token.kind {
         TK::Void
         | TK::Char
+        | TK::Char8
         | TK::Short
         | TK::Int
         | TK::Float
@@ -35,6 +36,7 @@ pub(super) fn parse_type_spec(parser: &mut Parser) -> Result<TypeSpec, ParseDiag
             Ok(match token.kind {
                 TK::Void => TS::Void,
                 TK::Char => TS::Char,
+                TK::Char8 => TS::Char8,
                 TK::Short => TS::Short,
                 TK::Int => TS::Int,
                 TK::Float => TS::Float,

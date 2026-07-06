@@ -2927,10 +2927,8 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::ComputedGoto(expr) => {
                 self.goto_vla_state.push((node, self.active_vlas.clone()));
                 let ty = self.visit_node(*expr);
-                if let Some(t) = ty {
-                    if !t.is_pointer() {
-                        self.report_error(node, SemanticError::ExpectedPointerType { found: t });
-                    }
+                if let Some(t) = ty.filter(|t| !t.is_pointer()) {
+                    self.report_error(node, SemanticError::ExpectedPointerType { found: t });
                 }
                 None
             }
@@ -3709,17 +3707,9 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_post_inc_dec(&mut self, node: NodeRef, expr: NodeRef) -> Option<QualType> {
-        let ty = self.visit_node(expr);
-        if let Some(t) = ty {
-            self.check_lvalue_and_modifiable(expr, t);
-            if self.check_increment_decrement_operand(node, t) {
-                Some(t)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
+        let t = self.visit_node(expr)?;
+        self.check_lvalue_and_modifiable(expr, t);
+        self.check_increment_decrement_operand(node, t).then_some(t)
     }
 
     fn visit_cast_or_va_arg(

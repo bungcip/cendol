@@ -233,6 +233,7 @@ pub enum DeclSpec {
 pub enum TypeSpec {
     Void,
     Char,
+    Char8,
     Short,
     Int,
     Long,

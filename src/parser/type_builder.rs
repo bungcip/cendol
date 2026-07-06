@@ -104,6 +104,7 @@ fn parse_base_type_and_qualifiers(
             DeclSpec::TypeSpec(ts) => match ts {
                 TypeSpec::Void
                 | TypeSpec::Char
+                | TypeSpec::Char8
                 | TypeSpec::Short
                 | TypeSpec::Int
                 | TypeSpec::Long
@@ -164,7 +165,7 @@ fn parse_base_type_and_qualifiers(
 fn parse_base_type(parser: &mut Parser, ts: &TypeSpec) -> Result<ParsedBaseTypeRef, ParseDiag> {
     use TypeSpec::*;
     match ts {
-        Void | Char | Short | Int | Long | LongLong | UnsignedLong | UnsignedLongLong | UnsignedShort
+        Void | Char | Char8 | Short | Int | Long | LongLong | UnsignedLong | UnsignedLongLong | UnsignedShort
         | UnsignedChar | SignedChar | SignedShort | SignedLong | SignedLongLong | Float | Double | LongDouble
         | ComplexFloat | ComplexDouble | ComplexLongDouble | Signed | Unsigned | Bool | Complex | VaList => {
             Ok(parser.alloc_base_type(ParsedBaseType::Builtin(ts.clone())))

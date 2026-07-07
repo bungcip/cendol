@@ -1185,56 +1185,20 @@ impl<'a> MirGen<'a> {
             }
         }
 
+        // Sort cases for binary search dispatch
+        case_blocks.sort_by_key(|(start_id, _, _)| {
+            let start_const = self.mb.get_constants().get(start_id.index()).unwrap();
+            match start_const.kind {
+                ConstValueKind::Int(v) => v,
+                _ => 0,
+            }
+        });
+
         // Generate dispatch
         let fallback_block = default_block.unwrap_or(merge_block);
         let bool_type_id = self.lower_type(self.registry.type_bool);
 
-        for (start_id, end_id_opt, target_block) in case_blocks {
-            let next_test_block = self.create_block();
-            let start_const = self.mb.get_constants().get(start_id.index()).unwrap().clone();
-
-            // Re-create constant with the same type as condition to ensure safe comparison
-            let start_op = Operand::Constant(start_id);
-            let cast_start_op = if start_const.ty != cond_ty_id {
-                Operand::Cast(cond_ty_id, Box::new(start_op))
-            } else {
-                start_op
-            };
-
-            let cmp_op = if let Some(end_id) = end_id_opt {
-                // Range check: x >= start && x <= end
-                let end_const = self.mb.get_constants().get(end_id.index()).unwrap().clone();
-                let end_op = Operand::Constant(end_id);
-                let cast_end_op = if end_const.ty != cond_ty_id {
-                    Operand::Cast(cond_ty_id, Box::new(end_op))
-                } else {
-                    end_op
-                };
-
-                // GE: x >= start
-                let ge_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Ge, cond_op.clone(), cast_start_op);
-                let ge_op = self.emit_rvalue_to_operand(ge_rvalue, bool_type_id);
-
-                // LE: x <= end
-                let le_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Le, cond_op.clone(), cast_end_op);
-                let le_op = self.emit_rvalue_to_operand(le_rvalue, bool_type_id);
-
-                // AND: (x >= start) && (x <= end)
-                let and_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::BitAnd, ge_op, le_op);
-                self.emit_rvalue_to_operand(and_rvalue, bool_type_id)
-            } else {
-                // Single value check: x == val
-                let eq_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Eq, cond_op.clone(), cast_start_op);
-                self.emit_rvalue_to_operand(eq_rvalue, bool_type_id)
-            };
-
-            self.set_terminator(Terminator::If(cmp_op, target_block, next_test_block));
-
-            self.set_current_block(next_test_block);
-        }
-
-        // Final jump to default or merge
-        self.set_terminator(Terminator::Goto(fallback_block));
+        self.emit_switch_dispatch(&case_blocks, cond_op, cond_ty_id, bool_type_id, fallback_block);
 
         // Lower body
         // Start a dummy unreachable block for the body entry (to catch unreachable statements)
@@ -2390,6 +2354,108 @@ impl<'a> MirGen<'a> {
         match storage {
             Some(StorageClass::Static) => MirLinkage::Internal,
             _ => MirLinkage::External,
+        }
+    }
+
+    /// Recursively emit a binary search tree of `If` terminators for switch dispatch.
+    /// Bolt ⚡: This replaces linear dispatch with $O(\log N)$ search, which is crucial
+    /// for switch statements with thousands of cases (e.g. in sqlite's VM).
+    fn emit_switch_dispatch(
+        &mut self,
+        cases: &[(ConstValueId, Option<ConstValueId>, MirBlockId)],
+        cond_op: Operand,
+        cond_ty_id: TypeId,
+        bool_ty_id: TypeId,
+        fallback_block: MirBlockId,
+    ) {
+        if cases.is_empty() {
+            self.set_terminator(Terminator::Goto(fallback_block));
+            return;
+        }
+
+        // For small number of cases, we could use linear dispatch, but binary
+        // search is robust. Let's use a threshold of 3 for simplicity.
+        if cases.len() <= 3 {
+            for (start_id, end_id_opt, target_block) in cases {
+                let next_test_block = self.create_block();
+                let cmp_op = self.emit_case_cmp(*start_id, *end_id_opt, &cond_op, cond_ty_id, bool_ty_id);
+                self.set_terminator(Terminator::If(cmp_op, *target_block, next_test_block));
+                self.set_current_block(next_test_block);
+            }
+            self.set_terminator(Terminator::Goto(fallback_block));
+            return;
+        }
+
+        // Binary search: split cases at the middle
+        let mid = cases.len() / 2;
+        let (start_id, _, _) = cases[mid];
+        let start_const = self.mb.get_constants().get(start_id.index()).unwrap().clone();
+        let start_op = Operand::Constant(start_id);
+        let cast_start_op = if start_const.ty != cond_ty_id {
+            Operand::Cast(cond_ty_id, Box::new(start_op))
+        } else {
+            start_op
+        };
+
+        // If cond < mid_value, go to left tree, else go to right tree (which includes mid_value)
+        let lt_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Lt, cond_op.clone(), cast_start_op);
+        let lt_op = self.emit_rvalue_to_operand(lt_rvalue, bool_ty_id);
+
+        let left_tree_block = self.create_block();
+        let right_tree_block = self.create_block();
+
+        self.set_terminator(Terminator::If(lt_op, left_tree_block, right_tree_block));
+
+        // Emit left tree
+        self.set_current_block(left_tree_block);
+        self.emit_switch_dispatch(&cases[..mid], cond_op.clone(), cond_ty_id, bool_ty_id, fallback_block);
+
+        // Emit right tree
+        self.set_current_block(right_tree_block);
+        self.emit_switch_dispatch(&cases[mid..], cond_op, cond_ty_id, bool_ty_id, fallback_block);
+    }
+
+    /// Helper to emit comparison logic for a single case or case range.
+    fn emit_case_cmp(
+        &mut self,
+        start_id: ConstValueId,
+        end_id_opt: Option<ConstValueId>,
+        cond_op: &Operand,
+        cond_ty_id: TypeId,
+        bool_ty_id: TypeId,
+    ) -> Operand {
+        let start_const = self.mb.get_constants().get(start_id.index()).unwrap().clone();
+        let start_op = Operand::Constant(start_id);
+        let cast_start_op = if start_const.ty != cond_ty_id {
+            Operand::Cast(cond_ty_id, Box::new(start_op))
+        } else {
+            start_op
+        };
+
+        if let Some(end_id) = end_id_opt {
+            let end_const = self.mb.get_constants().get(end_id.index()).unwrap().clone();
+            let end_op = Operand::Constant(end_id);
+            let cast_end_op = if end_const.ty != cond_ty_id {
+                Operand::Cast(cond_ty_id, Box::new(end_op))
+            } else {
+                end_op
+            };
+
+            // x >= start
+            let ge_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Ge, cond_op.clone(), cast_start_op);
+            let ge_op = self.emit_rvalue_to_operand(ge_rvalue, bool_ty_id);
+
+            // x <= end
+            let le_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Le, cond_op.clone(), cast_end_op);
+            let le_op = self.emit_rvalue_to_operand(le_rvalue, bool_ty_id);
+
+            // (x >= start) && (x <= end)
+            let and_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::BitAnd, ge_op, le_op);
+            self.emit_rvalue_to_operand(and_rvalue, bool_ty_id)
+        } else {
+            // x == val
+            let eq_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Eq, cond_op.clone(), cast_start_op);
+            self.emit_rvalue_to_operand(eq_rvalue, bool_ty_id)
         }
     }
 }

@@ -1991,9 +1991,9 @@ impl<'a> MirGen<'a> {
         // Look up conversions for this node in semantic_info
         let semantic_info = &self.ast.semantic_info;
         let idx = node.index();
-        if idx < semantic_info.conversions.len() {
+        if let Some(conversions) = semantic_info.conversions.get(&idx) {
             let mut result = operand;
-            for conv in &semantic_info.conversions[idx] {
+            for conv in conversions {
                 result = self.emit_conversion(result, conv, target, node);
             }
             return result;

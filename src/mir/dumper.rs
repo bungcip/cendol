@@ -320,7 +320,7 @@ impl<'a> MirDumper<'a> {
                 &[
                     &|out| self.write_operand(out, ptr),
                     &|out| self.write_operand(out, val),
-                    &|out| write!(out, "{:?}", order).map_err(Into::into),
+                    &|out| write!(out, "{:?}", order),
                 ],
             ),
             MirStmt::InlineAsm {

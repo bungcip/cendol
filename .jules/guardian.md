@@ -297,3 +297,8 @@ Action: Add `guardian_invalid_storage_class_for_function.rs` to explicitly valid
 Learning: The `SemanticAnalyzer` in Cendol failed to validate that a call to a variadic function passes at least the minimum number of arguments required by its non-variadic parameters. This allowed a call like `void f(int x, ...); f();` to pass semantic validation but later crash during MIR validation with an `IllegalOperation("Call to function f arg count mismatch")` because the argument count didn't match the required parameters.
 
 Action: Ensure semantic checks always enforce the minimum required argument count for variadic functions. Added tests to explicitly guard `SemanticError::InvalidNumberOfArguments` for variadic functions with too few arguments.
+
+2026-07-08 - [C11 §6.8.6.3: Break not in loop or switch]
+
+Learning: Break statements must be enclosed within a loop or switch statement. This constraint is properly validated during the `CompilePhase::Mir` by traversing the AST to detect breaks outside valid blocks. A standalone `break`, or one inside an `if` but outside a loop or switch, will throw `SemanticError::BreakNotInLoop`. Adding specific unit tests ensures that the phase correctly catches and rejects this invalid control flow structure.
+Action: Add `guardian_break_not_in_loop_or_switch.rs` to validate this invariant, ensuring the diagnostic triggers at `CompilePhase::Mir` with the correct error message and specific line/column spans.

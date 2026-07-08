@@ -1,3 +1,4 @@
+pub mod parser_lexer_coverage;
 // Preprocessor
 pub mod pp_common;
 pub mod pp_conditionals;

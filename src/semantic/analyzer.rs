@@ -2243,15 +2243,9 @@ impl<'a> SemanticAnalyzer<'a> {
                             },
                         );
                     }
-                } else if !is_variadic && arg_count != parameters.len() {
-                    self.report_error(
-                        call_expr.callee,
-                        SemanticError::InvalidNumberOfArguments {
-                            expected: parameters.len(),
-                            found: arg_count,
-                        },
-                    );
-                } else if is_variadic && arg_count < parameters.len() {
+                } else if (!is_variadic && arg_count != parameters.len())
+                    || (is_variadic && arg_count < parameters.len())
+                {
                     self.report_error(
                         call_expr.callee,
                         SemanticError::InvalidNumberOfArguments {

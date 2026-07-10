@@ -392,11 +392,19 @@ impl<'a> SemanticAnalyzer<'a> {
 
         match task {
             Task::Array(element_type, vla_expr) => {
-                if let Some(expr) = vla_expr
-                    && let Some(qt) = self.visit_node(expr)
-                    && !qt.is_integer()
-                {
-                    self.report_error(expr, SemanticError::ArraySizeNotInteger);
+                if let Some(expr) = vla_expr {
+                    if let Some(qt) = self.visit_node(expr) {
+                        if !qt.is_integer() {
+                            self.report_error(expr, SemanticError::ArraySizeNotInteger);
+                        }
+                    }
+                    if let Some(val) = self.const_ctx().eval_int(expr) {
+                        if val < 0 {
+                            self.report_error(expr, SemanticError::InvalidArraySize);
+                        } else if val == 0 {
+                            self.report_warning(expr, SemanticError::GnuZeroLengthArray);
+                        }
+                    }
                 }
                 self.visit_type_exprs(QualType::unqualified(element_type));
             }

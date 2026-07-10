@@ -261,6 +261,7 @@ pub(crate) enum MirStmt {
     BuiltinVaEnd(Place),
     BuiltinVaCopy(Place, Place),
     AtomicStore(Operand, Operand, AtomicMemOrder),
+    AtomicThreadFence(AtomicMemOrder),
     InlineAsm {
         template: crate::ast::literal::LitRef,
         outputs: Vec<(crate::ast::literal::LitRef, Place)>,

@@ -323,6 +323,9 @@ impl<'a> MirDumper<'a> {
                     &|out| write!(out, "{:?}", order),
                 ],
             ),
+            MirStmt::AtomicThreadFence(order) => {
+                self.write_call(output, "atomic_thread_fence", &[&|out| write!(out, "{:?}", order)])
+            }
             MirStmt::InlineAsm {
                 template,
                 outputs,

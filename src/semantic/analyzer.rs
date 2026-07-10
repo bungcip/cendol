@@ -2237,6 +2237,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
                 if let Some(op) = atomic_op {
                     let expected_args = match op {
+                        AtomicOp::ThreadFence => 1,
                         AtomicOp::LoadN => 2,
                         AtomicOp::CompareExchangeN => 6,
                         _ => 3,
@@ -2456,7 +2457,7 @@ impl<'a> SemanticAnalyzer<'a> {
         arg_qt: QualType,
         atomic_pointee: &mut Option<QualType>,
     ) {
-        if i == 0 {
+        if i == 0 && op != AtomicOp::ThreadFence {
             if let Some(p) = self.registry.get_pointee(arg_qt.ty()) {
                 *atomic_pointee = Some(p);
             } else {
@@ -2465,6 +2466,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         let is_memorder = match op {
+            AtomicOp::ThreadFence => i == 0,
             AtomicOp::LoadN => i == 1,
             AtomicOp::CompareExchangeN => i == 4 || i == 5,
             _ => i == 2,
@@ -2555,7 +2557,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 | AtomicOp::AndFetch
                 | AtomicOp::OrFetch
                 | AtomicOp::XorFetch => pointee,
-                AtomicOp::StoreN => QualType::unqualified(self.registry.type_void),
+                AtomicOp::StoreN | AtomicOp::ThreadFence => QualType::unqualified(self.registry.type_void),
                 AtomicOp::CompareExchangeN => QualType::unqualified(self.registry.type_bool),
             }
         } else {

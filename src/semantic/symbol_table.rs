@@ -33,6 +33,7 @@ pub enum BuiltinFunctionKind {
     AtomicAndFetch,
     AtomicOrFetch,
     AtomicXorFetch,
+    AtomicThreadFence,
 
     // Bitwise builtins
     Popcount,
@@ -113,6 +114,7 @@ impl BuiltinFunctionKind {
             Self::AtomicAndFetch => "__atomic_and_fetch",
             Self::AtomicOrFetch => "__atomic_or_fetch",
             Self::AtomicXorFetch => "__atomic_xor_fetch",
+            Self::AtomicThreadFence => "__atomic_thread_fence",
             Self::Popcount => "__builtin_popcount",
             Self::PopcountL => "__builtin_popcountl",
             Self::PopcountLL => "__builtin_popcountll",
@@ -177,6 +179,7 @@ impl BuiltinFunctionKind {
         Self::AtomicAndFetch,
         Self::AtomicOrFetch,
         Self::AtomicXorFetch,
+        Self::AtomicThreadFence,
         Self::Popcount,
         Self::PopcountL,
         Self::PopcountLL,
@@ -263,6 +266,7 @@ impl BuiltinFunctionKind {
             Self::AtomicAndFetch => Some(AtomicOp::AndFetch),
             Self::AtomicOrFetch => Some(AtomicOp::OrFetch),
             Self::AtomicXorFetch => Some(AtomicOp::XorFetch),
+            Self::AtomicThreadFence => Some(AtomicOp::ThreadFence),
             _ => None,
         }
     }

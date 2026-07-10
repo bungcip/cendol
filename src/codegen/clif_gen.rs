@@ -2336,6 +2336,9 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
 
             ctx.builder.ins().atomic_store(MemFlagsData::new(), val_op, ptr_val);
         }
+        MirStmt::AtomicThreadFence(_order) => {
+            ctx.builder.ins().fence();
+        }
         MirStmt::BuiltinVaEnd(_place) => {
             // No-op for x86_64
         }
@@ -3093,6 +3096,7 @@ impl ClifGen {
                 self.collect_operand_reachability(v1, wf, rf, rg, wg);
                 self.collect_operand_reachability(v2, wf, rf, rg, wg);
             }
+            MirStmt::AtomicThreadFence(_) => {}
             MirStmt::BuiltinPrefetch { addr, .. } => {
                 self.collect_operand_reachability(addr, wf, rf, rg, wg);
             }

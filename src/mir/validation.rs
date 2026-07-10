@@ -274,6 +274,7 @@ impl<'a> MirValidator<'a> {
                 self.validate_operand(ptr);
                 self.validate_operand(val);
             }
+            MirStmt::AtomicThreadFence(_) => {}
             MirStmt::InlineAsm { outputs, inputs, .. } => {
                 for (_, place) in outputs {
                     self.validate_place(place);

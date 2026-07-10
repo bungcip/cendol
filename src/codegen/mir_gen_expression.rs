@@ -1491,6 +1491,10 @@ impl<'a> MirGen<'a> {
                 self.add_stmt(MirStmt::AtomicStore(ptr, val, order));
                 self.create_dummy_operand()
             }
+            AtomicOp::ThreadFence => {
+                self.add_stmt(MirStmt::AtomicThreadFence(order));
+                self.create_dummy_operand()
+            }
             AtomicOp::ExchangeN => {
                 let ptr = args[0].clone();
                 let val = args[1].clone();

@@ -599,6 +599,7 @@ pub enum AtomicOp {
     AndFetch,
     OrFetch,
     XorFetch,
+    ThreadFence,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

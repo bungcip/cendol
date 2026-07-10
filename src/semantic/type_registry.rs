@@ -1046,6 +1046,7 @@ impl TypeRegistry {
             | BuiltinFunctionKind::AtomicAndFetch
             | BuiltinFunctionKind::AtomicOrFetch
             | BuiltinFunctionKind::AtomicXorFetch => (vec![], self.type_void_ptr, true, false),
+            BuiltinFunctionKind::AtomicThreadFence => (vec![p(self.type_int)], self.type_void, false, false),
             BuiltinFunctionKind::AddOverflow | BuiltinFunctionKind::SubOverflow | BuiltinFunctionKind::MulOverflow => {
                 (vec![], self.type_bool, true, false)
             }

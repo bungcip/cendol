@@ -55,3 +55,15 @@ fn test_atomic_codegen() {
     "#;
     run_pass(source, CompilePhase::EmitObject);
 }
+
+#[test]
+fn test_atomic_thread_fence_codegen() {
+    let source = r#"
+        int main() {
+            __atomic_thread_fence(5);
+            return 42;
+        }
+    "#;
+    use crate::tests::codegen_common::run_c_code_exit_status;
+    assert_eq!(run_c_code_exit_status(source), 42);
+}

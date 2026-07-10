@@ -1,0 +1,9 @@
+---
+source: src/tests/parser_gcc_extensions.rs
+expression: "&resolved"
+---
+TranslationUnit:
+  - Declaration:
+      specifiers:
+        - "struct Outer { ... }"
+      init_declarators: []

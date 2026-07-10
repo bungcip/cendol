@@ -152,7 +152,21 @@ fn test_struct_member_attributes() {
             struct Inner2 { int x; } c __attribute__((packed));
             int d __asm__("foo");
             int e __attribute__((packed)) __attribute__((aligned(8)));
-        };
     "#,
     );
+}
+
+#[test]
+fn test_struct_anonymous_member_attributes() {
+    let resolved = setup_translation_unit(
+        r#"
+        struct __attribute__((ms_struct)) Outer {
+            struct __attribute__((ms_struct)) {
+                int a : 1;
+            } a;
+            int b : 4;
+        };
+        "#,
+    );
+    insta::assert_yaml_snapshot!(&resolved);
 }

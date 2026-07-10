@@ -341,3 +341,23 @@ fn test_c23_vla_empty_init_fail_c11() {
         CStandard::C11,
     );
 }
+
+#[test]
+fn test_c23_labels() {
+    // Labels before declarations and at the end of a block
+    check_semantic_valid(
+        "
+        void f() {
+            int a = 1;
+            switch(a) {
+                case 1:
+                    int b = 2;
+                default:
+                    int c = 3;
+            }
+            L1: int d = 4;
+            L2:
+        }
+        ",
+    );
+}

@@ -275,8 +275,13 @@ fn parse_case_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag>
         .accept(TokenKind::Ellipsis)
         .map(|_| parser.parse_expr_min())
         .transpose()?;
-    parser.expect(TokenKind::Colon)?;
-    let stmt = parse_statement(parser)?;
+    let colon_span = parser.expect(TokenKind::Colon)?.span;
+    let stmt = if parser.is_token(TokenKind::RightBrace) || parser.starts_declaration() {
+        let dummy = parser.push_dummy();
+        parser.replace_node(dummy, ParsedNodeKind::EmptyStmt, colon_span)
+    } else {
+        parse_statement(parser)?
+    };
     let span = start.merge(parser.ast.get_node(stmt).span);
     let kind = match end_expr {
         Some(end) => ParsedNodeKind::CaseRange(start_expr, end, stmt),
@@ -287,16 +292,26 @@ fn parse_case_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag>
 
 fn parse_default_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Default)?.span;
-    parser.expect(TokenKind::Colon)?;
-    let stmt = parse_statement(parser)?;
+    let colon_span = parser.expect(TokenKind::Colon)?.span;
+    let stmt = if parser.is_token(TokenKind::RightBrace) || parser.starts_declaration() {
+        let dummy = parser.push_dummy();
+        parser.replace_node(dummy, ParsedNodeKind::EmptyStmt, colon_span)
+    } else {
+        parse_statement(parser)?
+    };
     let span = start.merge(parser.ast.get_node(stmt).span);
     Ok(parser.push_node(ParsedNodeKind::Default(stmt), span))
 }
 
 fn parse_label_statement(parser: &mut Parser, name: NameId) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.advance().unwrap().span;
-    parser.expect(TokenKind::Colon)?;
-    let stmt = parse_statement(parser)?;
+    let colon_span = parser.expect(TokenKind::Colon)?.span;
+    let stmt = if parser.is_token(TokenKind::RightBrace) || parser.starts_declaration() {
+        let dummy = parser.push_dummy();
+        parser.replace_node(dummy, ParsedNodeKind::EmptyStmt, colon_span)
+    } else {
+        parse_statement(parser)?
+    };
     let span = start.merge(parser.ast.get_node(stmt).span);
     Ok(parser.push_node(ParsedNodeKind::Label(name, stmt), span))
 }

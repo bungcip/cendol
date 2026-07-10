@@ -1210,7 +1210,7 @@ impl<'a> MirGen<'a> {
         self.visit_node(body);
 
         // If body falls through, go to merge
-        if self.current_block_has_terminator() == false {
+        if !self.current_block_has_terminator() {
             // Check if terminator is Unreachable (default) - if so, we can replace it or just leave it?
             // `current_block_has_terminator` returns false if it is Unreachable.
             // But if we are in body_entry_dummy and it's empty, we shouldn't jump to merge.

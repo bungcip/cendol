@@ -1238,7 +1238,7 @@ impl<'a> MirGen<'a> {
             obj_qt.ty()
         };
 
-        if record_ty.is_record() == false {
+        if !record_ty.is_record() {
             panic!("ICE: Member access on non-record type");
         }
 

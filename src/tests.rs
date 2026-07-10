@@ -129,6 +129,7 @@ pub mod guardian_choose_expr;
 pub mod guardian_compound_literal_constraints;
 pub mod guardian_const_eval_builtins;
 pub mod guardian_enum_compatibility;
+pub mod guardian_fam_struct_member;
 pub mod guardian_fam_union_constraints;
 pub mod guardian_function_return_type_constraints;
 pub mod guardian_generic;

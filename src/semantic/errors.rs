@@ -435,6 +435,8 @@ impl SemanticError {
                 | SemanticError::GnuZeroLengthArray
                 | SemanticError::ExcessElements { .. }
                 | SemanticError::VoidReturnWithVoidExpr { .. }
+                | SemanticError::FlexibleArrayMemberInStruct
+                | SemanticError::FlexibleArrayElementInArray
         )
     }
 
@@ -462,6 +464,8 @@ impl SemanticError {
             SemanticError::AttributeCleanupOnType => Some("attributes"),
             SemanticError::AttributeCleanupOnNonLocal => Some("ignored-attributes"),
             SemanticError::VoidReturnWithVoidExpr { .. } => Some("pedantic"),
+            SemanticError::FlexibleArrayMemberInStruct => Some("pedantic"),
+            SemanticError::FlexibleArrayElementInArray => Some("pedantic"),
             _ => None,
         }
     }

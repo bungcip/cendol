@@ -3,7 +3,7 @@
 //! This module handles parsing of struct and union declarations,
 //! including member declarations and anonymous structs/unions.
 
-use thin_vec::{ThinVec, thin_vec};
+use thin_vec::ThinVec;
 
 use crate::ast::parsed::*;
 use crate::ast::*;
@@ -72,44 +72,24 @@ fn parse_struct_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
 
     let start_loc = parser.current_token_span()?.start();
 
-    // Check if we have an anonymous struct/union
-    let is_struct = parser.accept(TokenKind::Struct).is_some();
-    let is_union = !is_struct && parser.accept(TokenKind::Union).is_some();
+    let mut specifiers = parse_decl_specs(parser)?;
 
-    let decl = if is_struct || is_union {
-        let tag = parser.accept_name();
-        let (members, mut attributes) = if parser.accept(TokenKind::LeftBrace).is_some() {
-            let m = parse_struct_decl_list(parser)?;
-            parser.expect(TokenKind::RightBrace)?;
-            (Some(m), parser.parse_attributes_lenient())
-        } else {
-            (None, Vec::new())
-        };
+    let has_record_enum_type = specifiers
+        .iter()
+        .any(|s| matches!(s, DeclSpec::TypeSpec(TypeSpec::Record(..) | TypeSpec::Enum(..))));
 
-        let init_declarators = if parser.accept(TokenKind::Semicolon).is_some() {
-            ThinVec::new()
-        } else {
-            let decls = parse_init_declarators(parser)?;
-            if members.is_some() {
-                attributes.extend(parser.parse_attributes_lenient());
-            }
-            parser.expect(TokenKind::Semicolon)?;
-            decls
-        };
-
-        ParsedDecl {
-            specifiers: thin_vec![DeclSpec::TypeSpec(TypeSpec::Record(is_union, tag, members, attributes))],
-            init_declarators,
-        }
+    let init_declarators = if has_record_enum_type && parser.accept(TokenKind::Semicolon).is_some() {
+        ThinVec::new()
     } else {
-        let mut specifiers = parse_decl_specs(parser)?;
-        let init_declarators = parse_init_declarators(parser)?;
+        let decls = parse_init_declarators(parser)?;
         super::declarations::parse_trailing_attributes_and_asm(parser, &mut specifiers)?;
         parser.expect(TokenKind::Semicolon)?;
-        ParsedDecl {
-            specifiers,
-            init_declarators,
-        }
+        decls
+    };
+
+    let decl = ParsedDecl {
+        specifiers,
+        init_declarators,
     };
 
     let span = SourceSpan::new(start_loc, parser.previous_token_span().end());

@@ -13,7 +13,7 @@ use crate::{
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticDiag, SemanticError},
-        literal_utils::{get_string_builtin_type, get_string_literal_size},
+        literal_utils::get_string_builtin_type,
         types::TypeClass,
     },
 };
@@ -393,11 +393,10 @@ impl<'a> SemanticAnalyzer<'a> {
         match task {
             Task::Array(element_type, vla_expr) => {
                 if let Some(expr) = vla_expr {
-                    if let Some(qt) = self.visit_node(expr) {
-                        if !qt.is_integer() {
+                    if let Some(qt) = self.visit_node(expr)
+                        && !qt.is_integer() {
                             self.report_error(expr, SemanticError::ArraySizeNotInteger);
                         }
-                    }
                     if let Some(val) = self.const_ctx().eval_int(expr) {
                         if val < 0 {
                             self.report_error(expr, SemanticError::InvalidArraySize);
@@ -3361,13 +3360,27 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_literal(&mut self, lid: LitRef, node: NodeRef) -> Option<QualType> {
-        let val = lid.get_val();
-        match val {
+        // Bolt ⚡: Use metadata-only accessors for strings to avoid full literal lowering and clones.
+        if let Some((size, prefix)) = lid.get_string_metadata() {
+            let builtin_type = get_string_builtin_type(prefix);
+            let element_type = self.registry.get_builtin_type(builtin_type);
+
+            let array_type = self.registry.array_of(element_type, ArraySizeType::Constant(size));
+            let _ = self.registry.ensure_layout(array_type);
+
+            // Bolt ⚡: Eagerly set value category to LValue for string literals.
+            self.semantic_info.value_categories[node.index()] = ValueCategory::LValue;
+
+            return Some(QualType::new(array_type, TypeQualifiers::empty()));
+        }
+
+        // Bolt ⚡: Use with_val to avoid clones for other interned literal types.
+        lid.with_val(|val| match val {
             LitVal::Int { value, suffix, radix } => {
-                let is_decimal = radix == 10;
+                let is_decimal = *radix == 10;
                 for ty in suffix.get_candidates(self.registry, is_decimal) {
                     let _ = self.registry.ensure_layout(ty);
-                    if self.registry.is_literal_fitting(value, ty) {
+                    if self.registry.is_literal_fitting(*value, ty) {
                         return Some(QualType::unqualified(ty));
                     }
                 }
@@ -3384,23 +3397,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 let ty = prefix.get_type(self.registry);
                 Some(QualType::unqualified(ty))
             }
-            LitVal::String { value, prefix } => {
-                // Bolt ⚡: Use metadata-only accessors to avoid full literal lowering.
-                let builtin_type = get_string_builtin_type(prefix);
-                let size = get_string_literal_size(&value, prefix);
-                let element_type = self.registry.get_builtin_type(builtin_type);
-
-                let array_type = self.registry.array_of(element_type, ArraySizeType::Constant(size));
-                let _ = self.registry.ensure_layout(array_type);
-
-                // Bolt ⚡: Eagerly set value category to LValue for string literals.
-                self.semantic_info.value_categories[node.index()] = ValueCategory::LValue;
-
-                Some(QualType::new(array_type, TypeQualifiers::empty()))
-            }
             LitVal::Nullptr => Some(QualType::unqualified(self.registry.type_nullptr_t)),
             LitVal::True | LitVal::False => Some(QualType::unqualified(self.registry.type_bool)),
-        }
+            LitVal::String { .. } => unreachable!("String handled by metadata check above"),
+        })
     }
     fn visit_node(&mut self, node: NodeRef) -> Option<QualType> {
         // Bolt ⚡: Memoization - skip analysis if node was already visited.

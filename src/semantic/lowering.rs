@@ -13,6 +13,7 @@
 use hashbrown::HashMap;
 use smallvec::{SmallVec, smallvec};
 
+use crate::ast::literal::get_string_literal_size;
 use crate::ast::literal::{LitKind, LitRef, LitVal, StrPrefix};
 use crate::ast::parsed::{ParsedDecl, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, TypeSpec};
 use crate::ast::*;
@@ -20,7 +21,7 @@ use crate::diagnostic::{DiagnosticEngine, DiagnosticLevel};
 use crate::lang_options::{CStandard, LangOptions, Visibility};
 use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::errors::{SemanticDiag, SemanticError};
-use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
+use crate::semantic::literal_utils::get_string_builtin_type;
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
 use crate::semantic::{
     ArraySizeType, BuiltinFunctionKind, BuiltinType, EnumConstant, Namespace, RecordMember, ScopeId, SymbolKind,

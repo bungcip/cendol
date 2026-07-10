@@ -4,10 +4,11 @@
 //! at compile time, as required by the C11 standard for contexts like
 //! static assertions and array sizes.
 
+use crate::ast::literal::get_string_literal_size;
 use crate::ast::literal::{FloatSuffix, LitVal};
 use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, StringId, UnaryOp};
 use crate::semantic::conversions::{integer_promotion, usual_arithmetic_conversions};
-use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
+use crate::semantic::literal_utils::get_string_builtin_type;
 use crate::semantic::types::ArraySizeType;
 use crate::semantic::{BuiltinType, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeKind, TypeRef, TypeRegistry};
 

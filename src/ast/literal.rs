@@ -110,6 +110,23 @@ impl IntSuffix {
     }
 }
 
+/// Calculate the number of elements in the string literal, including the null terminator.
+/// Bolt ⚡: Optimized metadata-only calculation to avoid full literal lowering.
+/// Standard string literals (None/Utf8) provide O(1) size via content.len().
+pub(crate) fn get_string_literal_size(content: &str, prefix: StrPrefix) -> usize {
+    match prefix {
+        StrPrefix::None | StrPrefix::Utf8 => content.len() + 1,
+        StrPrefix::Wide | StrPrefix::Utf32 => content.chars().count() + 1,
+        StrPrefix::Utf16 => {
+            let mut len = 0;
+            for c in content.chars() {
+                len += c.len_utf16();
+            }
+            len + 1
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[repr(u8)]
 #[allow(clippy::upper_case_acronyms)]
@@ -343,31 +360,32 @@ impl LitRef {
         }
     }
 
-    pub(crate) fn get_val(self) -> LitVal {
+    /// Provides access to the literal value via a reference, avoiding clones for interned values.
+    /// Bolt ⚡: This is the preferred way to access literal values in performance-critical code.
+    pub(crate) fn with_val<R>(self, f: impl FnOnce(&LitVal) -> R) -> R {
         match self.tag() {
             TAG_INT => {
                 let p = self.payload();
                 let raw = p & INT_VALUE_MASK;
-                // Sign-extend from 48 bits
                 let value = ((raw << (64 - INT_VALUE_BITS)) as i64) >> (64 - INT_VALUE_BITS);
                 let suffix = IntSuffix::from_u8(((p >> INT_SUFFIX_SHIFT) & 0xF) as u8);
                 let radix = ((p >> INT_RADIX_SHIFT) & INT_RADIX_MASK) as u8;
-                LitVal::Int { value, suffix, radix }
+                f(&LitVal::Int { value, suffix, radix })
             }
             TAG_BOOL => {
                 if self.payload() != 0 {
-                    LitVal::True
+                    f(&LitVal::True)
                 } else {
-                    LitVal::False
+                    f(&LitVal::False)
                 }
             }
-            TAG_NULLPTR => LitVal::Nullptr,
+            TAG_NULLPTR => f(&LitVal::Nullptr),
             TAG_CHAR => {
                 let p = self.payload();
-                LitVal::Char(
+                f(&LitVal::Char(
                     (p & CHAR_VAL_MASK) as u32,
                     CharPrefix::from_u8(((p >> CHAR_PREFIX_SHIFT) & 0xFF) as u8),
-                )
+                ))
             }
             TAG_SMALL_STR => {
                 let p = self.payload();
@@ -377,23 +395,52 @@ impl LitRef {
                 for i in 0..len {
                     bytes.push(((p >> (i * 8)) & 0xFF) as u8);
                 }
-                LitVal::String {
+                f(&LitVal::String {
                     value: String::from_utf8(bytes).unwrap(),
                     prefix,
-                }
+                })
             }
             TAG_FLOAT32 => {
                 let p = self.payload();
                 let bits = (p & FLOAT32_VAL_MASK) as u32;
                 let suffix = FloatSuffix::from_u8(((p >> FLOAT_SUFFIX_SHIFT) & 0xF) as u8);
-                LitVal::from_f64(f32::from_bits(bits) as f64, suffix)
+                f(&LitVal::from_f64(f32::from_bits(bits) as f64, suffix))
             }
             TAG_INTERNED => {
                 let id = (self.payload() & INTERN_INDEX_MASK) as u32;
-                global_literal_table().read().unwrap().get(id).clone()
+                let table = global_literal_table().read().unwrap();
+                f(table.get(id))
             }
             _ => unreachable!(),
         }
+    }
+
+    /// Efficiently retrieve string literal size (including null terminator) and prefix.
+    /// Bolt ⚡: Avoids redundant heap allocations and clones during semantic analysis and lowering.
+    pub(crate) fn get_string_metadata(self) -> Option<(usize, StrPrefix)> {
+        match self.tag() {
+            TAG_SMALL_STR => {
+                let p = self.payload();
+                let len = ((p >> STR_LEN_SHIFT) & STR_LEN_MASK) as usize;
+                let prefix = StrPrefix::from_u8(((p >> STR_PREFIX_SHIFT) & STR_PREFIX_MASK) as u8);
+                Some((len + 1, prefix))
+            }
+            TAG_INTERNED => {
+                let id = (self.payload() & INTERN_INDEX_MASK) as u32;
+                let table = global_literal_table().read().unwrap();
+                if let LitVal::String { value, prefix } = table.get(id) {
+                    let size = get_string_literal_size(value, *prefix);
+                    Some((size, *prefix))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn get_val(self) -> LitVal {
+        self.with_val(|v| v.clone())
     }
 
     /// intern LitVal into global literal table

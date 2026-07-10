@@ -224,7 +224,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         // C11 6.7.2.1p3: If the containing record is a union, we allow struct-with-FMA members.
         if !is_union && self.registry.has_flexible_array_member(member_type.ty()) {
-            self.report_error(span, SemanticError::FlexibleArrayMemberInStruct);
+            self.report_warning(span, SemanticError::FlexibleArrayMemberInStruct);
         }
 
         if !is_explicitly_packed
@@ -293,7 +293,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         if self.registry.has_flexible_array_member(element_qt.ty()) {
-            self.report_error(span, SemanticError::FlexibleArrayElementInArray);
+            self.report_warning(span, SemanticError::FlexibleArrayElementInArray);
         }
 
         if size.is_star() && !self.in_prototype {

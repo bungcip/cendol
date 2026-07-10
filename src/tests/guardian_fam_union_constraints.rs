@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::{run_fail_with_message, run_pass};
+use crate::tests::test_utils::{run_pass, run_pedantic_fail_with_message};
 
 #[test]
 fn test_union_can_contain_fam_struct() {
@@ -26,7 +26,7 @@ fn test_struct_cannot_contain_union_with_fam() {
     // Thus, it cannot be a member of another structure unless it's the last one.
 
     // 1. Union with FAM as non-last member
-    run_fail_with_message(
+    run_pedantic_fail_with_message(
         r#"
         struct s { int n; int a[]; };
         union u { int x; struct s s; };
@@ -36,7 +36,7 @@ fn test_struct_cannot_contain_union_with_fam() {
     );
 
     // 2. Union with FAM as array element
-    run_fail_with_message(
+    run_pedantic_fail_with_message(
         r#"
         struct s { int n; int a[]; };
         union u { int x; struct s s; };
@@ -49,7 +49,7 @@ fn test_struct_cannot_contain_union_with_fam() {
 #[test]
 fn test_nested_fam_constraints() {
     // Test multiple levels of nesting
-    run_fail_with_message(
+    run_pedantic_fail_with_message(
         r#"
         struct s { int n; int a[]; };
         union u1 { struct s s; };
@@ -66,7 +66,7 @@ fn test_union_with_fam_as_last_member_prohibited() {
     // It says "an incomplete array type", not "a type that has a flexible array member".
     // Strictly, only direct incomplete array types are allowed as the FAM of a struct.
     // GCC/Clang also reject structs/unions as the FAM.
-    run_fail_with_message(
+    run_pedantic_fail_with_message(
         r#"
         struct s { int n; int a[]; };
         union u { int x; struct s s; };

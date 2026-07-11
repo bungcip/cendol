@@ -167,6 +167,20 @@ fn resolve_specs(ast: &ParsedAst, specifiers: &[DeclSpec]) -> Vec<String> {
             DeclSpec::AttributeCleanup(_) => "cleanup(...)".to_string(),
             DeclSpec::AttributeTransparentUnion => "transparent_union".to_string(),
             DeclSpec::AttributeVisibility(vis) => format!("visibility({:?})", vis),
+            DeclSpec::AttributeAlias(lit) => {
+                if let crate::ast::literal::LitVal::String { value, .. } = lit.get_val() {
+                    format!("alias(\"{}\")", value)
+                } else {
+                    "alias(...)".to_string()
+                }
+            }
+            DeclSpec::AttributeAsm(lit) => {
+                if let crate::ast::literal::LitVal::String { value, .. } = lit.get_val() {
+                    format!("asm(\"{}\")", value)
+                } else {
+                    "asm(...)".to_string()
+                }
+            }
         })
         .collect()
 }

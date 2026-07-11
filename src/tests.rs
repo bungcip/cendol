@@ -166,6 +166,7 @@ pub mod regr_typeof_ternary;
 pub mod regr_union_cast;
 
 // Test Helpers
+pub mod codegen_alias;
 pub mod guardian_break_not_in_loop_or_switch;
 pub mod guardian_case_not_in_switch;
 pub mod guardian_continue_not_in_loop;

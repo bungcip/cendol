@@ -541,6 +541,12 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
                         _ => crate::lang_options::Visibility::Default,
                     };
                     specs.push(DeclSpec::AttributeVisibility(vis));
+                } else if name == parser.keywords.attr_alias || name == parser.keywords.attr_alias_underscore {
+                    parser.advance();
+                    parser.expect(TokenKind::LeftParen)?;
+                    let (lit, _span) = parser.expect_string_literal()?;
+                    parser.expect(TokenKind::RightParen)?;
+                    specs.push(DeclSpec::AttributeAlias(lit));
                 } else {
                     // Skip unknown attribute name and potential arguments
                     parser.advance();
@@ -636,9 +642,17 @@ pub(crate) fn parse_c23_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, 
 }
 
 /// Parse GCC __asm__ syntax: __asm__ ( string-literal )
-pub(crate) fn parse_asm(parser: &mut Parser) -> Result<(), ParseDiag> {
+pub(crate) fn parse_asm(parser: &mut Parser) -> Result<Option<crate::ast::literal::LitRef>, ParseDiag> {
     parser.expect(TokenKind::Asm)?;
     parser.expect(TokenKind::LeftParen)?;
+    let mut lit_out = None;
+    if let Ok(token) = parser.current_token()
+        && let TokenKind::Literal(lit) = token.kind
+        && lit.kind() == crate::ast::literal::LitKind::String
+    {
+        let (lit_val, _) = parser.expect_string_literal()?;
+        lit_out = Some(lit_val);
+    }
     let mut depth = 1;
 
     while depth > 0 && !parser.at_eof() {
@@ -649,7 +663,7 @@ pub(crate) fn parse_asm(parser: &mut Parser) -> Result<(), ParseDiag> {
             depth -= 1;
         }
     }
-    Ok(())
+    Ok(lit_out)
 }
 
 pub(crate) fn parse_trailing_attributes_and_asm(
@@ -662,7 +676,9 @@ pub(crate) fn parse_trailing_attributes_and_asm(
         } else if parser.at_c23_attribute_start() {
             specifiers.extend(parse_c23_attribute(parser)?);
         } else if parser.is_token(TokenKind::Asm) {
-            parse_asm(parser)?;
+            if let Some(lit) = parse_asm(parser)? {
+                specifiers.push(DeclSpec::AttributeAsm(lit));
+            }
         } else {
             break;
         }

@@ -179,14 +179,29 @@ impl<'a> MirGen<'a> {
 
     pub(super) fn get_or_declare_function(&mut self, sym: SymbolRef) -> MirFunctionId {
         let entry = self.symbol_table.get_symbol(sym);
-        if let Some(id) = self.mb.find_function_by_name(entry.name) {
+        let mut target_name = entry.name;
+        if let crate::semantic::symbol_table::SymbolKind::Function(f) = &entry.kind
+            && let Some(linkage) = f.linkage_name
+        {
+            target_name = linkage;
+        }
+
+        if let Some(id) = self.mb.find_function_by_name(target_name) {
             return id;
         }
 
         let storage = entry.get_function_storage();
 
-        let linkage = self.calculate_linkage(storage, entry.def_state);
-        let has_definition = entry.def_state == DefinitionState::Defined;
+        let mut linkage = self.calculate_linkage(storage, entry.def_state);
+        let mut has_definition = entry.def_state == DefinitionState::Defined;
+
+        if target_name != entry.name
+            && let Some(target_sym) = self.symbol_table.lookup_symbol(target_name)
+        {
+            let target_entry = self.symbol_table.get_symbol(target_sym);
+            has_definition = target_entry.def_state == DefinitionState::Defined;
+            linkage = self.calculate_linkage(target_entry.get_function_storage(), target_entry.def_state);
+        }
 
         let mut fn_data = None;
         {
@@ -211,7 +226,7 @@ impl<'a> MirGen<'a> {
             let param_mir_types = parameters.into_iter().map(|p| self.lower_qual_type(p)).collect();
 
             let func_id = self.define_or_declare_function(
-                entry.name,
+                target_name,
                 param_mir_types,
                 return_mir_type,
                 is_variadic,
@@ -223,7 +238,7 @@ impl<'a> MirGen<'a> {
         } else {
             let return_mir_type = self.get_int_type();
             let func_id =
-                self.define_or_declare_function(entry.name, vec![], return_mir_type, false, has_definition, linkage);
+                self.define_or_declare_function(target_name, vec![], return_mir_type, false, has_definition, linkage);
             self.mb.set_function_visibility(func_id, entry.visibility);
             func_id
         }
@@ -536,7 +551,12 @@ impl<'a> MirGen<'a> {
 
     fn visit_function(&mut self, function: &FunctionDef) {
         let symbol_entry = self.symbol_table.get_symbol(function.symbol);
-        let func_name = symbol_entry.name;
+        let mut func_name = symbol_entry.name;
+        if let crate::semantic::symbol_table::SymbolKind::Function(f) = &symbol_entry.kind
+            && let Some(linkage) = f.linkage_name
+        {
+            func_name = linkage;
+        }
 
         let func_id = self
             .mb
@@ -635,12 +655,16 @@ impl<'a> MirGen<'a> {
             unreachable!()
         };
 
-        let global_name = if symbol.scope_id == ScopeId::GLOBAL {
+        let mut global_name = if symbol.scope_id == ScopeId::GLOBAL {
             symbol.name
         } else {
             // Mangle name for static local to avoid collision
             crate::ast::NameId::new(format!("{}.{}", symbol.name, sym.get()))
         };
+
+        if let Some(linkage) = v.linkage_name {
+            global_name = linkage;
+        }
 
         let linkage = self.calculate_linkage(v.storage, symbol.def_state);
 

@@ -474,7 +474,7 @@ impl ABIMachineSpec for X64ABIMachineSpec {
             ));
             uses.push(CallArgPair {
                 vreg: tmp,
-                preg: regs::rax().into(),
+                preg: regs::rax(),
             });
         }
         insts

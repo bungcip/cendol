@@ -583,6 +583,8 @@ pub(crate) struct DeclSpecInfo {
     pub(crate) cleanup_func: Option<ParsedNodeRef>,
     pub(crate) is_transparent_union: bool,
     pub(crate) visibility: Option<crate::lang_options::Visibility>,
+    pub(crate) alias: Option<NameId>,
+    pub(crate) asm_label: Option<NameId>,
 }
 
 /// Finalize tentative definitions by converting them to defined state
@@ -986,30 +988,52 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn visit_function_definition(&mut self, func_def: &ParsedFunctionDef, node: NodeRef, span: SourceSpan) {
-        let mut spec_info = self.visit_decl_specs(&func_def.specifiers, span);
-        let mut base_qt = spec_info
-            .base_type
-            .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
-        base_qt = self.merge_qualifiers_with_check(base_qt, spec_info.qualifiers, span);
+    fn define_magic_func_variables(&mut self, func_name: NameId, span: SourceSpan) {
+        let name_len = func_name.as_str().len();
 
-        let mut final_qt = self.apply_declarator(
-            base_qt,
-            func_def.declarator,
-            span,
-            Some(&mut spec_info),
-            DeclaratorContext { in_parameter: false },
-        );
-        let func_name = self
-            .extract_name(func_def.declarator)
-            .expect("Function definition must have a name");
+        // Create string literal for initializer
+        let init_literal = LitRef::from_string(std::borrow::Cow::Borrowed(func_name.as_str()), StrPrefix::None);
+        let init_node = self.push_dummy(span);
+        self.ast.set_kind(init_node, NodeKind::Literal(init_literal));
 
+        // Create type: const char[N]
+        let char_type = self.registry.type_char;
+        let array_size = ArraySizeType::Constant(name_len + 1);
+        let array_type = self.registry.array_of(char_type, array_size);
+
+        let qt = QualType::new(array_type, TypeQualifiers::CONST);
+        let _ = self.registry.ensure_layout(array_type);
+
+        let storage = Some(StorageClass::Static);
         let is_global = self.symbol_table.current_scope() == ScopeId::GLOBAL;
 
-        self.check_function_constraints(func_name, &spec_info, span, is_global);
+        let magic_names = ["__func__", "__FUNCTION__", "__PRETTY_FUNCTION__"];
+        for name in magic_names {
+            let func_id = NameId::new(name);
+            let _ = self.symbol_table.define_variable(
+                func_id,
+                qt,
+                span,
+                Variable {
+                    is_global,
+                    storage,
+                    is_thread_local: false,
+                    initializer: Some(init_node),
+                    alignment: None,
+                    cleanup_func: None,
+                    linkage_name: None,
+                },
+            );
+        }
+    }
 
-        final_qt = self.check_redeclaration_compatibility(func_name, final_qt, span, spec_info.storage);
-
+    fn register_function_symbol(
+        &mut self,
+        func_name: NameId,
+        final_qt: QualType,
+        spec_info: &DeclSpecInfo,
+        span: SourceSpan,
+    ) -> SymbolRef {
         // Check for _Noreturn on existing declarations
         let existing_symbol_is_noreturn = if let Some(sym) = self.symbol_table.lookup_symbol(func_name) {
             let existing = self.symbol_table.get_symbol(sym);
@@ -1040,6 +1064,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 is_noreturn: final_is_noreturn,
                 param_len,
                 builtin_kind: None,
+                linkage_name: spec_info.asm_label.or(spec_info.alias),
             },
             true,
         ) {
@@ -1059,6 +1084,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 existing
             }
         };
+
         let sym_entry = self.symbol_table.get_symbol_mut(func_sym);
         if let Some(vis) = spec_info.visibility {
             sym_entry.visibility = vis;
@@ -1066,6 +1092,33 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         } else if !sym_entry.has_explicit_visibility {
             sym_entry.visibility = self.current_visibility;
         }
+
+        func_sym
+    }
+
+    fn visit_function_definition(&mut self, func_def: &ParsedFunctionDef, node: NodeRef, span: SourceSpan) {
+        let mut spec_info = self.visit_decl_specs(&func_def.specifiers, span);
+        let mut base_qt = spec_info
+            .base_type
+            .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
+        base_qt = self.merge_qualifiers_with_check(base_qt, spec_info.qualifiers, span);
+
+        let mut final_qt = self.apply_declarator(
+            base_qt,
+            func_def.declarator,
+            span,
+            Some(&mut spec_info),
+            DeclaratorContext { in_parameter: false },
+        );
+        let func_name = self
+            .extract_name(func_def.declarator)
+            .expect("Function definition must have a name");
+
+        let is_global = self.symbol_table.current_scope() == ScopeId::GLOBAL;
+        self.check_function_constraints(func_name, &spec_info, span, is_global);
+        final_qt = self.check_redeclaration_compatibility(func_name, final_qt, span, spec_info.storage);
+
+        let func_sym = self.register_function_symbol(func_name, final_qt, &spec_info, span);
 
         let scope_id = self
             .parsed_ast
@@ -1075,78 +1128,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let old_scope = self.symbol_table.current_scope();
         self.symbol_table.set_current_scope(scope_id);
 
-        // Implement __func__ (C11 6.4.2.2)
-        {
-            let func_name_str = func_name.to_string();
-            let name_len = func_name_str.len();
-
-            // Create string literal for initializer
-            let func_name_id = NameId::new(&func_name_str);
-            let init_literal = LitRef::from_string(std::borrow::Cow::Borrowed(func_name_id.as_str()), StrPrefix::None);
-            let init_node = self.push_dummy(span);
-            self.ast.set_kind(init_node, NodeKind::Literal(init_literal));
-
-            // Create type: const char[N]
-            let char_type = self.registry.type_char;
-            let array_size = ArraySizeType::Constant(name_len + 1);
-            let array_type = self.registry.array_of(char_type, array_size);
-
-            let qt = QualType::new(array_type, TypeQualifiers::CONST);
-            let _ = self.registry.ensure_layout(array_type);
-
-            // Define __func__
-            let func_id = NameId::new("__func__");
-            let storage = Some(StorageClass::Static);
-
-            // We define it in the current scope (function body).
-            // Note: If the user declares __func__ explicitly, it will be caught as a redefinition
-            // by the standard variable declaration logic because this one is inserted first.
-            let _ = self.symbol_table.define_variable(
-                func_id,
-                qt,
-                span,
-                Variable {
-                    is_global: self.symbol_table.current_scope() == ScopeId::GLOBAL,
-                    storage,
-                    is_thread_local: false,
-                    initializer: Some(init_node),
-                    alignment: None,
-                    cleanup_func: None,
-                },
-            );
-
-            // Also define __FUNCTION__ (GCC extension)
-            let function_id = NameId::new("__FUNCTION__");
-            let _ = self.symbol_table.define_variable(
-                function_id,
-                qt,
-                span,
-                Variable {
-                    is_global: self.symbol_table.current_scope() == ScopeId::GLOBAL,
-                    storage,
-                    is_thread_local: false,
-                    initializer: Some(init_node),
-                    alignment: None,
-                    cleanup_func: None,
-                },
-            );
-
-            // Also define __PRETTY_FUNCTION__ (GCC extension)
-            let pretty_func_id = NameId::new("__PRETTY_FUNCTION__");
-            let _ = self.symbol_table.define_variable(
-                pretty_func_id,
-                qt,
-                span,
-                Variable {
-                    is_global: self.symbol_table.current_scope() == ScopeId::GLOBAL,
-                    storage,
-                    is_thread_local: false,
-                    initializer: Some(init_node),
-                    alignment: None,
-                    cleanup_func: None,
-                },
-            );
-        }
+        self.define_magic_func_variables(func_name, span);
 
         // Pre-scan labels for forward goto support
         self.collect_labels(func_def.body);
@@ -1178,6 +1160,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             initializer: None,
                             alignment: None,
                             cleanup_func: None,
+                            linkage_name: None,
                         },
                     )
                     .expect("Failed to define parameter"),
@@ -1269,6 +1252,92 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         nodes
     }
 
+    fn visit_record_definition(
+        &mut self,
+        tag: Option<NameId>,
+        members: Arc<[RecordMember]>,
+        qt: QualType,
+        node: NodeRef,
+    ) {
+        let member_start = self.ast.next_node_ref();
+        let member_len = members.len() as u16;
+
+        for m in members.iter() {
+            self.ast.push_node(
+                NodeKind::FieldDecl(FieldDecl {
+                    name: m.name,
+                    qt: m.member_type,
+                    alignment: m.alignment,
+                }),
+                m.span,
+            );
+        }
+
+        // Find/create symbol for this record tag
+        let symbol = self
+            .type_to_tag_sym
+            .get(&qt.ty())
+            .copied()
+            .or_else(|| tag.and_then(|t| self.symbol_table.fetch_current(t, Namespace::Tag)))
+            .expect("ICE: Record tag symbol not found during lowering");
+
+        self.ast.set_kind(
+            node,
+            NodeKind::RecordDecl(RecordDecl {
+                symbol,
+                member_start,
+                member_len,
+            }),
+        );
+    }
+
+    fn visit_enum_definition(
+        &mut self,
+        tag: Option<NameId>,
+        enumerators: Arc<[EnumConstant]>,
+        qt: QualType,
+        node: NodeRef,
+    ) {
+        let mut member_start = NodeRef::ROOT;
+        let member_len = enumerators.len() as u16;
+
+        for (i, e) in enumerators.iter().enumerate() {
+            // Find symbol for enum constant
+            let symbol = self
+                .symbol_table
+                .fetch_current(e.name, Namespace::Ordinary)
+                .expect("ICE: Enum constant symbol not found during lowering");
+
+            let member = self.ast.push_node(
+                NodeKind::EnumMember(EnumMember {
+                    symbol,
+                    init_expr: e.init_expr,
+                }),
+                e.span,
+            );
+            if i == 0 {
+                member_start = member;
+            }
+        }
+
+        // Find/create symbol for this enum tag
+        let symbol = self
+            .type_to_tag_sym
+            .get(&qt.ty())
+            .copied()
+            .or_else(|| tag.and_then(|t| self.symbol_table.fetch_current(t, Namespace::Tag)))
+            .expect("ICE: Enum tag symbol not found during lowering");
+
+        self.ast.set_kind(
+            node,
+            NodeKind::EnumDecl(EnumDecl {
+                symbol,
+                member_start,
+                member_len,
+            }),
+        );
+    }
+
     fn visit_tag_definition(
         &mut self,
         spec_info: &DeclSpecInfo,
@@ -1279,101 +1348,23 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             return smallvec![];
         };
 
-        // Extract needed data from registry to avoid borrowing self.registry during node creation
-        enum AggType {
-            Record(Option<NameId>, Arc<[RecordMember]>),
-            Enum(Option<NameId>, Arc<[EnumConstant]>),
-        }
+        let node = self.get_or_push_slot(target_slots, span);
+        self.check_function_specs(spec_info, span);
 
-        let type_info = self.registry.get(qt.ty());
-        let type_kind = match &type_info.kind {
-            TypeKind::Record { tag, members, .. } => Some(AggType::Record(*tag, members.clone())),
-            TypeKind::Enum { tag, enumerators, .. } => Some(AggType::Enum(*tag, enumerators.clone())),
-            _ => None,
+        // Extract needed data from registry to avoid borrowing self.registry during node creation
+        let (tag, members, enumerators) = match &self.registry.get(qt.ty()).kind {
+            TypeKind::Record { tag, members, .. } => (*tag, Some(members.clone()), None),
+            TypeKind::Enum { tag, enumerators, .. } => (*tag, None, Some(enumerators.clone())),
+            _ => return smallvec![],
         };
 
-        if let Some(data) = type_kind {
-            let node = self.get_or_push_slot(target_slots, span);
-            self.check_function_specs(spec_info, span);
-
-            match data {
-                AggType::Record(tag, members) => {
-                    let member_start = self.ast.next_node_ref();
-                    let member_len = members.len() as u16;
-
-                    for m in members.iter() {
-                        self.ast.push_node(
-                            NodeKind::FieldDecl(FieldDecl {
-                                name: m.name,
-                                qt: m.member_type,
-                                alignment: m.alignment,
-                            }),
-                            m.span,
-                        );
-                    }
-
-                    // Find/create symbol for this record tag
-                    let symbol = self
-                        .type_to_tag_sym
-                        .get(&qt.ty())
-                        .copied()
-                        .or_else(|| tag.and_then(|t| self.symbol_table.fetch_current(t, Namespace::Tag)))
-                        .expect("ICE: Record tag symbol not found during lowering");
-
-                    self.ast.set_kind(
-                        node,
-                        NodeKind::RecordDecl(RecordDecl {
-                            symbol,
-                            member_start,
-                            member_len,
-                        }),
-                    );
-                }
-                AggType::Enum(tag, enumerators) => {
-                    let mut member_start = NodeRef::ROOT;
-                    let member_len = enumerators.len() as u16;
-
-                    for (i, e) in enumerators.iter().enumerate() {
-                        // Find symbol for enum constant
-                        let symbol = self
-                            .symbol_table
-                            .fetch_current(e.name, Namespace::Ordinary)
-                            .expect("ICE: Enum constant symbol not found during lowering");
-
-                        let member = self.ast.push_node(
-                            NodeKind::EnumMember(EnumMember {
-                                symbol,
-                                init_expr: e.init_expr,
-                            }),
-                            e.span,
-                        );
-                        if i == 0 {
-                            member_start = member;
-                        }
-                    }
-
-                    // Find/create symbol for this enum tag
-                    let symbol = self
-                        .type_to_tag_sym
-                        .get(&qt.ty())
-                        .copied()
-                        .or_else(|| tag.and_then(|t| self.symbol_table.fetch_current(t, Namespace::Tag)))
-                        .expect("ICE: Enum tag symbol not found during lowering");
-
-                    self.ast.set_kind(
-                        node,
-                        NodeKind::EnumDecl(EnumDecl {
-                            symbol,
-                            member_start,
-                            member_len,
-                        }),
-                    );
-                }
-            }
-            return smallvec![node];
+        if let Some(members) = members {
+            self.visit_record_definition(tag, members, qt, node);
+        } else if let Some(enumerators) = enumerators {
+            self.visit_enum_definition(tag, enumerators, qt, node);
         }
 
-        smallvec![]
+        smallvec![node]
     }
 
     fn visit_single_declarator(
@@ -1516,6 +1507,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 is_noreturn: spec_info.is_noreturn,
                 param_len,
                 builtin_kind: None,
+                linkage_name: spec_info.asm_label.or(spec_info.alias),
             },
             false,
         ) {
@@ -1714,6 +1706,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 initializer: None,
                 alignment,
                 cleanup_func: cleanup_sym,
+                linkage_name: spec_info.asm_label.or(spec_info.alias),
             },
         );
         if let Ok(sym) = sym_res {
@@ -2472,6 +2465,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     is_noreturn: false,
                     param_len,
                     builtin_kind: Some(kind),
+                    linkage_name: None,
                 },
             )
             .ok()
@@ -3136,6 +3130,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         DeclSpec::FunctionSpec(FunctionSpec::Noreturn) => info.is_noreturn = true,
                         DeclSpec::FunctionSpec(FunctionSpec::Inline) => info.is_inline = true,
                         DeclSpec::AttributeVisibility(vis) => info.visibility = Some(*vis),
+                        DeclSpec::AttributeAlias(lit) => {
+                            if let crate::ast::literal::LitVal::String { value, .. } = lit.get_val() {
+                                info.alias = Some(NameId::new(&value));
+                            }
+                        }
+                        DeclSpec::AttributeAsm(lit) => {
+                            if let crate::ast::literal::LitVal::String { value, .. } = lit.get_val() {
+                                info.asm_label = Some(NameId::new(&value));
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -3705,6 +3709,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 DeclSpec::AttributeVisibility(vis) => {
                     info.visibility = Some(*vis);
                 }
+                DeclSpec::AttributeAlias(lit) => {
+                    if let crate::ast::literal::LitVal::String { value, .. } = lit.get_val() {
+                        info.alias = Some(NameId::new(&value));
+                    }
+                }
+                DeclSpec::AttributeAsm(lit) => {
+                    if let crate::ast::literal::LitVal::String { value, .. } = lit.get_val() {
+                        info.asm_label = Some(NameId::new(&value));
+                    }
+                }
             }
         }
 
@@ -3808,6 +3822,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             initializer: None,
                             alignment: None,
                             cleanup_func: None,
+                            linkage_name: None,
                         },
                     );
                 }

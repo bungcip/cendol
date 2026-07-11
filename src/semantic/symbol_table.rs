@@ -409,6 +409,7 @@ pub(crate) struct Variable {
     pub initializer: Option<NodeRef>,
     pub alignment: Option<u16>,
     pub cleanup_func: Option<SymbolRef>,
+    pub linkage_name: Option<NameId>,
 }
 
 /// Represents a function in the symbol table.
@@ -418,6 +419,7 @@ pub(crate) struct Function {
     pub is_noreturn: bool,
     pub param_len: u16,
     pub builtin_kind: Option<BuiltinFunctionKind>,
+    pub linkage_name: Option<NameId>,
 }
 
 #[derive(Debug)]
@@ -675,6 +677,7 @@ impl SymbolTable {
             initializer: None,
             alignment: None,
             cleanup_func: None,
+            linkage_name: None,
         };
         let symbol = self.create_symbol(name, SymbolKind::Variable(var), ty, span);
         let sym_ref = self.push_symbol(symbol);

@@ -72,30 +72,32 @@ fn test_gcc_keywords_in_parameters() {
 fn test_asm_label() {
     let code = "int foo() __asm__(\"foo_impl\");";
     let resolved = setup_translation_unit(code);
-    insta::assert_yaml_snapshot!(&resolved, @"
+    insta::assert_yaml_snapshot!(&resolved, @r#"
     TranslationUnit:
       - Declaration:
           specifiers:
             - int
+            - "asm(\"foo_impl\")"
           init_declarators:
             - name: foo
               kind: function(void) -> int
-    ");
+    "#);
 }
 
 #[test]
 fn test_asm_and_attributes() {
     let code = "int foo() __asm__(\"foo_impl\") __attribute__((nothrow));";
     let resolved = setup_translation_unit(code);
-    insta::assert_yaml_snapshot!(&resolved, @"
+    insta::assert_yaml_snapshot!(&resolved, @r#"
     TranslationUnit:
       - Declaration:
           specifiers:
             - int
+            - "asm(\"foo_impl\")"
           init_declarators:
             - name: foo
               kind: function(void) -> int
-    ");
+    "#);
 }
 
 #[test]

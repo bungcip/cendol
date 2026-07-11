@@ -423,7 +423,7 @@ pub(crate) fn emit(
                 let bin_file = dir.join("cranelift_inline_asm.bin");
 
                 let mut file = File::create(&asm_file).unwrap();
-                write!(file, "{}", asm_source).unwrap();
+                write!(file, "{asm_source}").unwrap();
 
                 Command::new("cc")
                     .arg("-c")

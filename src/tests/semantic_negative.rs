@@ -388,3 +388,14 @@ fn test_logic_not_on_union_prohibited() {
         "expected scalar type",
     );
 }
+
+#[test]
+fn test_alias_is_definition() {
+    run_fail_with_message(
+        r#"
+        int x = 42;
+        int y __attribute__((alias("x")));
+        "#,
+        "definition 'y' cannot also be an alias",
+    );
+}

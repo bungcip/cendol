@@ -1118,6 +1118,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         self.check_function_constraints(func_name, &spec_info, span, is_global);
         final_qt = self.check_redeclaration_compatibility(func_name, final_qt, span, spec_info.storage);
 
+        // A function with a body is a definition. It cannot have an alias attribute.
+        if spec_info.alias.is_some() {
+            self.report_error(span, SemanticError::AliasIsDefinition { name: func_name });
+            spec_info.alias = None;
+        }
+
         let func_sym = self.register_function_symbol(func_name, final_qt, &spec_info, span);
 
         let scope_id = self
@@ -1375,6 +1381,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
         target_slot: Option<NodeRef>,
     ) -> Option<NodeRef> {
+        let is_global = self.symbol_table.current_scope() == ScopeId::GLOBAL;
+
         if self.registry.get(base_qt.ty()).kind == TypeKind::AutoType {
             let decl = self.parsed_ast.parsed_types.get_decl(init.declarator);
             if !matches!(decl, ParsedDeclarator::Identifier(..)) {
@@ -1394,6 +1402,24 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             Some(spec_info),
             DeclaratorContext { in_parameter: false },
         );
+
+        // A variable is a definition if it has an initializer, or if it's not extern and is at global scope.
+        // A function in visit_single_declarator is NEVER a definition (definitions go through visit_function_definition).
+        if spec_info.alias.is_some() {
+            let is_definition = if final_ty.is_function() {
+                false
+            } else {
+                init.initializer.is_some() || (spec_info.storage != Some(StorageClass::Extern) && is_global)
+            };
+
+            if is_definition {
+                let name = self
+                    .extract_name(init.declarator)
+                    .unwrap_or_else(|| NameId::new("<unnamed>"));
+                self.report_error(span, SemanticError::AliasIsDefinition { name });
+                spec_info.alias = None;
+            }
+        }
 
         // Check if declarator has an identifier
         let Some(name) = self.extract_name(init.declarator) else {

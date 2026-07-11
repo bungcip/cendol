@@ -100,6 +100,9 @@ pub enum SemanticError {
     UndeclaredIdentifier {
         name: NameId,
     },
+    AliasIsDefinition {
+        name: NameId,
+    },
     Redefinition {
         name: NameId,
         first_def: SourceSpan,
@@ -482,6 +485,9 @@ impl DiagDisplay for SemanticError {
             ),
             SemanticError::UndeclaredIdentifier { name } => {
                 write!(f, "Undeclared identifier '{}'", name)
+            }
+            SemanticError::AliasIsDefinition { name } => {
+                write!(f, "definition '{}' cannot also be an alias", name)
             }
             SemanticError::Redefinition { name, .. } => write!(f, "redefinition of '{}'", name),
             SemanticError::RedefinitionWithDifferentType { name, .. } => {

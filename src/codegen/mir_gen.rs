@@ -291,7 +291,8 @@ impl<'a> MirGen<'a> {
         self.visit_node(root);
 
         // Take ownership of the builder to consume it, replacing it with a dummy.
-        let builder = std::mem::replace(&mut self.mb, MirBuilder::new(8));
+        let mut builder = std::mem::replace(&mut self.mb, MirBuilder::new(8));
+        builder.deduplicate_globals();
         let output = builder.consume();
 
         MirProgram {

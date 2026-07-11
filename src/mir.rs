@@ -1087,7 +1087,33 @@ impl MirBuilder {
         }
     }
 
-    /// Add a type to the module with interning
+    pub(crate) fn deduplicate_globals(&mut self) {
+        let mut globals_by_name: rustc_hash::FxHashMap<crate::ast::NameId, GlobalId> = rustc_hash::FxHashMap::default();
+        let mut final_globals = Vec::new();
+
+        for global_id in std::mem::take(&mut self.module.globals) {
+            let name = self.globals[global_id.index()].name;
+            let initial_value = self.globals[global_id.index()].initial_value;
+            let alignment = self.globals[global_id.index()].alignment;
+
+            if let Some(&existing_id) = globals_by_name.get(&name) {
+                // Merge tentative/strong definitions
+                if initial_value.is_some() {
+                    // If the new one is not just tentative (we'd need a robust way to know if it's 0 because of tentative, but here we just take the last non-None value if they're both Some, though typically semantic analysis handles conflicts)
+                    self.globals[existing_id.index()].initial_value = initial_value;
+                }
+                if let Some(align) = alignment {
+                    let existing_align = self.globals[existing_id.index()].alignment.unwrap_or(0);
+                    self.globals[existing_id.index()].alignment = Some(std::cmp::max(existing_align, align));
+                }
+            } else {
+                globals_by_name.insert(name, global_id);
+                final_globals.push(global_id);
+            }
+        }
+        self.module.globals = final_globals;
+    }
+
     pub(crate) fn add_type(&mut self, mir_type: MirType) -> TypeId {
         // ⚡ Bolt: Optimized type interning using a hash map lookup instead of a linear scan.
         if let Some(&id) = self.type_interner.get(&mir_type) {

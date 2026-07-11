@@ -61,6 +61,8 @@ pub struct Parser<'arena, 'src, 'lexer> {
 pub(crate) struct ParserKeywords {
     pub(crate) attr_alias: NameId,
     pub(crate) attr_alias_underscore: NameId,
+    pub(crate) attr_mode: NameId,
+    pub(crate) attr_mode_underscore: NameId,
     pub(crate) attr_noreturn: NameId,
     pub(crate) attr_noreturn_underscore: NameId,
     pub(crate) attr_aligned: NameId,
@@ -80,6 +82,8 @@ impl ParserKeywords {
         ParserKeywords {
             attr_alias: NameId::new("alias"),
             attr_alias_underscore: NameId::new("__alias__"),
+            attr_mode: NameId::new("mode"),
+            attr_mode_underscore: NameId::new("__mode__"),
             attr_noreturn: NameId::new("noreturn"),
             attr_noreturn_underscore: NameId::new("__noreturn__"),
             attr_aligned: NameId::new("aligned"),
@@ -359,7 +363,7 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
 
     fn is_type_name(&self, symbol: NameId) -> bool {
         if let Some(sym_ref) = self.symbol_table.lookup_symbol(symbol) {
-            matches!(self.symbol_table.get_symbol(sym_ref).kind, SymbolKind::Typedef { .. })
+            matches!(self.symbol_table.get_symbol(sym_ref).kind, SymbolKind::Typedef(..))
         } else {
             false
         }

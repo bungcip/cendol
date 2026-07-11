@@ -59,51 +59,51 @@ fn test_switch_unreachable_cases() {
         v14 = uextend.i32 v13
         brif v14, block2, block5
 
-    block5:
-        v38 = stack_addr.i64 ss0
+    block1:
+        v38 = stack_addr.i64 ss1
         v15 = load.i32 notrap v38
-        v16 = iconst.i32 2
-        v17 = icmp eq v15, v16  ; v16 = 2
-        v18 = iconst.i8 1
-        v19 = iconst.i8 0
-        v20 = select v17, v18, v19  ; v18 = 1, v19 = 0
-        v21 = iconst.i8 0
-        v22 = icmp ne v20, v21  ; v21 = 0
-        v23 = iconst.i8 1
-        v24 = iconst.i8 0
-        v25 = select v22, v23, v24  ; v23 = 1, v24 = 0
-        v37 = stack_addr.i64 ss3
-        store notrap v25, v37
-        v36 = stack_addr.i64 ss3
-        v26 = load.i8 notrap v36
-        v27 = uextend.i32 v26
-        brif v27, block3, block6
+        return v15
+
+    block2:
+        v16 = iconst.i32 11
+        v37 = stack_addr.i64 ss1
+        store notrap v16, v37  ; v16 = 11
+        jump block1
+
+    block3:
+        v17 = iconst.i32 22
+        v36 = stack_addr.i64 ss1
+        store notrap v17, v36  ; v17 = 22
+        jump block1
+
+    block4:
+        v18 = iconst.i32 33
+        v35 = stack_addr.i64 ss1
+        store notrap v18, v35  ; v18 = 33
+        jump block1
+
+    block5:
+        v34 = stack_addr.i64 ss0
+        v19 = load.i32 notrap v34
+        v20 = iconst.i32 2
+        v21 = icmp eq v19, v20  ; v20 = 2
+        v22 = iconst.i8 1
+        v23 = iconst.i8 0
+        v24 = select v21, v22, v23  ; v22 = 1, v23 = 0
+        v25 = iconst.i8 0
+        v26 = icmp ne v24, v25  ; v25 = 0
+        v27 = iconst.i8 1
+        v28 = iconst.i8 0
+        v29 = select v26, v27, v28  ; v27 = 1, v28 = 0
+        v33 = stack_addr.i64 ss3
+        store notrap v29, v33
+        v32 = stack_addr.i64 ss3
+        v30 = load.i8 notrap v32
+        v31 = uextend.i32 v30
+        brif v31, block3, block6
 
     block6:
         jump block4
-
-    block4:
-        v28 = iconst.i32 33
-        v35 = stack_addr.i64 ss1
-        store notrap v28, v35  ; v28 = 33
-        jump block1
-
-    block1:
-        v34 = stack_addr.i64 ss1
-        v29 = load.i32 notrap v34
-        return v29
-
-    block3:
-        v30 = iconst.i32 22
-        v33 = stack_addr.i64 ss1
-        store notrap v30, v33  ; v30 = 22
-        jump block1
-
-    block2:
-        v31 = iconst.i32 11
-        v32 = stack_addr.i64 ss1
-        store notrap v31, v32  ; v31 = 11
-        jump block1
     }
     ");
 }

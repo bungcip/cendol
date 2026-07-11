@@ -91,6 +91,22 @@ fn parse_compound_statement_inner(
             }
         }
 
+        if let Some(token) = parser.accept(TokenKind::KwLabel) {
+            let mut labels = Vec::new();
+            loop {
+                let (name, _) = parser.expect_name()?;
+                labels.push(name);
+                if parser.accept(TokenKind::Comma).is_none() {
+                    break;
+                }
+            }
+            let end_token = parser.expect(TokenKind::Semicolon)?;
+            let span = token.span.merge(end_token.span);
+            let node = parser.push_node(ParsedNodeKind::GnuLocalLabel(labels.into_boxed_slice()), span);
+            items.push(node);
+            continue;
+        }
+
         if let Some(token) = parser.try_current_token()
             && let TokenKind::PragmaPack(kind) = token.kind
         {

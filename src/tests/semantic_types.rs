@@ -758,3 +758,17 @@ fn test_is_char_type_coverage() {
     let int_ty = reg.type_int;
     assert!(!reg.is_char_type(int_ty));
 }
+#[test]
+fn test_attr_mode() {
+    use crate::tests::codegen_common::*;
+    let source = r#"
+        int printf(const char *, ...);
+        int main() {
+            int i1 __attribute__((mode(QI)));
+            printf("%d\n", (int)sizeof(i1));
+            return 0;
+        }
+    "#;
+    let output = run_c_code_with_output(source);
+    assert_eq!(output, "1\n");
+}

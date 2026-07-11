@@ -759,6 +759,21 @@ impl<'a> SemanticAnalyzer<'a> {
         false
     }
 
+    /// Check if the mismatch is between a pointer and an integer
+    fn is_pointer_integer_mismatch(&self, lhs: QualType, rhs: QualType) -> bool {
+        let lhs_canon = self.registry.canonical_qual_type(lhs);
+        let rhs_canon = self.registry.canonical_qual_type(rhs);
+
+        let lhs_is_ptr = lhs_canon.is_pointer();
+        let rhs_is_ptr = rhs_canon.is_pointer() || rhs_canon.is_array() || rhs_canon.is_function();
+
+        let lhs_is_int = lhs_canon.is_integer();
+        // For rhs, since it could decay, let's just check if it's an integer
+        let rhs_is_int = rhs_canon.is_integer();
+
+        (lhs_is_ptr && rhs_is_int) || (lhs_is_int && rhs_is_ptr)
+    }
+
     /// Checks if the operand is valid for increment/decrement operations (prefix or postfix).
     /// C11 6.5.3.1 (prefix) and 6.5.2.4 (postfix): operand shall have scalar type.
     /// C11 6.5.6: pointer arithmetic requires pointer to complete object type.
@@ -845,6 +860,16 @@ impl<'a> SemanticAnalyzer<'a> {
             self.report_warning(
                 report_node,
                 SemanticError::IncompatiblePointerTypes {
+                    expected: lhs_qt,
+                    found: rhs_qt,
+                },
+            );
+            self.record_implicit_conversions(lhs_qt, rhs_qt, rhs_node, is_npc);
+            true
+        } else if self.is_pointer_integer_mismatch(lhs_qt, rhs_qt) {
+            self.report_warning(
+                report_node,
+                SemanticError::PointerIntegerMismatch {
                     expected: lhs_qt,
                     found: rhs_qt,
                 },
@@ -1900,7 +1925,15 @@ impl<'a> SemanticAnalyzer<'a> {
         let mut items = list.init_start.range(list.init_len);
         for _ in 0..2 {
             if let Some(item) = items.next() {
-                let (expr, _, _) = self.unwrap_init_item(item);
+                let (expr, d_start, d_len) = self.unwrap_init_item(item);
+                if d_len > 0 {
+                    let d_kind = *self.ast.get_kind(d_start);
+                    if let NodeKind::Designator(Designator::FieldName(_)) = d_kind {
+                        self.report_error(d_start, SemanticError::FieldNameNotInStructOrUnionInitializer);
+                    } else {
+                        self.report_error(d_start, SemanticError::ArrayIndexInNonArrayInitializer);
+                    }
+                }
                 if let Some(init_qt) = self.visit_node(expr) {
                     self.apply_lvalue_conversion(expr);
                     self.validate_assignment(expr, base_qt, init_qt, expr);
@@ -1913,7 +1946,15 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_scalar_init(&mut self, list: &InitializerList, target_qt: QualType) {
         let mut items = list.init_start.range(list.init_len);
         if let Some(first) = items.next() {
-            let (expr, _, _) = self.unwrap_init_item(first);
+            let (expr, d_start, d_len) = self.unwrap_init_item(first);
+            if d_len > 0 {
+                let d_kind = *self.ast.get_kind(d_start);
+                if let NodeKind::Designator(Designator::FieldName(_)) = d_kind {
+                    self.report_error(d_start, SemanticError::FieldNameNotInStructOrUnionInitializer);
+                } else {
+                    self.report_error(d_start, SemanticError::ArrayIndexInNonArrayInitializer);
+                }
+            }
             if let Some(init_qt) = self.visit_node(expr) {
                 self.apply_lvalue_conversion(expr);
                 self.validate_assignment(expr, target_qt, init_qt, expr);
@@ -1972,7 +2013,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 continue;
             }
 
-            self.consume_inits(members[member_idx].member_type, &mut iter, if designed { 1 } else { 0 });
+            let mut consumed_designators = if designed { 1 } else { 0 };
+            if designed && members[member_idx].name.is_none() {
+                consumed_designators = 0;
+            }
+            self.consume_inits(members[member_idx].member_type, &mut iter, consumed_designators);
             member_idx = if is_union && !designed {
                 members.len()
             } else {
@@ -2011,6 +2056,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         while let Some(item) = iter.peek().copied() {
             let (_, d_start, d_len) = self.unwrap_init_item(item);
+            let mut has_designator = false;
             if d_len > 0 {
                 let designator = d_start;
                 if let NodeKind::Designator(d) = self.ast.get_kind(designator) {
@@ -2019,6 +2065,7 @@ impl<'a> SemanticAnalyzer<'a> {
                             self.check_array_designator(*e);
                             if let Some(idx) = self.const_ctx().eval_int(*e) {
                                 current_idx = idx;
+                                has_designator = true;
                             }
                         }
                         Designator::ArrayRange(s, e) => {
@@ -2026,9 +2073,12 @@ impl<'a> SemanticAnalyzer<'a> {
                             self.check_array_designator(*e);
                             if let Some(idx) = self.const_ctx().eval_int(*e) {
                                 current_idx = idx;
+                                has_designator = true;
                             }
                         }
-                        Designator::FieldName(_) => {}
+                        Designator::FieldName(_) => {
+                            self.report_error(designator, SemanticError::FieldNameNotInStructOrUnionInitializer);
+                        }
                     }
                 }
             }
@@ -2036,7 +2086,17 @@ impl<'a> SemanticAnalyzer<'a> {
             if let Some(max) = max_index
                 && current_idx >= max as i64
             {
-                self.report_warning(item, SemanticError::ExcessElements { kind: "array" });
+                if has_designator {
+                    self.report_error(
+                        item,
+                        SemanticError::ArrayIndexExceedsBounds {
+                            index: current_idx,
+                            bounds: max as i64,
+                        },
+                    );
+                } else {
+                    self.report_warning(item, SemanticError::ExcessElements { kind: "array" });
+                }
             }
 
             self.consume_inits(element_qt, &mut iter, 1);
@@ -2049,6 +2109,7 @@ impl<'a> SemanticAnalyzer<'a> {
         target_qt: QualType,
         iter: &mut std::iter::Peekable<I>,
         designator_idx: usize,
+        designator_node: NodeRef,
         designator: Designator,
     ) -> bool
     where
@@ -2060,14 +2121,22 @@ impl<'a> SemanticAnalyzer<'a> {
         match designator {
             Designator::FieldName(name) => {
                 let TypeAnalysisTask::Record(members, is_union) = task else {
-                    return false;
+                    self.report_error(designator_node, SemanticError::FieldNameNotInStructOrUnionInitializer);
+                    iter.next();
+                    return true;
                 };
 
                 let Some(idx) = self.find_member_index(&members, name) else {
-                    return false;
+                    self.report_error(designator_node, SemanticError::MemberNotFound { name, ty: target_qt });
+                    iter.next();
+                    return true;
                 };
 
-                self.consume_inits(members[idx].member_type, iter, designator_idx + 1);
+                let mut consumed_idx = designator_idx + 1;
+                if members[idx].name.is_none() {
+                    consumed_idx = designator_idx;
+                }
+                self.consume_inits(members[idx].member_type, iter, consumed_idx);
 
                 if !is_union {
                     for i in (idx + 1)..members.len() {
@@ -2081,7 +2150,9 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             Designator::ArrayIndex(e) | Designator::ArrayRange(e, _) => {
                 let TypeAnalysisTask::Array(element_type, size) = task else {
-                    return false;
+                    self.report_error(designator_node, SemanticError::ArrayIndexInNonArrayInitializer);
+                    iter.next();
+                    return true;
                 };
 
                 let mut end_idx = 0;
@@ -2097,17 +2168,30 @@ impl<'a> SemanticAnalyzer<'a> {
                         end_idx = idx;
                     }
                 }
+                let max_len = if let ArraySizeType::Constant(len) = size {
+                    Some(len)
+                } else {
+                    None
+                };
+
+                if let Some(len) = max_len
+                    && end_idx >= len as i64
+                {
+                    self.report_error(
+                        designator_node,
+                        SemanticError::ArrayIndexExceedsBounds {
+                            index: end_idx,
+                            bounds: len as i64,
+                        },
+                    );
+                }
+
                 self.consume_inits(
                     QualType::new(element_type, target_qt.qualifiers()),
                     iter,
                     designator_idx + 1,
                 );
 
-                let max_len = if let ArraySizeType::Constant(len) = size {
-                    Some(len)
-                } else {
-                    None
-                };
                 let mut current_idx = end_idx + 1;
                 while max_len.is_none() || current_idx < max_len.unwrap() as i64 {
                     if iter.peek().is_none() || self.unwrap_init_item(*iter.peek().unwrap()).2 > 0 {
@@ -2179,7 +2263,7 @@ impl<'a> SemanticAnalyzer<'a> {
             let designator_node = d_start.add_offset(designator_idx as u16);
             let kind = *self.ast.get_kind(designator_node);
             if let NodeKind::Designator(d) = kind
-                && self.handle_designated_init(target_qt, iter, designator_idx, d)
+                && self.handle_designated_init(target_qt, iter, designator_idx, designator_node, d)
             {
                 return;
             }
@@ -3442,6 +3526,7 @@ impl<'a> SemanticAnalyzer<'a> {
             | NodeKind::Break
             | NodeKind::Continue
             | NodeKind::Goto(..)
+            | NodeKind::ComputedGoto(..)
             | NodeKind::Label(..) => self.visit_statement_node(node, node_kind),
 
             // Expressions (Catch-all)

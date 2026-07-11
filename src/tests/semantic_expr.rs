@@ -1,7 +1,9 @@
 use crate::driver::artifact::CompilePhase;
 use crate::tests::codegen_common::run_c_code_exit_status;
 use crate::tests::semantic_common::setup_mir;
-use crate::tests::test_utils::{check_diagnostic_message_only, run_fail, run_fail_with_message, run_pass};
+use crate::tests::test_utils::{
+    check_diagnostic_message_only, run_fail, run_fail_with_message, run_pass, run_pass_with_diagnostic_message,
+};
 
 #[test]
 fn test_sizeof_logic_not_is_int_size() {
@@ -271,9 +273,12 @@ fn test_assign_int_to_pointer() {
             return 0;
         }
     "#;
-    run_fail_with_message(source, "type mismatch: expected int*, found int");
+    run_pass_with_diagnostic_message(
+        source,
+        CompilePhase::Mir,
+        "assignment makes pointer from integer without a cast",
+    );
 }
-
 #[test]
 fn test_assign_pointer_to_int() {
     let source = r#"
@@ -284,7 +289,11 @@ fn test_assign_pointer_to_int() {
             return 0;
         }
     "#;
-    run_fail_with_message(source, "type mismatch: expected int, found int*");
+    run_pass_with_diagnostic_message(
+        source,
+        CompilePhase::Mir,
+        "assignment makes integer from pointer without a cast",
+    );
 }
 
 #[test]

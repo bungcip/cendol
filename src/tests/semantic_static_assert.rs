@@ -34,9 +34,9 @@ fn test_static_assert_fail_with_msg() {
 }
 
 #[test]
-fn test_static_assert_c11_no_message_fails() {
-    // Current default is C11
-    run_fail_with_message("_Static_assert(1);", "expected ',' followed by a string literal");
+fn test_static_assert_c11_no_message_succeeds() {
+    // Current default is C11, but we allow single argument as extension
+    run_pass("_Static_assert(1);", CompilePhase::Mir);
 }
 
 #[test]

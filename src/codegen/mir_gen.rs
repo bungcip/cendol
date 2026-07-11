@@ -35,6 +35,7 @@ pub(crate) enum CleanupAction {
 pub(crate) struct LabelInfo {
     pub(crate) block_id: MirBlockId,
     pub(crate) scope_depth: usize,
+    pub(crate) cleanups_in_scope: Option<usize>,
 }
 
 pub(crate) struct FunctionState {
@@ -71,6 +72,7 @@ impl FunctionState {
 
 pub(crate) struct MirGen<'a> {
     pub(crate) ast: &'a Ast,
+    pub(crate) diag: &'a mut crate::diagnostic::DiagnosticEngine,
     pub(crate) symbol_table: &'a SymbolTable, // Now immutable
     pub(crate) mb: MirBuilder,
     pub(crate) registry: &'a mut TypeRegistry,
@@ -245,12 +247,14 @@ impl<'a> MirGen<'a> {
     }
     pub(crate) fn new(
         ast: &'a Ast,
+        diag: &'a mut crate::diagnostic::DiagnosticEngine,
         symbol_table: &'a SymbolTable,
         registry: &'a mut TypeRegistry,
         options: &crate::lang_options::LangOptions,
     ) -> Self {
         Self {
             ast,
+            diag,
             symbol_table,
             mb: MirBuilder::new(8),
             registry,
@@ -274,6 +278,15 @@ impl<'a> MirGen<'a> {
             registry: self.registry,
             semantic_info: &self.ast.semantic_info,
         }
+    }
+
+    pub(crate) fn report_error(&mut self, span: crate::source_manager::SourceSpan, message: String) {
+        self.diag.report_diagnostic(crate::diagnostic::Diagnostic {
+            level: crate::diagnostic::DiagnosticLevel::Error,
+            message,
+            span,
+            ..Default::default()
+        });
     }
 
     // create dummy operand
@@ -688,10 +701,19 @@ impl<'a> MirGen<'a> {
         // Static locals must be evaluated as constants, even if we are inside a function.
         // We temporarily unset current_function to force constant evaluation mode.
         let saved_state = self.func_state.take();
-        let initial_value_id = v
-            .initializer
-            .and_then(|init| self.eval_init_to_const(init, symbol.type_info));
+        let mut has_initializer = false;
+        let mut initializer_node = None;
+        let initial_value_id = v.initializer.and_then(|init| {
+            has_initializer = true;
+            initializer_node = Some(init);
+            self.eval_init_to_const(init, symbol.type_info)
+        });
         self.func_state = saved_state;
+
+        if has_initializer && initial_value_id.is_none() {
+            let span = self.ast.get_span(initializer_node.unwrap());
+            self.report_error(span, "initializer element is not computable at load time".to_string());
+        }
 
         let final_init = initial_value_id.or_else(|| {
             if symbol.def_state == DefinitionState::Tentative {
@@ -2208,10 +2230,10 @@ impl<'a> MirGen<'a> {
                             }
                         }
                         ConstValueKind::GlobalAddress(_, _) | ConstValueKind::FunctionAddress(_) => {
-                            if mir_type.is_int() || mir_type.is_bool() {
-                                ConstValueKind::Int(1)
-                            } else if mir_type.is_float() {
-                                ConstValueKind::Float(1.0)
+                            if mir_type.is_bool() {
+                                ConstValueKind::Int(1) // boolean cast is true
+                            } else if mir_type.is_int() || mir_type.is_float() {
+                                return None; // Cannot cast pointer to int/float in a constant expression
                             } else {
                                 inner_const.kind
                             }
@@ -2292,6 +2314,7 @@ impl<'a> MirGen<'a> {
                     LabelInfo {
                         block_id,
                         scope_depth: current_depth,
+                        cleanups_in_scope: None,
                     },
                 );
             }
@@ -2329,6 +2352,18 @@ impl<'a> MirGen<'a> {
             }
         }
 
+        if let Some(target_count) = label_info.cleanups_in_scope {
+            let target_scope_idx = target_depth.saturating_sub(1);
+            if target_scope_idx < self.func_state().scope_cleanup.len() {
+                let cleanup = self.func_state().scope_cleanup[target_scope_idx].clone();
+                if cleanup.len() > target_count {
+                    for action in cleanup[target_count..].iter().rev() {
+                        self.emit_cleanup(*action);
+                    }
+                }
+            }
+        }
+
         self.set_terminator(Terminator::Goto(label_info.block_id));
     }
 
@@ -2338,12 +2373,19 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_label_stmt(&mut self, label_name: NameId, statement: NodeRef) {
-        let label_info = self
+        let mut label_info = self
             .func_state()
             .label_map
             .get(&label_name)
             .cloned()
             .expect("Label was not pre-scanned");
+
+        let target_scope_idx = label_info.scope_depth.saturating_sub(1);
+        if target_scope_idx < self.func_state().scope_cleanup.len() {
+            label_info.cleanups_in_scope = Some(self.func_state().scope_cleanup[target_scope_idx].len());
+            self.func_state_mut().label_map.insert(label_name, label_info);
+        }
+
         let label_block = label_info.block_id;
 
         // Make sure the current block is terminated before switching (fallthrough)

@@ -250,16 +250,7 @@ pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Re
         let (lit, span) = parser.expect_string_literal()?;
         Some(parser.push_node(ParsedNodeKind::Literal(lit), span))
     } else {
-        if parser.lang_opts.c_standard < crate::lang_options::CStandard::C23 {
-            let token = parser.current_token()?;
-            return Err(ParseDiag {
-                span: token.span,
-                kind: ParseError::UnexpectedToken {
-                    expected: "',' followed by a string literal",
-                    found: token.kind,
-                },
-            });
-        }
+        // We allow single-argument _Static_assert as an extension in < C23
         None
     };
 
@@ -547,6 +538,18 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
                     let (lit, _span) = parser.expect_string_literal()?;
                     parser.expect(TokenKind::RightParen)?;
                     specs.push(DeclSpec::AttributeAlias(lit));
+                } else if name == parser.keywords.attr_mode || name == parser.keywords.attr_mode_underscore {
+                    parser.advance();
+                    parser.expect(TokenKind::LeftParen)?;
+                    let token = parser.current_token()?;
+                    if let TokenKind::Identifier(mode_name) = token.kind {
+                        parser.advance();
+                        specs.push(DeclSpec::AttributeMode(mode_name));
+                    } else {
+                        // Skip if it's not an identifier (e.g., error case)
+                        parser.advance();
+                    }
+                    parser.expect(TokenKind::RightParen)?;
                 } else {
                     // Skip unknown attribute name and potential arguments
                     parser.advance();

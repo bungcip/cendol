@@ -301,8 +301,8 @@ fn test_array_argument_to_int_parameter() {
             takes_int(arr);
         }
     "#;
-    let driver = run_fail(source, CompilePhase::Mir);
-    check_diagnostic_message_only(&driver, "expected int, found int*");
+    let driver = run_pass(source, CompilePhase::Mir);
+    check_diagnostic_message_only(&driver, "makes integer from pointer without a cast");
 }
 
 #[test]
@@ -328,8 +328,8 @@ fn test_pointer_argument_to_int_parameter() {
             takes_int(ptr);
         }
     "#;
-    let driver = run_fail(source, CompilePhase::Mir);
-    check_diagnostic_message_only(&driver, "expected int, found int*");
+    let driver = run_pass(source, CompilePhase::Mir);
+    check_diagnostic_message_only(&driver, "makes integer from pointer without a cast");
 }
 
 #[test]

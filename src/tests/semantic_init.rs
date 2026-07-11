@@ -1,5 +1,6 @@
 use super::semantic_common::setup_mir;
 use crate::tests::codegen_common::run_c_code_exit_status;
+use crate::tests::test_utils::run_fail_with_message;
 
 #[test]
 fn test_array_init_bug_mir() {
@@ -731,7 +732,7 @@ fn test_nested_union_init_mir() {
       }
 
       bb1:
-        %s = struct{0: const 1, 2: cast<f64>(cast<i32>(cast<f64>(cast<i32>(%param0))))}
+        %s = struct{0: const 1, 2: %param0}
         return
     }
     ");
@@ -844,4 +845,13 @@ fn test_typeof_compat_array_size() {
 
     extern fn free(%param0: ptr<void>) -> void
     ");
+}
+
+#[test]
+fn test_global_initializer_pointer_to_int_regression() {
+    let source = r#"
+        int x;
+        int y = &x;
+    "#;
+    run_fail_with_message(source, "initializer element is not computable at load time");
 }

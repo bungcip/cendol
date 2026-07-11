@@ -591,7 +591,14 @@ impl<'a> MirGen<'a> {
         }
 
         if let Some((element_type, size)) = array_info {
-            if list.init_len == 1 && self.registry.is_char_type(element_type) {
+            // Braced string literal: check for both narrow char and wide char types
+            // (wchar_t, char16_t, char32_t) matching semantic analyzer's C11 §6.7.9p14 check
+            if list.init_len == 1
+                && (self.registry.is_char_type(element_type)
+                    || element_type.is_wchar_t()
+                    || element_type.is_char16()
+                    || element_type.is_char32())
+            {
                 let NodeKind::InitializerItem(item) = self.ast.get_kind(list.init_start) else {
                     unreachable!()
                 };

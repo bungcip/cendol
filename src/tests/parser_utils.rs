@@ -181,6 +181,9 @@ fn resolve_specs(ast: &ParsedAst, specifiers: &[DeclSpec]) -> Vec<String> {
                     "asm(...)".to_string()
                 }
             }
+            DeclSpec::AttributeMode(mode) => {
+                format!("mode({})", mode.as_str())
+            }
         })
         .collect()
 }

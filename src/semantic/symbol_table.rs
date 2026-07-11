@@ -342,9 +342,7 @@ impl Symbol {
 pub enum SymbolKind {
     Variable(Variable),
     Function(Function),
-    Typedef {
-        aliased_type: QualType,
-    },
+    Typedef(QualType),
     EnumConstant {
         value: i64, // Resolved constant value
     },
@@ -660,7 +658,7 @@ impl SymbolTable {
     /// Define a typedef in the parser (used for type disambiguation).
     pub(crate) fn define_parser_typedef(&mut self, name: NameId, span: SourceSpan) {
         let ty = QualType::unqualified(TypeRef::dummy());
-        let symbol = self.create_symbol(name, SymbolKind::Typedef { aliased_type: ty }, ty, span);
+        let symbol = self.create_symbol(name, SymbolKind::Typedef(ty), ty, span);
         let sym_ref = self.push_symbol(symbol);
         let scope_id = self.current_scope_id;
         let prev = self.get_scope_mut(scope_id).symbols.insert(name, sym_ref);
@@ -794,7 +792,7 @@ impl SymbolTable {
         ty: QualType,
         span: SourceSpan,
     ) -> Result<SymbolRef, SymbolTableError> {
-        let symbol = self.create_symbol(name, SymbolKind::Typedef { aliased_type: ty }, ty, span);
+        let symbol = self.create_symbol(name, SymbolKind::Typedef(ty), ty, span);
 
         // Check for redefinition in the SAME scope
         if let Some(existing) = self.fetch_current(name, Namespace::Ordinary) {

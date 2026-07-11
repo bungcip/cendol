@@ -35,7 +35,11 @@ int f() {
     return &x;
 }
 "#;
-    run_fail_with_message(source, "type mismatch: expected int, found int*");
+    run_pass_with_diagnostic_message(
+        source,
+        CompilePhase::Mir,
+        "assignment makes integer from pointer without a cast",
+    );
 }
 
 #[test]

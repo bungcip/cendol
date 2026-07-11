@@ -246,12 +246,29 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         match align {
             ParsedAlignmentSpec::Type(parsed_ty) => {
                 let qt = self.visit_type(*parsed_ty, span);
-                match self.registry.ensure_layout(qt.ty()) {
+                let base_align = match self.registry.ensure_layout(qt.ty()) {
                     Ok(layout) => Some(layout.alignment),
                     Err(e) => {
                         self.report_error(span, e.to_semantic_kind());
                         None
                     }
+                };
+
+                let mut info = DeclSpecInfo::default();
+                let dummy_qt = QualType::unqualified(self.registry.type_error);
+                self.apply_declarator(
+                    dummy_qt,
+                    parsed_ty.declarator,
+                    span,
+                    Some(&mut info),
+                    DeclaratorContext { in_parameter: false },
+                );
+
+                match (base_align, info.alignment) {
+                    (Some(a), Some(b)) => Some(std::cmp::max(a, b)),
+                    (Some(a), None) => Some(a),
+                    (None, Some(b)) => Some(b),
+                    (None, None) => None,
                 }
             }
             ParsedAlignmentSpec::Expr(expr) => {
@@ -511,7 +528,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             .map(|r| self.symbol_table.get_symbol(r))
         {
             Some(entry) => {
-                if let SymbolKind::Typedef { aliased_type } = entry.kind {
+                if let SymbolKind::Typedef(aliased_type) = entry.kind {
                     Ok(aliased_type)
                 } else {
                     Err(SemanticDiag::new(
@@ -550,6 +567,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
             }
             ParsedNodeKind::TranslationUnit(decls) => decls.len(),
+            ParsedNodeKind::GnuLocalLabel(_) => 0,
             _ => 1,
         }
     }
@@ -585,6 +603,7 @@ pub(crate) struct DeclSpecInfo {
     pub(crate) visibility: Option<crate::lang_options::Visibility>,
     pub(crate) alias: Option<NameId>,
     pub(crate) asm_label: Option<NameId>,
+    pub(crate) mode: Option<NameId>,
 }
 
 /// Finalize tentative definitions by converting them to defined state
@@ -673,6 +692,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedNodeKind::PragmaVisibility(kind) => {
                 self.handle_pragma_visibility(*kind);
+                smallvec![]
+            }
+            ParsedNodeKind::GnuLocalLabel(names) => {
+                for &name in names.iter() {
+                    let _ = self.symbol_table.define_label(name, self.registry.type_void, span);
+                }
                 smallvec![]
             }
             // ... other top level kinds ...
@@ -1458,7 +1483,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.symbol_table.define_typedef(name, final_ty, span)
             {
                 let existing_symbol = self.symbol_table.get_symbol(existing);
-                if let SymbolKind::Typedef { aliased_type } = existing_symbol.kind {
+                if let SymbolKind::Typedef(aliased_type) = existing_symbol.kind {
                     if aliased_type != final_ty {
                         self.report_error(
                             span,
@@ -2004,6 +2029,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 if let Some(init) = stmt.init {
                     let parsed_init = self.parsed_ast.get_node(init);
+                    if let ParsedNodeKind::Declaration(decl) = &parsed_init.kind {
+                        for spec in &decl.specifiers {
+                            if let DeclSpec::StorageClass(sc) = spec
+                                && !matches!(sc, crate::ast::StorageClass::Auto | crate::ast::StorageClass::Register)
+                            {
+                                self.report_error(parsed_init.span, SemanticError::NonLocalVariableInForLoop);
+                            }
+                        }
+                    }
+
                     let init_has_multiple_decls = if let ParsedNodeKind::Declaration(decl) = &parsed_init.kind {
                         decl.init_declarators.len() > 1
                     } else {
@@ -2090,29 +2125,39 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 lower_simple!(NodeKind::ExpressionStmt(e.map(|x| self.visit_expression(x))))
             }
             ParsedNodeKind::AsmStmt(e) => {
-                let mut output_ops = Vec::new();
-                for op in &e.outputs {
-                    let expr = self.visit_expression(op.expr);
-                    output_ops.push((op.constraint, expr, self.parsed_ast.get_node(op.expr).span));
-                }
-
-                let mut input_ops = Vec::new();
-                for op in &e.inputs {
-                    let expr = self.visit_expression(op.expr);
-                    input_ops.push((op.constraint, expr, self.parsed_ast.get_node(op.expr).span));
-                }
-
                 let output_start = self.ast.next_node_ref();
-                for (constraint, expr, op_span) in output_ops {
-                    self.ast
-                        .push_node(NodeKind::AsmConstraint(AsmConstraintData { constraint, expr }), op_span);
+                for op in &e.outputs {
+                    let span = self.parsed_ast.get_node(op.expr).span;
+                    self.ast.push_dummy(span);
+                }
+                for (i, op) in e.outputs.iter().enumerate() {
+                    let expr = self.visit_expression(op.expr);
+                    let node_ref = NodeRef::new(output_start.raw() + i as u32).unwrap();
+                    self.ast.set_kind(
+                        node_ref,
+                        NodeKind::AsmConstraint(AsmConstraintData {
+                            constraint: op.constraint,
+                            expr,
+                        }),
+                    );
                 }
                 let output_len = e.outputs.len() as u16;
 
                 let input_start = self.ast.next_node_ref();
-                for (constraint, expr, op_span) in input_ops {
-                    self.ast
-                        .push_node(NodeKind::AsmConstraint(AsmConstraintData { constraint, expr }), op_span);
+                for op in &e.inputs {
+                    let span = self.parsed_ast.get_node(op.expr).span;
+                    self.ast.push_dummy(span);
+                }
+                for (i, op) in e.inputs.iter().enumerate() {
+                    let expr = self.visit_expression(op.expr);
+                    let node_ref = NodeRef::new(input_start.raw() + i as u32).unwrap();
+                    self.ast.set_kind(
+                        node_ref,
+                        NodeKind::AsmConstraint(AsmConstraintData {
+                            constraint: op.constraint,
+                            expr,
+                        }),
+                    );
                 }
                 let input_len = e.inputs.len() as u16;
 
@@ -2521,9 +2566,24 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn collect_labels(&mut self, node: ParsedNodeRef) {
+    fn collect_labels_inner(&mut self, node: ParsedNodeRef, shadowed: &mut rustc_hash::FxHashSet<NameId>) {
         let parsed_node = self.parsed_ast.get_node(node);
+
+        let mut local_shadowed = Vec::new();
+        if let ParsedNodeKind::CompoundStmt(items, _) = &parsed_node.kind {
+            for &item in items.iter() {
+                if let ParsedNodeKind::GnuLocalLabel(names) = &self.parsed_ast.get_node(item).kind {
+                    for &name in names.iter() {
+                        if shadowed.insert(name) {
+                            local_shadowed.push(name);
+                        }
+                    }
+                }
+            }
+        }
+
         if let ParsedNodeKind::Label(name, _) = &parsed_node.kind
+            && !shadowed.contains(name)
             && let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
                 self.symbol_table
                     .define_label(*name, self.registry.type_void, parsed_node.span)
@@ -2531,8 +2591,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let first_def = self.symbol_table.get_symbol(existing).def_span;
             self.report_error(parsed_node.span, SemanticError::Redefinition { name: *name, first_def });
         }
-        let mut f = |child| self.collect_labels(child);
+
+        let mut f = |child| self.collect_labels_inner(child, shadowed);
         parsed_node.kind.for_each_child(&mut f);
+
+        for name in local_shadowed {
+            shadowed.remove(&name);
+        }
+    }
+
+    fn collect_labels(&mut self, node: ParsedNodeRef) {
+        let mut shadowed = rustc_hash::FxHashSet::default();
+        self.collect_labels_inner(node, &mut shadowed);
     }
 
     /// Try to infer the type of an expression node during lowering.
@@ -3166,10 +3236,39 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                                 info.asm_label = Some(NameId::new(&value));
                             }
                         }
+                        DeclSpec::AttributeMode(mode) => {
+                            info.mode = Some(*mode);
+                        }
                         _ => {}
                     }
                 }
-                self.apply_declarator(current_type, *inner, span, spec_info, ctx)
+
+                let mut modified_type = current_type;
+                if let DeclSpec::AttributeMode(mode) = spec {
+                    let mode_str = mode.as_str();
+                    let mode_str = mode_str.trim_start_matches("__").trim_end_matches("__");
+                    let base_ty = modified_type.ty();
+                    let is_unsigned = base_ty.is_integer() && !self.registry.get(base_ty).is_signed();
+
+                    let new_ty = match (mode_str, is_unsigned) {
+                        ("QI" | "byte", false) => Some(self.registry.type_schar),
+                        ("QI" | "byte", true) => Some(self.registry.type_char_unsigned),
+                        ("HI", false) => Some(self.registry.type_short),
+                        ("HI", true) => Some(self.registry.type_short_unsigned),
+                        ("SI", false) => Some(self.registry.type_int),
+                        ("SI", true) => Some(self.registry.type_int_unsigned),
+                        ("DI" | "word", false) => Some(self.registry.type_long_long),
+                        ("DI" | "word", true) => Some(self.registry.type_long_long_unsigned),
+                        ("SF", _) => Some(self.registry.type_float),
+                        ("DF", _) => Some(self.registry.type_double),
+                        _ => None,
+                    };
+                    if let Some(ty) = new_ty {
+                        modified_type = QualType::new(ty, modified_type.qualifiers());
+                    }
+                }
+
+                self.apply_declarator(modified_type, *inner, span, spec_info, ctx)
             }
         }
     }
@@ -3729,6 +3828,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 DeclSpec::AttributeTransparentUnion => {
                     info.is_transparent_union = true;
                 }
+                DeclSpec::AttributeMode(mode) => {
+                    info.mode = Some(*mode);
+                }
                 DeclSpec::AttributeCleanup(node_ref) => {
                     info.cleanup_func = Some(*node_ref);
                 }
@@ -3759,6 +3861,35 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
         } else if info.has_auto && self.lang_opts.c_standard >= CStandard::C23 {
             info.base_type = Some(QualType::unqualified(self.registry.auto_type()));
+        }
+
+        if let Some(mode) = info.mode {
+            let mode_str = mode.as_str();
+            let mode_str = mode_str.trim_start_matches("__").trim_end_matches("__");
+
+            let base_qt = info
+                .base_type
+                .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
+            let base_ty = base_qt.ty();
+            let is_unsigned = base_ty.is_integer() && !self.registry.get(base_ty).is_signed();
+
+            let new_ty = match (mode_str, is_unsigned) {
+                ("QI" | "byte", false) => Some(self.registry.type_schar),
+                ("QI" | "byte", true) => Some(self.registry.type_char_unsigned),
+                ("HI", false) => Some(self.registry.type_short),
+                ("HI", true) => Some(self.registry.type_short_unsigned),
+                ("SI", false) => Some(self.registry.type_int),
+                ("SI", true) => Some(self.registry.type_int_unsigned),
+                ("DI" | "word", false) => Some(self.registry.type_long_long),
+                ("DI" | "word", true) => Some(self.registry.type_long_long_unsigned),
+                ("SF", _) => Some(self.registry.type_float),
+                ("DF", _) => Some(self.registry.type_double),
+                _ => None,
+            };
+
+            if let Some(ty) = new_ty {
+                info.base_type = Some(QualType::new(ty, base_qt.qualifiers()));
+            }
         }
 
         self.validate_specifier_combinations(&info, span);
@@ -4148,7 +4279,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             .map(|r| self.symbol_table.get_symbol(r))
         {
             Some(entry) => {
-                if let SymbolKind::Typedef { aliased_type } = entry.kind {
+                if let SymbolKind::Typedef(aliased_type) = entry.kind {
                     Ok(aliased_type)
                 } else {
                     Err(SemanticDiag::new(

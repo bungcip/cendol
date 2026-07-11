@@ -27,6 +27,7 @@ impl SemanticDiag {
             SemanticError::EmptyDeclaration
             | SemanticError::IncompatiblePointerComparison { .. }
             | SemanticError::IncompatiblePointerTypes { .. }
+            | SemanticError::PointerIntegerMismatch { .. }
             | SemanticError::PointerSignednessMismatch { .. }
             | SemanticError::PointerAssignmentDiscardsQualifiers { .. }
             | SemanticError::ReturnLocalAddress { .. }
@@ -263,7 +264,12 @@ pub enum SemanticError {
         lhs: QualType,
         rhs: QualType,
     },
+    NonLocalVariableInForLoop,
     IncompatiblePointerTypes {
+        expected: QualType,
+        found: QualType,
+    },
+    PointerIntegerMismatch {
         expected: QualType,
         found: QualType,
     },
@@ -278,6 +284,12 @@ pub enum SemanticError {
     CaseNotInSwitch,
     DuplicateCase {
         value: i64,
+    },
+    FieldNameNotInStructOrUnionInitializer,
+    ArrayIndexInNonArrayInitializer,
+    ArrayIndexExceedsBounds {
+        index: i64,
+        bounds: i64,
     },
     NonConstantCaseValue,
     NonConstantDesignator,
@@ -448,6 +460,7 @@ impl SemanticError {
             SemanticError::EmptyDeclaration => Some("empty-translation-unit"),
             SemanticError::IncompatiblePointerComparison { .. } => Some("pointer-compare"),
             SemanticError::IncompatiblePointerTypes { .. } => Some("incompatible-pointer-types"),
+            SemanticError::PointerIntegerMismatch { .. } => Some("int-conversion"),
             SemanticError::PointerSignednessMismatch { .. } => Some("pointer-sign"),
             SemanticError::PointerAssignmentDiscardsQualifiers { .. } => {
                 Some("incompatible-pointer-types-discards-qualifiers")
@@ -525,6 +538,19 @@ impl DiagDisplay for SemanticError {
                 "indirection requires pointer operand ('{}' invalid)",
                 f.display_qual_type(*ty)
             ),
+            SemanticError::FieldNameNotInStructOrUnionInitializer => {
+                write!(f, "field name not in struct or union initializer")
+            }
+            SemanticError::ArrayIndexInNonArrayInitializer => {
+                write!(f, "array index in non-array initializer")
+            }
+            SemanticError::ArrayIndexExceedsBounds { index, bounds } => {
+                write!(
+                    f,
+                    "array index in initializer exceeds array bounds (index {} >= bounds {})",
+                    index, bounds
+                )
+            }
             SemanticError::NonConstantInitializer => write!(f, "Initializer element is not a compile-time constant"),
             SemanticError::InvalidInitializer => write!(f, "invalid initializer"),
             SemanticError::ConflictingTypes { name, .. } => write!(f, "conflicting types for '{}'", name),
@@ -684,12 +710,32 @@ impl DiagDisplay for SemanticError {
                 f.display_qual_type(*lhs),
                 f.display_qual_type(*rhs)
             ),
+            SemanticError::NonLocalVariableInForLoop => {
+                write!(f, "declaration of non-local variable in \"for\" loop")
+            }
             SemanticError::IncompatiblePointerTypes { expected, found } => write!(
                 f,
                 "incompatible pointer types passing '{}' to parameter of type '{}'",
                 f.display_qual_type(*found),
                 f.display_qual_type(*expected)
             ),
+            SemanticError::PointerIntegerMismatch { expected, found } => {
+                let from = f.display_qual_type(*found);
+                let to = f.display_qual_type(*expected);
+                if expected.is_pointer() {
+                    write!(
+                        f,
+                        "assignment makes pointer from integer without a cast (expected '{}', found '{}')",
+                        to, from
+                    )
+                } else {
+                    write!(
+                        f,
+                        "assignment makes integer from pointer without a cast (expected '{}', found '{}')",
+                        to, from
+                    )
+                }
+            }
             SemanticError::PointerSignednessMismatch { expected, found } => write!(
                 f,
                 "pointer targets in assignment differ in signedness (passing '{}' to '{}')",

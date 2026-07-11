@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::{run_pass, run_pass_with_diagnostic_message};
+use crate::tests::test_utils::{run_fail_with_message, run_pass, run_pass_with_diagnostic_message};
 
 #[test]
 fn test_array_init_excess_elements() {
@@ -109,5 +109,18 @@ fn test_string_init_with_room() {
         }
         "#,
         CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_array_init_designator_exceeds_bounds() {
+    run_fail_with_message(
+        r#"
+        int main(void) {
+            int a[2] = {[3] = 1};
+            return 0;
+        }
+        "#,
+        "array index in initializer exceeds array bounds",
     );
 }

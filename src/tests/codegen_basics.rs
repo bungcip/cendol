@@ -62,61 +62,61 @@ fn test_boolean_logic_lowering() {
         v19 = uextend.i32 v18
         brif v19, block1, block2
 
+    block1:
+        v20 = iconst.i32 1
+        return v20  ; v20 = 1
+
     block2:
         jump block3
 
     block3:
         v54 = stack_addr.i64 ss0
-        v20 = load.i32 notrap v54
-        v21 = iconst.i32 0
-        v22 = icmp eq v20, v21  ; v21 = 0
-        v23 = iconst.i32 1
-        v24 = iconst.i32 0
-        v25 = select v22, v23, v24  ; v23 = 1, v24 = 0
+        v21 = load.i32 notrap v54
+        v22 = iconst.i32 0
+        v23 = icmp eq v21, v22  ; v22 = 0
+        v24 = iconst.i32 1
+        v25 = iconst.i32 0
+        v26 = select v23, v24, v25  ; v24 = 1, v25 = 0
         v53 = stack_addr.i64 ss3
-        store notrap v25, v53
+        store notrap v26, v53
         v52 = stack_addr.i64 ss3
-        v26 = load.i32 notrap v52
-        v27 = iconst.i32 0
-        v28 = icmp eq v26, v27  ; v27 = 0
-        v29 = iconst.i32 1
-        v30 = iconst.i32 0
-        v31 = select v28, v29, v30  ; v29 = 1, v30 = 0
+        v27 = load.i32 notrap v52
+        v28 = iconst.i32 0
+        v29 = icmp eq v27, v28  ; v28 = 0
+        v30 = iconst.i32 1
+        v31 = iconst.i32 0
+        v32 = select v29, v30, v31  ; v30 = 1, v31 = 0
         v51 = stack_addr.i64 ss4
-        store notrap v31, v51
+        store notrap v32, v51
         v50 = stack_addr.i64 ss4
-        v32 = load.i32 notrap v50
-        v33 = iconst.i32 1
-        v34 = icmp ne v32, v33  ; v33 = 1
-        v35 = iconst.i32 1
-        v36 = iconst.i32 0
-        v37 = select v34, v35, v36  ; v35 = 1, v36 = 0
+        v33 = load.i32 notrap v50
+        v34 = iconst.i32 1
+        v35 = icmp ne v33, v34  ; v34 = 1
+        v36 = iconst.i32 1
+        v37 = iconst.i32 0
+        v38 = select v35, v36, v37  ; v36 = 1, v37 = 0
         v49 = stack_addr.i64 ss5
-        store notrap v37, v49
+        store notrap v38, v49
         v48 = stack_addr.i64 ss5
-        v38 = load.i32 notrap v48
-        v39 = iconst.i32 0
-        v40 = icmp ne v38, v39  ; v39 = 0
-        v41 = iconst.i8 1
-        v42 = iconst.i8 0
-        v43 = select v40, v41, v42  ; v41 = 1, v42 = 0
-        v44 = uextend.i32 v43
-        brif v44, block4, block5
-
-    block5:
-        jump block6
-
-    block6:
-        v45 = iconst.i32 0
-        return v45  ; v45 = 0
+        v39 = load.i32 notrap v48
+        v40 = iconst.i32 0
+        v41 = icmp ne v39, v40  ; v40 = 0
+        v42 = iconst.i8 1
+        v43 = iconst.i8 0
+        v44 = select v41, v42, v43  ; v42 = 1, v43 = 0
+        v45 = uextend.i32 v44
+        brif v45, block4, block5
 
     block4:
         v46 = iconst.i32 1
         return v46  ; v46 = 1
 
-    block1:
-        v47 = iconst.i32 1
-        return v47  ; v47 = 1
+    block5:
+        jump block6
+
+    block6:
+        v47 = iconst.i32 0
+        return v47  ; v47 = 0
     }
     ");
 }
@@ -491,4 +491,36 @@ int main() {
 }
 "#;
     run_pass(source, CompilePhase::Cranelift);
+}
+#[test]
+fn test_cleanup_goto_backward() {
+    use crate::tests::codegen_common::*;
+    let source = r#"
+        int printf(const char *, ...);
+        int foo(int *n) {
+            printf("foo(%d)\n", *n);
+            return 1;
+        }
+        int main() {
+            int n = 2;
+            if (n > 1) {
+            exit:
+                if (!n) {
+                    printf("return\n");
+                    return 0;
+                }
+                int y __attribute__((cleanup(foo))) = 1;
+                if (n > 2) {
+                    int __attribute__((cleanup(foo))) auto b = 2;
+                    n = 0;
+                    goto exit;
+                }
+                n = 0;
+                goto exit;
+            }
+            return 0;
+        }
+    "#;
+    let output = run_c_code_with_output(source);
+    assert_eq!(output, "foo(1)\nreturn\n");
 }

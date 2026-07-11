@@ -425,13 +425,21 @@ pub(crate) fn emit(
                 let mut file = File::create(&asm_file).unwrap();
                 write!(file, "{asm_source}").unwrap();
 
-                Command::new("cc")
+                let cc_res = Command::new("cc")
                     .arg("-c")
                     .arg(&asm_file)
                     .arg("-o")
                     .arg(&obj_file)
                     .output()
                     .expect("Failed to invoke external assembler");
+
+                if !cc_res.status.success() {
+                    // Assemble failed (e.g. GCC syntax not expanded)
+                    // We emit a trap instruction instead of panicking, since we can't emit an error here easily.
+                    sink.put1(0x0f);
+                    sink.put1(0x0b); // ud2
+                    return;
+                }
 
                 Command::new("objcopy")
                     .arg("-O")

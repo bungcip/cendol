@@ -112,6 +112,7 @@ pub enum ParsedNodeKind {
 
     // --- Statements ---
     CompoundStmt(Box<[ParsedNodeRef]>, ScopeId),
+    GnuLocalLabel(Box<[NameId]>),
     If(ParsedIfStmt),
     While(ParsedWhileStmt),
     DoWhile(ParsedNodeRef, ParsedNodeRef),
@@ -228,6 +229,7 @@ pub enum DeclSpec {
     AttributeVisibility(crate::lang_options::Visibility),
     AttributeAlias(LitRef),
     AttributeAsm(LitRef),
+    AttributeMode(crate::ast::NameId),
 }
 
 // Type specifiers
@@ -469,6 +471,7 @@ impl ParsedNodeKind {
             ParsedNodeKind::GenericSelection(..) => "GenericSelection",
             ParsedNodeKind::BuiltinChooseExpr(..) => "BuiltinChooseExpr",
             ParsedNodeKind::CompoundStmt(..) => "CompoundStmt",
+            ParsedNodeKind::GnuLocalLabel(..) => "GnuLocalLabel",
             ParsedNodeKind::If(..) => "If",
             ParsedNodeKind::While(..) => "While",
             ParsedNodeKind::DoWhile(..) => "DoWhile",
@@ -640,6 +643,7 @@ impl ParsedNodeKind {
                     }
                 }
             }
+            ParsedNodeKind::GnuLocalLabel(_) => {}
         }
     }
 }

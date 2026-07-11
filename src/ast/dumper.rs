@@ -9,7 +9,7 @@ use std::fmt::Formatter;
 use crate::ast::literal::LitVal;
 use crate::ast::parsed::{ParsedAst, ParsedNodeKind, ParsedNodeRef};
 use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind, NodeRef};
-use crate::semantic::{SymbolRef, SymbolTable, TypeRef, TypeRegistry};
+use crate::semantic::{SymbolKind, SymbolRef, SymbolTable, TypeRef, TypeRegistry};
 
 pub(crate) struct ParsedAstDisplay<'a>(pub(crate) &'a ParsedAst);
 
@@ -468,7 +468,7 @@ impl AstDumper {
             NodeKind::TypedefDecl(decl) => {
                 write!(f, "symbol={:?}", decl.symbol)?;
                 if let Some(sym) = get_sym(decl.symbol)
-                    && let crate::semantic::symbol_table::SymbolKind::Typedef { aliased_type } = sym.kind
+                    && let SymbolKind::Typedef(aliased_type) = sym.kind
                 {
                     write!(f, ", name={}, qt={}", sym.name, aliased_type)?;
                 }

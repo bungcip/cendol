@@ -399,3 +399,36 @@ fn test_alias_is_definition() {
         "definition 'y' cannot also be an alias",
     );
 }
+
+#[test]
+fn test_non_local_var_in_for_loop() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            for (static int i = 0; i < 10; i++) {}
+        }
+        "#,
+        "declaration of non-local variable in \"for\" loop",
+    );
+}
+
+#[test]
+fn test_designator_in_scalar() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            int x = {.x = 1};
+        }
+        "#,
+        "field name not in struct or union initializer",
+    );
+
+    run_fail_with_message(
+        r#"
+        int main() {
+            int x = {[0] = 1};
+        }
+        "#,
+        "array index in non-array initializer",
+    );
+}

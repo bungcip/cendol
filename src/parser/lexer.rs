@@ -90,6 +90,7 @@ pub enum TokenKind {
     BuiltinTypesCompatibleP,
     Asm,
     AutoType,
+    KwLabel, // __label__
 
     // Reserved identifiers as keywords
     Func,           // __func__
@@ -330,6 +331,7 @@ impl TokenKind {
             BuiltinTypesCompatibleP => "__builtin_types_compatible_p",
             Asm => "asm",
             AutoType => "__auto_type",
+            KwLabel => "__label__",
             PrettyFunction => "__PRETTY_FUNCTION__",
             Plus => "+",
             Minus => "-",
@@ -631,6 +633,7 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("_Static_assert"), TokenKind::StaticAssert);
         m.insert(StringId::new("static_assert"), TokenKind::StaticAssert);
         m.insert(StringId::new("_Thread_local"), TokenKind::ThreadLocal);
+        m.insert(StringId::new("__label__"), TokenKind::KwLabel);
         m.insert(StringId::new("__attribute__"), TokenKind::Attribute);
         m.insert(StringId::new("__attribute"), TokenKind::Attribute);
         m.insert(StringId::new("__builtin_va_arg"), TokenKind::BuiltinVaArg);

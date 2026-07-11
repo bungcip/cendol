@@ -23,11 +23,29 @@ pub(crate) fn build_type(
 ) -> Result<ParsedType, ParseDiag> {
     let (base, qualifiers) = parse_base_type_and_qualifiers(parser, specifiers)?;
 
-    let declarator = if let Some(d) = declarator {
+    let mut declarator = if let Some(d) = declarator {
         d
     } else {
         parser.alloc_decl(ParsedDeclarator::Identifier(None))
     };
+
+    for spec in specifiers.iter().rev() {
+        if matches!(
+            spec,
+            DeclSpec::AlignmentSpec(..)
+                | DeclSpec::AttributePacked
+                | DeclSpec::AttributeTransparentUnion
+                | DeclSpec::AttributeCleanup(_)
+                | DeclSpec::AttributeAsm(_)
+                | DeclSpec::AttributeAlias(_)
+                | DeclSpec::AttributeVisibility(_)
+        ) {
+            declarator = parser.alloc_decl(ParsedDeclarator::Attribute {
+                inner: declarator,
+                spec: spec.clone(),
+            });
+        }
+    }
 
     Ok(ParsedType {
         base,

@@ -322,7 +322,13 @@ impl CompilerDriver {
 
         // MIR generation
         let t1 = if timing_enabled { Some(Instant::now()) } else { None };
-        let mut sema = MirGen::new(&ast, &symbol_table, &mut registry, &self.config.lang_options);
+        let mut sema = MirGen::new(
+            &ast,
+            &mut self.de,
+            &symbol_table,
+            &mut registry,
+            &self.config.lang_options,
+        );
         let mir_program = sema.visit_module();
         if let Some(t1) = t1 {
             eprintln!("[TIMING]   MIR Generation: {:?}", t1.elapsed());

@@ -226,6 +226,14 @@ fn parse_trailing_declarators(
                     });
                 }
             }
+            TokenKind::Asm => {
+                if let Some(lit) = super::declarations::parse_asm(parser)? {
+                    base = parser.alloc_decl(ParsedDeclarator::Attribute {
+                        inner: base,
+                        spec: DeclSpec::AttributeAsm(lit),
+                    });
+                }
+            }
             _ => break,
         }
     }

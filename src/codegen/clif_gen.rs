@@ -118,7 +118,6 @@ pub(crate) struct BodyEmitContext<'a, 'b> {
     pub stack_slots: &'a HashMap<LocalId, StackSlot>,
     pub module: &'a mut ObjectModule,
     pub clif_blocks: &'a HashMap<MirBlockId, Block>,
-    pub worklist: &'a mut Vec<MirBlockId>,
     pub return_types: Vec<Type>,
     pub return_ptr: Option<Value>,
     pub func: &'a MirFunction,
@@ -2460,18 +2459,21 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
                 panic!("Target block {:?} not found in function {}", target, ctx.func.name);
             });
             ctx.builder.ins().jump(*target_cl_block, &[]);
-            ctx.worklist.push(*target);
         }
         Terminator::GotoIndirect(op) => {
             let val = emit_operand(op, ctx, types::I32);
             for block_id in &ctx.func.blocks {
                 let clif_target = ctx.clif_blocks.get(block_id).unwrap();
+                if ctx.func.blocks.first() == Some(block_id) {
+                    continue; // Cranelift forbids branching to the entry block
+                }
                 let pos = ctx.func.blocks.iter().position(|b| b == block_id).unwrap();
                 let pos_val = ctx.builder.ins().iconst(types::I32, pos as i64);
                 let cmp = ctx.builder.ins().icmp(IntCC::Equal, val, pos_val);
                 let next_block = ctx.builder.create_block();
                 ctx.builder.ins().brif(cmp, *clif_target, &[], next_block, &[]);
                 ctx.builder.switch_to_block(next_block);
+                ctx.builder.seal_block(next_block);
             }
             ctx.builder.ins().trap(cranelift::prelude::TrapCode::unwrap_user(1));
         }
@@ -2489,9 +2491,6 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
             ctx.builder
                 .ins()
                 .brif(cond_val, *then_cl_block, &[], *else_cl_block, &[]);
-
-            ctx.worklist.push(*then_bb);
-            ctx.worklist.push(*else_bb);
         }
 
         Terminator::Return(opt) => {
@@ -2617,8 +2616,11 @@ fn finalize_function_processing(
         .expect("module operation failed");
 
     // Only define the function body if it's a defined function (not extern)
-    if func.linkage != MirLinkage::Import {
-        module.define_function(id, func_ctx).expect("module operation failed");
+    if func.linkage != MirLinkage::Import
+        && let Err(e) = module.define_function(id, func_ctx)
+    {
+        println!("{}", func_ctx.func.display());
+        panic!("module operation failed: {:?}", e);
     }
 
     if emit_kind == EmitKind::Clif {
@@ -2850,16 +2852,7 @@ impl ClifGen {
         }
 
         // PHASE 2️⃣ — Lower block content (without sealing)
-        // Use worklist algorithm for proper traversal
-        let mut worklist = vec![func.entry_block.expect("Defined function must have entry block")];
-        let mut visited = HashSet::new();
-
-        while let Some(current_block_id) = worklist.pop() {
-            if visited.contains(&current_block_id) {
-                continue;
-            }
-            visited.insert(current_block_id);
-
+        for &current_block_id in &func.blocks {
             let clif_block = clif_blocks.get(&current_block_id).expect("Block not found in mapping");
             builder.switch_to_block(*clif_block);
 
@@ -2954,7 +2947,6 @@ impl ClifGen {
                 module: &mut self.module,
                 func,
                 clif_blocks: &clif_blocks,
-                worklist: &mut worklist,
                 return_types: return_types.clone(),
                 return_ptr,
                 func_id_map: &self.func_id_map,

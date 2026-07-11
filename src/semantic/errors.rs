@@ -956,7 +956,12 @@ impl DiagDisplay for SemanticError {
             SemanticError::NoteSwitchStartsHere => write!(f, "switch starts here"),
             SemanticError::NoteVLADeclaredHere { name } => write!(f, "'{}' declared here", name),
             SemanticError::InvalidStorageClassForFunction { name, specifier } => {
-                write!(f, "invalid storage class '{}' for function '{}'", specifier.as_str(), name)
+                write!(
+                    f,
+                    "invalid storage class '{}' for function '{}'",
+                    specifier.as_str(),
+                    name
+                )
             }
             SemanticError::VmStaticStorage => {
                 write!(

@@ -92,8 +92,7 @@ pub enum TokenKind {
     AutoType,
 
     // Reserved identifiers as keywords
-    Label,          // __label__
-    VaArgs,         // __VA_ARGS__
+    Label,  // __label__
 
     // === OPERATORS ===
     // Arithmetic operators

@@ -91,7 +91,8 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
                 super::declarator::parse_declarator(p, false)?
             };
 
-            let initializer = p.accept(TokenKind::Assign)
+            let initializer = p
+                .accept(TokenKind::Assign)
                 .map(|_| super::declarations::parse_initializer(p))
                 .transpose()?;
 
@@ -221,7 +222,8 @@ pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Re
     parser.expect(TokenKind::LeftParen)?;
     let condition = parser.parse_expr_assignment()?;
 
-    let message_node = parser.accept(TokenKind::Comma)
+    let message_node = parser
+        .accept(TokenKind::Comma)
         .map(|_| -> Result<ParsedNodeRef, ParseDiag> {
             let (lit, span) = parser.expect_string_literal()?;
             Ok(parser.push_node(ParsedNodeKind::Literal(lit), span))

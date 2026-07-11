@@ -6,7 +6,7 @@
 use super::Parser;
 use crate::ast::*;
 use crate::parser::utils::parse_parenthesized_expr;
-use crate::parser::{ParseDiag, ParseError, TokenKind};
+use crate::parser::{ParseDiag, TokenKind};
 use crate::semantic::ScopeId;
 use crate::source_manager::SourceLoc;
 
@@ -147,7 +147,8 @@ fn parse_if_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let condition = parse_parenthesized_expr(parser)?;
     let then_branch = parse_statement(parser)?;
 
-    let else_branch = parser.accept(TokenKind::Else)
+    let else_branch = parser
+        .accept(TokenKind::Else)
         .map(|_| parse_statement(parser))
         .transpose()?;
 
@@ -251,7 +252,10 @@ fn parse_break_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag
 fn parse_return_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Return)?.span;
     let value = parser.parse_optional_expr_before(TokenKind::Semicolon)?;
-    Ok(parser.push_node(ParsedNodeKind::Return(value), start.merge(parser.last_token_span().unwrap_or(start))))
+    Ok(parser.push_node(
+        ParsedNodeKind::Return(value),
+        start.merge(parser.last_token_span().unwrap_or(start)),
+    ))
 }
 
 fn parse_empty_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {

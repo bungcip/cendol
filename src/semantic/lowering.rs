@@ -140,11 +140,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn merge_qualifiers_with_check(&mut self, base: QualType, add: TypeQualifiers, span: SourceSpan) -> QualType {
         if add.contains(TypeQualifiers::RESTRICT) {
-            let is_valid = if let TypeKind::Pointer { pointee } = &self.registry.get(base.ty()).kind {
-                !pointee.is_function()
-            } else {
-                false
-            };
+            let is_valid = matches!(&self.registry.get(base.ty()).kind,
+                TypeKind::Pointer { pointee } if !pointee.is_function()
+            );
 
             if !is_valid {
                 self.report_error(span, SemanticError::InvalidRestrict);
@@ -264,32 +262,20 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     DeclaratorContext { in_parameter: false },
                 );
 
-                match (base_align, info.alignment) {
-                    (Some(a), Some(b)) => Some(std::cmp::max(a, b)),
-                    (Some(a), None) => Some(a),
-                    (None, Some(b)) => Some(b),
-                    (None, None) => None,
-                }
+                base_align.max(info.alignment)
             }
             ParsedAlignmentSpec::Expr(expr) => {
                 let lowered_expr = self.visit_expression(*expr);
-                let const_ctx = self.const_ctx();
-                if let Some(val) = const_ctx.eval_int(lowered_expr) {
-                    if val > 0 && (val as u64).is_power_of_two() {
-                        if val > 65535 {
-                            self.report_error(span, SemanticError::InvalidAlignment { value: val });
-                            None
-                        } else {
-                            Some(val as u16)
-                        }
-                    } else if val == 0 {
-                        None
-                    } else {
-                        self.report_error(span, SemanticError::InvalidAlignment { value: val });
-                        None
-                    }
-                } else {
+                let Some(val) = self.const_ctx().eval_int(lowered_expr) else {
                     self.report_error(span, SemanticError::NonConstantAlignment);
+                    return None;
+                };
+                if val == 0 {
+                    None
+                } else if val > 0 && (val as u64).is_power_of_two() && val <= 65535 {
+                    Some(val as u16)
+                } else {
+                    self.report_error(span, SemanticError::InvalidAlignment { value: val });
                     None
                 }
             }
@@ -559,13 +545,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn count_semantic_nodes(&self, node: ParsedNodeRef) -> usize {
         let node = self.parsed_ast.get_node(node);
         match &node.kind {
-            ParsedNodeKind::Declaration(decl) => {
-                if decl.init_declarators.is_empty() {
-                    1
-                } else {
-                    decl.init_declarators.len()
-                }
-            }
+            ParsedNodeKind::Declaration(decl) => decl.init_declarators.len().max(1),
             ParsedNodeKind::TranslationUnit(decls) => decls.len(),
             ParsedNodeKind::GnuLocalLabel(_) => 0,
             _ => 1,
@@ -979,19 +959,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         first_def: SourceSpan,
         existing_ty: QualType,
     ) {
-        // Check for _Noreturn mismatch
-        let get_noreturn = |qt: QualType, registry: &TypeRegistry| {
-            if let TypeKind::Function { is_noreturn, .. } = &registry.get(qt.ty()).kind {
-                *is_noreturn
-            } else {
-                false
-            }
+        let is_noreturn = |qt: QualType, reg: &TypeRegistry| {
+            matches!(&reg.get(qt.ty()).kind, TypeKind::Function { is_noreturn: true, .. })
         };
 
-        let existing_is_noreturn = get_noreturn(existing_ty, self.registry);
-        let new_is_noreturn = get_noreturn(new_ty, self.registry);
-
-        if existing_is_noreturn != new_is_noreturn {
+        if is_noreturn(existing_ty, self.registry) != is_noreturn(new_ty, self.registry) {
             self.report_error(span, SemanticError::ConflictingTypes { name, first_def });
         }
     }
@@ -1004,8 +976,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         is_global: bool,
     ) {
         if let Some(specifier) = spec_info.storage.filter(|s| {
-            matches!(s, StorageClass::Auto | StorageClass::Register)
-                || (*s == StorageClass::Static && !is_global)
+            matches!(s, StorageClass::Auto | StorageClass::Register) || (*s == StorageClass::Static && !is_global)
         }) {
             self.report_error(span, SemanticError::InvalidStorageClassForFunction { name, specifier });
         }
@@ -3373,12 +3344,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         {
             let (ty, is_completed, def_span, has_enumerators) = {
                 let symbol = self.symbol_table.get_symbol(sym_ref);
-                let has_enums =
-                    if let TypeKind::Enum { enumerators, .. } = &self.registry.get(symbol.type_info.ty()).kind {
-                        !enumerators.is_empty()
-                    } else {
-                        false
-                    };
+                let has_enums = matches!(
+                    &self.registry.get(symbol.type_info.ty()).kind,
+                    TypeKind::Enum { enumerators, .. } if !enumerators.is_empty()
+                );
                 (symbol.type_info.ty(), symbol.is_completed, symbol.def_span, has_enums)
             };
 
@@ -3433,26 +3402,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             return Ok(ty);
         }
 
-        if is_definition {
-            let ty = self.registry.declare_enum(tag, self.registry.type_int, false);
-            let sym = self.symbol_table.define_enum(tag_name, ty, span);
-            // Store unique mapping for anonymous tags and update side table with stable name
-            if tag.is_none() {
-                self.type_to_tag_sym.insert(ty, sym);
-                self.ast.semantic_info.anonymous_tags.insert(ty, tag_name);
-            }
-            Ok(ty)
-        } else {
-            // Forward declaration
-            let ty = self.registry.declare_enum(tag, self.registry.type_int, false);
-            let sym = self.symbol_table.define_enum(tag_name, ty, span);
-            // Store unique mapping for anonymous tags and update side table with stable name
-            if tag.is_none() {
-                self.type_to_tag_sym.insert(ty, sym);
-                self.ast.semantic_info.anonymous_tags.insert(ty, tag_name);
-            }
-            Ok(ty)
+        if !is_definition {
+            self.report_warning(span, SemanticError::EnumForwardDeclaration);
         }
+
+        let ty = self.registry.declare_enum(tag, self.registry.type_int, false);
+        let sym = self.symbol_table.define_enum(tag_name, ty, span);
+        if tag.is_none() {
+            self.type_to_tag_sym.insert(ty, sym);
+            self.ast.semantic_info.anonymous_tags.insert(ty, tag_name);
+        }
+        Ok(ty)
     }
 
     fn complete_enum_symbol(

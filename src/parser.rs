@@ -206,12 +206,6 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
             .map(|t| t.span)
     }
 
-    /// Get the span of a token at a specific index
-    pub(super) fn get_token_span(&mut self, index: usize) -> Option<SourceSpan> {
-        self.ensure_cached(index);
-        self.token_cache.get(index).map(|token| token.span)
-    }
-
     /// Peek at the next token without consuming it
     fn peek_token(&mut self, next_index: u32) -> Option<Token> {
         let target_idx = self.current_idx + 1 + next_index as usize;
@@ -362,9 +356,7 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
         &mut self,
         end_token: TokenKind,
     ) -> Result<Option<ParsedNodeRef>, ParseDiag> {
-        let expr = (!self.is_token(end_token))
-            .then(|| self.parse_expr_min())
-            .transpose()?;
+        let expr = (!self.is_token(end_token)).then(|| self.parse_expr_min()).transpose()?;
         self.expect(end_token)?;
         Ok(expr)
     }

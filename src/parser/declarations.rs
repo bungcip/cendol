@@ -17,146 +17,136 @@ use crate::ast::parsed::{
 };
 use crate::parser::type_builder::parse_type_name;
 use crate::parser::type_specifiers::parse_type_spec;
+use crate::parser::utils::parse_comma_separated_list;
 
 /// parse declaration or function definition
 pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Result<ParsedNodeRef, ParseDiag> {
-    let trx = parser.start_transaction();
-    let start_loc = trx.parser.current_token_span()?.start();
-    let dummy = trx.parser.push_dummy();
+    parser.transaction(|p| {
+        let start_loc = p.current_token_span()?.start();
+        let dummy = p.push_dummy();
 
-    if let Some(token) = trx.parser.accept(TokenKind::StaticAssert) {
-        let result = parse_static_assert(trx.parser, token);
-        if result.is_ok() {
-            trx.commit();
+        if let Some(token) = p.accept(TokenKind::StaticAssert) {
+            return parse_static_assert(p, token);
         }
-        return result;
-    }
 
-    let mut specifiers = parse_decl_specs(trx.parser)?;
+        let mut specifiers = parse_decl_specs(p)?;
 
-    let has_record_enum_type = specifiers
-        .iter()
-        .any(|s| matches!(s, DeclSpec::TypeSpec(TypeSpec::Record(..) | TypeSpec::Enum(..))));
-    let has_storage_class = specifiers.iter().any(|s| matches!(s, DeclSpec::StorageClass(_)));
+        let has_record_enum_type = specifiers
+            .iter()
+            .any(|s| matches!(s, DeclSpec::TypeSpec(TypeSpec::Record(..) | TypeSpec::Enum(..))));
+        let has_storage_class = specifiers.iter().any(|s| matches!(s, DeclSpec::StorageClass(_)));
 
-    if has_record_enum_type
-        && !has_storage_class
-        && let Some(semi) = trx.parser.accept(TokenKind::Semicolon)
-    {
+        if has_record_enum_type
+            && !has_storage_class
+            && let Some(semi) = p.accept(TokenKind::Semicolon)
+        {
+            let decl = ParsedDecl {
+                specifiers,
+                init_declarators: ThinVec::new(),
+            };
+            let span = SourceSpan::new(start_loc, semi.span.end());
+            return Ok(p.push_node(ParsedNodeKind::Declaration(decl), span));
+        }
+
+        if !p.is_token(TokenKind::Semicolon)
+            && !matches!(
+                p.current_token_kind(),
+                Some(TokenKind::Identifier(_)) | Some(TokenKind::Star) | Some(TokenKind::LeftParen)
+            )
+        {
+            let message = if let Some(DeclSpec::TypeSpec(ts)) = specifiers.last() {
+                match ts {
+                    TypeSpec::Record(..) => "Expected ';' after struct/union definition",
+                    TypeSpec::Enum(..) => "Expected ';' after enum definition",
+                    _ => "Expected declarator or identifier after type specifier",
+                }
+            } else {
+                "Expected type specifiers"
+            };
+
+            let current_token = p.current_token()?;
+            return Err(ParseDiag {
+                span: current_token.span,
+                kind: ParseError::UnexpectedToken {
+                    expected: message,
+                    found: current_token.kind,
+                },
+            });
+        }
+
+        let declarator = super::declarator::parse_declarator(p, false)?;
+
+        if allow_function_def && p.is_token(TokenKind::LeftBrace) {
+            return parse_function_definition_tail(p, specifiers, declarator, start_loc, dummy);
+        }
+
+        let mut init_declarators = ThinVec::new();
+        let mut current_declarator = Some(declarator);
+
+        loop {
+            let start_span = p.current_token_span_or_empty();
+            let declarator = if let Some(d) = current_declarator.take() {
+                d
+            } else {
+                super::declarator::parse_declarator(p, false)?
+            };
+
+            let initializer = if p.accept(TokenKind::Assign).is_some() {
+                Some(super::declarations::parse_initializer(p)?)
+            } else {
+                None
+            };
+
+            let span = start_span.merge(p.last_token_span().unwrap_or(start_span));
+
+            if let Some(name) = super::declarator::get_declarator_name(&p.ast.parsed_types, declarator) {
+                if specifiers
+                    .iter()
+                    .any(|s| matches!(s, DeclSpec::StorageClass(StorageClass::Typedef)))
+                {
+                    p.add_typedef(name);
+                } else {
+                    p.symbol_table.define_parser_non_typedef(name, span);
+                }
+            }
+
+            init_declarators.push(ParsedInitDeclarator {
+                declarator,
+                initializer,
+                span,
+            });
+
+            if !p.is_token(TokenKind::Comma) {
+                break;
+            }
+            p.advance();
+        }
+
+        parse_trailing_attributes_and_asm(p, &mut specifiers)?;
+
+        let semi = if let Some(token) = p.accept(TokenKind::Semicolon) {
+            token
+        } else {
+            let current_token = p.current_token()?;
+            return Err(ParseDiag {
+                span: current_token.span,
+                kind: ParseError::UnexpectedToken {
+                    expected: "';' after declaration",
+                    found: current_token.kind,
+                },
+            });
+        };
+
         let decl = ParsedDecl {
             specifiers,
-            init_declarators: ThinVec::new(),
+            init_declarators,
         };
-        let span = SourceSpan::new(start_loc, semi.span.end());
-        let node = trx.parser.push_node(ParsedNodeKind::Declaration(decl), span);
-        trx.commit();
-        return Ok(node);
-    }
-
-    if !trx.parser.is_token(TokenKind::Semicolon)
-        && !matches!(
-            trx.parser.current_token_kind(),
-            Some(TokenKind::Identifier(_)) | Some(TokenKind::Star) | Some(TokenKind::LeftParen)
-        )
-    {
-        let message = if let Some(DeclSpec::TypeSpec(ts)) = specifiers.last() {
-            match ts {
-                TypeSpec::Record(..) => "Expected ';' after struct/union definition",
-                TypeSpec::Enum(..) => "Expected ';' after enum definition",
-                _ => "Expected declarator or identifier after type specifier",
-            }
-        } else {
-            "Expected type specifiers"
-        };
-
-        let current_token = trx.parser.current_token()?;
-        return Err(ParseDiag {
-            span: current_token.span,
-            kind: ParseError::UnexpectedToken {
-                expected: message,
-                found: current_token.kind,
-            },
-        });
-    }
-
-    let declarator = super::declarator::parse_declarator(trx.parser, false)?;
-
-    if allow_function_def && trx.parser.is_token(TokenKind::LeftBrace) {
-        let result = parse_function_definition_tail(trx.parser, specifiers, declarator, start_loc, dummy);
-        if result.is_ok() {
-            trx.commit();
-        }
-        return result;
-    }
-
-    let mut init_declarators = ThinVec::new();
-    let mut current_declarator = Some(declarator);
-
-    loop {
-        let start_span = trx.parser.current_token_span_or_empty();
-        let declarator = if let Some(d) = current_declarator.take() {
-            d
-        } else {
-            super::declarator::parse_declarator(trx.parser, false)?
-        };
-
-        let initializer = if trx.parser.accept(TokenKind::Assign).is_some() {
-            Some(super::declarations::parse_initializer(trx.parser)?)
-        } else {
-            None
-        };
-
-        let span = start_span.merge(trx.parser.last_token_span().unwrap_or(start_span));
-
-        if let Some(name) = super::declarator::get_declarator_name(&trx.parser.ast.parsed_types, declarator) {
-            if specifiers
-                .iter()
-                .any(|s| matches!(s, DeclSpec::StorageClass(StorageClass::Typedef)))
-            {
-                trx.parser.add_typedef(name);
-            } else {
-                trx.parser.symbol_table.define_parser_non_typedef(name, span);
-            }
-        }
-
-        init_declarators.push(ParsedInitDeclarator {
-            declarator,
-            initializer,
-            span,
-        });
-
-        if !trx.parser.is_token(TokenKind::Comma) {
-            break;
-        }
-        trx.parser.advance();
-    }
-
-    parse_trailing_attributes_and_asm(trx.parser, &mut specifiers)?;
-
-    let semi = if let Some(token) = trx.parser.accept(TokenKind::Semicolon) {
-        token
-    } else {
-        let current_token = trx.parser.current_token()?;
-        return Err(ParseDiag {
-            span: current_token.span,
-            kind: ParseError::UnexpectedToken {
-                expected: "';' after declaration",
-                found: current_token.kind,
-            },
-        });
-    };
-
-    let decl = ParsedDecl {
-        specifiers,
-        init_declarators,
-    };
-    let node = trx.parser.replace_node(
-        dummy,
-        ParsedNodeKind::Declaration(decl),
-        SourceSpan::new(start_loc, semi.span.end()),
-    );
-    trx.commit();
-    Ok(node)
+        Ok(p.replace_node(
+            dummy,
+            ParsedNodeKind::Declaration(decl),
+            SourceSpan::new(start_loc, semi.span.end()),
+        ))
+    })
 }
 
 fn parse_function_definition_tail(
@@ -195,15 +185,14 @@ fn parse_function_definition_tail(
 }
 
 pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
-    let start_loc = parser.current_token()?.span.start();
-    let mut end_loc = SourceLoc::builtin();
+    let mut span = parser.current_token()?.span;
     let mut top_level_declarations = Vec::new();
 
     let dummy = parser.push_dummy();
 
     while let Some(token) = parser.try_current_token() {
         if token.kind == TokenKind::EndOfFile {
-            end_loc = token.span.end();
+            span = span.merge(token.span);
             break;
         }
 
@@ -237,12 +226,12 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRe
     Ok(parser.replace_node(
         dummy,
         ParsedNodeKind::TranslationUnit(top_level_declarations.into_boxed_slice()),
-        SourceSpan::new(start_loc, end_loc),
+        span,
     ))
 }
 
 pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<ParsedNodeRef, ParseDiag> {
-    let start_loc = start_token.span.start();
+    let start = start_token.span;
     parser.expect(TokenKind::LeftParen)?;
     let condition = parser.parse_expr_assignment()?;
 
@@ -258,7 +247,7 @@ pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Re
     let semi = parser.expect(TokenKind::Semicolon)?;
     Ok(parser.push_node(
         ParsedNodeKind::StaticAssert(condition, message_node),
-        SourceSpan::new(start_loc, semi.span.end()),
+        start.merge(semi.span),
     ))
 }
 
@@ -387,10 +376,8 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>,
 
 /// Parse initializer
 pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
-    let span = parser.current_token_span()?;
-
-    if parser.accept(TokenKind::LeftBrace).is_some() {
-        let initializers = crate::parser::utils::parse_comma_separated_list(parser, TokenKind::RightBrace, |parser| {
+    if let Some(token) = parser.accept(TokenKind::LeftBrace) {
+        let initializers = parse_comma_separated_list(parser, TokenKind::RightBrace, |parser| {
             if parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
                 parse_designated_initializer(parser)
             } else {
@@ -408,7 +395,7 @@ pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
         })?;
 
         let end_token = parser.expect(TokenKind::RightBrace)?;
-        let span = span.merge(end_token.span);
+        let span = token.span.merge(end_token.span);
         Ok(parser.push_node(ParsedNodeKind::InitializerList(initializers.into_boxed_slice()), span))
     } else {
         parser.parse_expr_assignment()

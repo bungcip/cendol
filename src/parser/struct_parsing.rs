@@ -70,21 +70,20 @@ fn parse_struct_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
         return super::declarations::parse_static_assert(parser, token);
     }
 
-    let start_loc = parser.current_token_span()?.start();
-
+    let start = parser.current_token_span()?;
     let mut specifiers = parse_decl_specs(parser)?;
 
     let has_record_enum_type = specifiers
         .iter()
         .any(|s| matches!(s, DeclSpec::TypeSpec(TypeSpec::Record(..) | TypeSpec::Enum(..))));
 
-    let init_declarators = if has_record_enum_type && parser.accept(TokenKind::Semicolon).is_some() {
-        ThinVec::new()
+    let (init_declarators, end) = if has_record_enum_type && let Some(end) = parser.accept(TokenKind::Semicolon) {
+        (ThinVec::new(), end.span)
     } else {
         let decls = parse_init_declarators(parser)?;
         super::declarations::parse_trailing_attributes_and_asm(parser, &mut specifiers)?;
-        parser.expect(TokenKind::Semicolon)?;
-        decls
+        let end = parser.expect(TokenKind::Semicolon)?;
+        (decls, end.span)
     };
 
     let decl = ParsedDecl {
@@ -92,7 +91,7 @@ fn parse_struct_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
         init_declarators,
     };
 
-    let span = SourceSpan::new(start_loc, parser.previous_token_span().end());
+    let span = start.merge(end);
     Ok(parser.push_node(ParsedNodeKind::Declaration(decl), span))
 }
 

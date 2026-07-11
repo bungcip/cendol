@@ -190,7 +190,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
                 parser.expect(TokenKind::RightParen)?;
 
                 if parser.is_token(TokenKind::LeftBrace) {
-                    parse_compound_literal(parser, parsed_type, token.span.start())
+                    parse_compound_literal(parser, parsed_type, token.span)
                 } else {
                     let span = SourceSpan::from_loc(token.span.end());
                     parse_cast(parser, parsed_type, span)
@@ -417,23 +417,18 @@ fn parse_generic_selection(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDi
     parser.expect(TokenKind::Comma)?;
 
     let dummy = parser.push_dummy();
-    let mut associations = Vec::new();
 
-    loop {
-        let type_name = if parser.accept(TokenKind::Default).is_some() {
+    let associations = crate::parser::utils::parse_comma_separated_list(parser, TokenKind::RightParen, |p| {
+        let type_name = if p.accept(TokenKind::Default).is_some() {
             None
         } else {
-            Some(parse_type_name(parser)?)
+            Some(parse_type_name(p)?)
         };
 
-        parser.expect(TokenKind::Colon)?;
-        let result_expr = parser.parse_expression(BindingPower::COMMA)?;
-        associations.push(ParsedGenericAssociation { type_name, result_expr });
-
-        if parser.accept(TokenKind::Comma).is_none() {
-            break;
-        }
-    }
+        p.expect(TokenKind::Colon)?;
+        let result_expr = p.parse_expression(BindingPower::COMMA)?;
+        Ok(ParsedGenericAssociation { type_name, result_expr })
+    })?;
 
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.replace_node(
@@ -447,87 +442,70 @@ fn parse_generic_selection(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDi
 pub(crate) fn parse_compound_literal(
     parser: &mut Parser,
     parsed_type: ParsedType,
-    start_loc: SourceLoc,
+    start: SourceSpan,
 ) -> Result<ParsedNodeRef, ParseDiag> {
     let init = super::declarations::parse_initializer(parser)?;
-
-    let end_loc = parser.current_token_span()?.end();
-    let span = SourceSpan::new(start_loc, end_loc);
+    let end_loc = parser.current_token_span()?;
+    let span = start.merge(end_loc);
     let node = parser.push_node(ParsedNodeKind::CompoundLiteral(parsed_type, init), span);
     Ok(node)
 }
 
-fn parse_sizeof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
-    let start = parser.expect(TokenKind::Sizeof)?.span.start();
-
-    let (kind, end) = if parser.is_token(TokenKind::LeftParen)
-        && parser.peek_token(0).is_some_and(|t| parser.is_type_name_start_token(t))
+fn is_type_name_in_parens(parser: &mut Parser) -> bool {
+    if !parser.is_token(TokenKind::LeftParen)
+        || !parser.peek_token(0).is_some_and(|t| parser.is_type_name_start_token(t))
     {
-        parser.expect(TokenKind::LeftParen)?;
-        let ty = parse_type_name(parser)?;
-        let right_paren_end = parser.expect(TokenKind::RightParen)?.span.end();
+        return false;
+    }
 
-        if parser.is_token(TokenKind::LeftBrace) {
-            // If it's a compound literal, parse it
-            let mut expr = parse_compound_literal(parser, ty, start)?;
-            expr = parse_postfix_tail(parser, expr)?;
-            let end = parser.ast.get_node(expr).span.end();
-            (ParsedNodeKind::SizeOfExpr(expr), end)
+    let mut depth = 1;
+    let mut peek_idx = 0;
+    while depth > 0 {
+        if let Some(token) = parser.peek_token(peek_idx) {
+            match token.kind {
+                TokenKind::LeftParen => depth += 1,
+                TokenKind::RightParen => depth -= 1,
+                TokenKind::EndOfFile => break,
+                _ => {}
+            }
+            peek_idx += 1;
         } else {
-            (ParsedNodeKind::SizeOfType(ty), right_paren_end)
+            break;
+        }
+    }
+
+    if depth == 0 {
+        if let Some(token) = parser.peek_token(peek_idx) {
+            token.kind != TokenKind::LeftBrace
+        } else {
+            true
         }
     } else {
+        true
+    }
+}
+
+fn parse_sizeof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+    let start = parser.expect(TokenKind::Sizeof)?.span;
+
+    let (kind, end) = if is_type_name_in_parens(parser) {
+        parser.expect(TokenKind::LeftParen)?;
+        let ty = parse_type_name(parser)?;
+        let right_paren_end = parser.expect(TokenKind::RightParen)?.span;
+        (ParsedNodeKind::SizeOfType(ty), right_paren_end)
+    } else {
         let expr = parser.parse_expression(BindingPower::UNARY)?;
-        let end = parser.ast.get_node(expr).span.end();
+        let end = parser.ast.get_node(expr).span;
         (ParsedNodeKind::SizeOfExpr(expr), end)
     };
 
-    Ok(parser.push_node(kind, SourceSpan::new(start, end)))
-}
-
-/// Parse trailing postfix operators ([], ., ->, (), ++, --) after a primary expression.
-/// This is used by sizeof and alignof to correctly handle cases like sizeof(a)[0].
-fn parse_postfix_tail(parser: &mut Parser, mut left: ParsedNodeRef) -> Result<ParsedNodeRef, ParseDiag> {
-    while let Some(token) = parser.try_current_token() {
-        match token.kind {
-            TokenKind::LeftBracket => {
-                parser.advance();
-                left = parse_index_access(parser, left)?;
-            }
-            TokenKind::Dot => {
-                parser.advance();
-                left = parse_member_access(parser, left, false)?;
-            }
-            TokenKind::Arrow => {
-                parser.advance();
-                left = parse_member_access(parser, left, true)?;
-            }
-            TokenKind::LeftParen => {
-                parser.advance();
-                left = parse_function_call(parser, left)?;
-            }
-            TokenKind::Increment => {
-                let token = parser.advance().unwrap();
-                let span = parser.ast.get_node(left).span.merge(token.span);
-                left = parser.push_node(ParsedNodeKind::PostIncrement(left), span);
-            }
-            TokenKind::Decrement => {
-                let token = parser.advance().unwrap();
-                let span = parser.ast.get_node(left).span.merge(token.span);
-                left = parser.push_node(ParsedNodeKind::PostDecrement(left), span);
-            }
-            _ => break,
-        }
-    }
-    Ok(left)
+    Ok(parser.push_node(kind, start.merge(end)))
 }
 
 fn parse_alignof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Alignof)?.span.start();
 
-    let (kind, end) = if parser.is_token(TokenKind::LeftParen)
-        && parser.peek_token(0).is_some_and(|t| parser.is_type_name_start_token(t))
-    {
+    let (kind, end) = if is_type_name_in_parens(parser) {
         parser.expect(TokenKind::LeftParen)?;
         let ty = parse_type_name(parser)?;
         let end = parser.expect(TokenKind::RightParen)?.span.end();

@@ -454,8 +454,21 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
         self.symbol_table.restore_state(state.symbol_table_state);
     }
 
-    pub(crate) fn start_transaction(&mut self) -> utils::ParserTransaction<'_, 'arena, 'src, 'lexer> {
-        utils::ParserTransaction::new(self)
+    /// Execute a parsing function within a transaction.
+    /// If the function returns `Ok`, the transaction is committed.
+    /// If it returns `Err`, the transaction is rolled back.
+    pub(crate) fn transaction<T, E, F>(&mut self, f: F) -> Result<T, E>
+    where
+        F: FnOnce(&mut Parser<'arena, 'src, 'lexer>) -> Result<T, E>,
+    {
+        let trx = utils::ParserTransaction::new(self);
+        match f(trx.parser) {
+            Ok(result) => {
+                trx.commit();
+                Ok(result)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// Check if the current token can start a declaration

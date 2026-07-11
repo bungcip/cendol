@@ -302,24 +302,17 @@ fn parse_function_parameters(
             break;
         }
 
-        let start_idx = parser.current_idx;
-        let saved_diags = parser.diag().diagnostics.len();
-        let specifiers = match parse_decl_specs(parser) {
-            Ok(s) => s,
-            Err(_) => {
-                parser.current_idx = start_idx;
-                parser.diag().diagnostics.truncate(saved_diags);
-                thin_vec![DeclSpec::TypeSpec(TypeSpec::Int)]
-            }
-        };
+        let start_span = parser.current_token_span_or_empty();
+
+        let specifiers = parser
+            .transaction(parse_decl_specs)
+            .unwrap_or_else(|_| thin_vec![DeclSpec::TypeSpec(TypeSpec::Int)]);
 
         let declarator = if !parser.matches(&[TokenKind::Comma, TokenKind::RightParen, TokenKind::Ellipsis]) {
-            let decl_idx = parser.current_idx;
             let res = if parser.is_token(TokenKind::LeftParen) {
-                parse_abstract_declarator(parser, false).or_else(|_| {
-                    parser.current_idx = decl_idx;
-                    parse_declarator(parser, false)
-                })
+                parser
+                    .transaction(|p| parse_abstract_declarator(p, false))
+                    .or_else(|_| parse_declarator(parser, false))
             } else {
                 parse_declarator(parser, false)
             };
@@ -328,10 +321,7 @@ fn parse_function_parameters(
             None
         };
 
-        let span = parser
-            .get_token_span(start_idx)
-            .unwrap_or_default()
-            .merge(parser.last_token_span().unwrap_or_default());
+        let span = start_span.merge(parser.last_token_span().unwrap_or(start_span));
 
         let name = declarator.and_then(|d| get_declarator_name(&parser.ast.parsed_types, d));
         let param_parsed_type = build_type(parser, &specifiers, declarator)?;

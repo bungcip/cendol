@@ -80,18 +80,16 @@ fn parse_compound_statement_inner(
     while !parser.at_eof() && !parser.is_token(TokenKind::RightBrace) {
         let mut decl_error = None;
         if parser.starts_declaration() {
-            let trx = parser.start_transaction();
-            match super::declarations::parse_decl(trx.parser, false) {
+            match parser.transaction(|p| super::declarations::parse_decl(p, false)) {
                 Ok(decl) => {
                     items.push(decl);
-                    trx.commit();
                     continue;
                 }
                 Err(e) => decl_error = Some(e),
             }
         }
 
-        if let Some(token) = parser.accept(TokenKind::KwLabel) {
+        if let Some(token) = parser.accept(TokenKind::Label) {
             let mut labels = Vec::new();
             loop {
                 let (name, _) = parser.expect_name()?;

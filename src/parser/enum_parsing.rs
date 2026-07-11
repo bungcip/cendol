@@ -4,6 +4,7 @@
 
 use super::Parser;
 use crate::ast::*;
+use crate::parser::utils::parse_comma_separated_list;
 use crate::parser::{ParseDiag, TokenKind};
 
 /// Parse enum specifier
@@ -24,7 +25,7 @@ pub(super) fn parse_enum_spec(parser: &mut Parser) -> Result<TypeSpec, ParseDiag
     };
 
     let enumerators = if !parser.in_enum_underlying_type && parser.accept(TokenKind::LeftBrace).is_some() {
-        let enums = parse_enumerator_list(parser)?;
+        let enums = parse_comma_separated_list(parser, TokenKind::RightBrace, parse_enumerator)?;
         parser.expect(TokenKind::RightBrace)?;
         Some(enums)
     } else {
@@ -32,11 +33,6 @@ pub(super) fn parse_enum_spec(parser: &mut Parser) -> Result<TypeSpec, ParseDiag
     };
 
     Ok(TypeSpec::Enum(tag, enumerators, underlying_type))
-}
-
-/// Parse enumerator list
-fn parse_enumerator_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, ParseDiag> {
-    crate::parser::utils::parse_comma_separated_list(parser, TokenKind::RightBrace, parse_enumerator)
 }
 
 /// Parse enumerator

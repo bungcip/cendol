@@ -696,7 +696,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedNodeKind::GnuLocalLabel(names) => {
                 for &name in names.iter() {
-                    let _ = self.symbol_table.define_label(name, self.registry.type_void, span);
+                    if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
+                        self.symbol_table.define_label(name, self.registry.type_void, span)
+                    {
+                        self.report_error(
+                            span,
+                            SemanticError::DuplicateLabelDeclaration {
+                                name,
+                                first_def: self.symbol_table.get_symbol(existing).def_span,
+                            },
+                        );
+                    }
                 }
                 smallvec![]
             }

@@ -54,7 +54,8 @@ impl SemanticDiag {
 
         if let Some((message, span)) = match &self.kind {
             SemanticError::Redefinition { first_def, .. }
-            | SemanticError::RedefinitionWithDifferentType { first_def, .. } => {
+            | SemanticError::RedefinitionWithDifferentType { first_def, .. }
+            | SemanticError::DuplicateLabelDeclaration { first_def, .. } => {
                 Some(("previous definition is here", *first_def))
             }
             SemanticError::TagKindMismatch { prev_decl, .. } => Some(("previous declaration is here", *prev_decl)),
@@ -105,6 +106,10 @@ pub enum SemanticError {
         name: NameId,
     },
     Redefinition {
+        name: NameId,
+        first_def: SourceSpan,
+    },
+    DuplicateLabelDeclaration {
         name: NameId,
         first_def: SourceSpan,
     },
@@ -503,6 +508,9 @@ impl DiagDisplay for SemanticError {
                 write!(f, "definition '{}' cannot also be an alias", name)
             }
             SemanticError::Redefinition { name, .. } => write!(f, "redefinition of '{}'", name),
+            SemanticError::DuplicateLabelDeclaration { name, .. } => {
+                write!(f, "duplicate label declaration '{}'", name)
+            }
             SemanticError::RedefinitionWithDifferentType { name, .. } => {
                 write!(f, "redefinition of '{}' with a different type", name)
             }

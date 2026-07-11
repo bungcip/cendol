@@ -1003,14 +1003,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
         is_global: bool,
     ) {
-        let specifier = match spec_info.storage {
-            Some(StorageClass::Auto) => Some("auto"),
-            Some(StorageClass::Register) => Some("register"),
-            Some(StorageClass::Static) if !is_global => Some("static"),
-            _ => None,
-        };
-
-        if let Some(specifier) = specifier {
+        if let Some(specifier) = spec_info.storage.filter(|s| {
+            matches!(s, StorageClass::Auto | StorageClass::Register)
+                || (*s == StorageClass::Static && !is_global)
+        }) {
             self.report_error(span, SemanticError::InvalidStorageClassForFunction { name, specifier });
         }
 

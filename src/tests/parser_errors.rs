@@ -61,7 +61,7 @@ fn test_parser_errors() {
         ("void foo(int ( * [ ] );", "expected ), found ;"),
         ("void foo(int x : 5);", "expected ), found :"),
         ("void foo(int : 5);", "expected ), found :"),
-        ("int x : 5;", "expected ';' after declaration, found :"),
+        ("int x : 5;", "expected ;, found :"),
         // G. Coverage for synchronization and lexer errors
         (r#"#error "custom error""#, "custom error"),
         ("#endif", "Unmatched #endif"),

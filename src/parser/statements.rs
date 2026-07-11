@@ -6,7 +6,7 @@
 use super::Parser;
 use crate::ast::*;
 use crate::parser::utils::parse_parenthesized_expr;
-use crate::parser::{ParseDiag, TokenKind};
+use crate::parser::{ParseDiag, ParseError, TokenKind};
 use crate::semantic::ScopeId;
 use crate::source_manager::SourceLoc;
 
@@ -147,11 +147,9 @@ fn parse_if_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let condition = parse_parenthesized_expr(parser)?;
     let then_branch = parse_statement(parser)?;
 
-    let else_branch = if parser.accept(TokenKind::Else).is_some() {
-        Some(parse_statement(parser)?)
-    } else {
-        None
-    };
+    let else_branch = parser.accept(TokenKind::Else)
+        .map(|_| parse_statement(parser))
+        .transpose()?;
 
     let end = else_branch
         .map(|e| parser.ast.get_node(e).span)
@@ -200,31 +198,14 @@ fn parse_for_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> 
 
     let scope_id = parser.symbol_table.push_scope();
 
-    let init = if parser.accept(TokenKind::Semicolon).is_some() {
-        None
-    } else if parser.starts_declaration() {
+    let init = if parser.starts_declaration() {
         Some(super::declarations::parse_decl(parser, false)?)
     } else {
-        let expr = parser.parse_expr_min()?;
-        parser.expect(TokenKind::Semicolon)?;
-        Some(expr)
+        parser.parse_optional_expr_before(TokenKind::Semicolon)?
     };
 
-    let condition = if parser.accept(TokenKind::Semicolon).is_some() {
-        None
-    } else {
-        let expr = parser.parse_expr_min()?;
-        parser.expect(TokenKind::Semicolon)?;
-        Some(expr)
-    };
-
-    let increment = if parser.accept(TokenKind::RightParen).is_some() {
-        None
-    } else {
-        let expr = parser.parse_expr_min()?;
-        parser.expect(TokenKind::RightParen)?;
-        Some(expr)
-    };
+    let condition = parser.parse_optional_expr_before(TokenKind::Semicolon)?;
+    let increment = parser.parse_optional_expr_before(TokenKind::RightParen)?;
 
     let body = parse_statement(parser)?;
 
@@ -246,14 +227,13 @@ fn parse_for_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> 
 
 fn parse_goto_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Goto)?.span;
-    if parser.accept(TokenKind::Star).is_some() {
-        let expr = parser.parse_expr_min()?;
-        let end = parser.expect(TokenKind::Semicolon)?.span;
-        return Ok(parser.push_node(ParsedNodeKind::ComputedGoto(expr), start.merge(end)));
-    }
-    let (label, _) = parser.expect_name()?;
+    let node_kind = if parser.accept(TokenKind::Star).is_some() {
+        ParsedNodeKind::ComputedGoto(parser.parse_expr_min()?)
+    } else {
+        ParsedNodeKind::Goto(parser.expect_name()?.0)
+    };
     let end = parser.expect(TokenKind::Semicolon)?.span;
-    Ok(parser.push_node(ParsedNodeKind::Goto(label), start.merge(end)))
+    Ok(parser.push_node(node_kind, start.merge(end)))
 }
 
 fn parse_continue_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
@@ -270,16 +250,21 @@ fn parse_break_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag
 
 fn parse_return_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Return)?.span;
-    let value = (!parser.is_token(TokenKind::Semicolon))
-        .then(|| parser.parse_expr_min())
-        .transpose()?;
-    let end = parser.expect(TokenKind::Semicolon)?.span;
-    Ok(parser.push_node(ParsedNodeKind::Return(value), start.merge(end)))
+    let value = parser.parse_optional_expr_before(TokenKind::Semicolon)?;
+    Ok(parser.push_node(ParsedNodeKind::Return(value), start.merge(parser.last_token_span().unwrap_or(start))))
 }
 
 fn parse_empty_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let span = parser.expect(TokenKind::Semicolon)?.span;
     Ok(parser.push_node(ParsedNodeKind::EmptyStmt, span))
+}
+
+fn parse_statement_after_label(parser: &mut Parser, colon_span: SourceSpan) -> Result<ParsedNodeRef, ParseDiag> {
+    if parser.is_token(TokenKind::RightBrace) || parser.starts_declaration() {
+        Ok(parser.push_node(ParsedNodeKind::EmptyStmt, colon_span))
+    } else {
+        parse_statement(parser)
+    }
 }
 
 fn parse_case_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
@@ -290,12 +275,7 @@ fn parse_case_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag>
         .map(|_| parser.parse_expr_min())
         .transpose()?;
     let colon_span = parser.expect(TokenKind::Colon)?.span;
-    let stmt = if parser.is_token(TokenKind::RightBrace) || parser.starts_declaration() {
-        let dummy = parser.push_dummy();
-        parser.replace_node(dummy, ParsedNodeKind::EmptyStmt, colon_span)
-    } else {
-        parse_statement(parser)?
-    };
+    let stmt = parse_statement_after_label(parser, colon_span)?;
     let span = start.merge(parser.ast.get_node(stmt).span);
     let kind = match end_expr {
         Some(end) => ParsedNodeKind::CaseRange(start_expr, end, stmt),
@@ -307,12 +287,7 @@ fn parse_case_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag>
 fn parse_default_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Default)?.span;
     let colon_span = parser.expect(TokenKind::Colon)?.span;
-    let stmt = if parser.is_token(TokenKind::RightBrace) || parser.starts_declaration() {
-        let dummy = parser.push_dummy();
-        parser.replace_node(dummy, ParsedNodeKind::EmptyStmt, colon_span)
-    } else {
-        parse_statement(parser)?
-    };
+    let stmt = parse_statement_after_label(parser, colon_span)?;
     let span = start.merge(parser.ast.get_node(stmt).span);
     Ok(parser.push_node(ParsedNodeKind::Default(stmt), span))
 }
@@ -320,12 +295,7 @@ fn parse_default_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDi
 fn parse_label_statement(parser: &mut Parser, name: NameId) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.advance().unwrap().span;
     let colon_span = parser.expect(TokenKind::Colon)?.span;
-    let stmt = if parser.is_token(TokenKind::RightBrace) || parser.starts_declaration() {
-        let dummy = parser.push_dummy();
-        parser.replace_node(dummy, ParsedNodeKind::EmptyStmt, colon_span)
-    } else {
-        parse_statement(parser)?
-    };
+    let stmt = parse_statement_after_label(parser, colon_span)?;
     let span = start.merge(parser.ast.get_node(stmt).span);
     Ok(parser.push_node(ParsedNodeKind::Label(name, stmt), span))
 }
@@ -344,31 +314,16 @@ fn parse_asm_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> 
 
     let mut is_volatile = false;
     // consume qualifiers like volatile, inline, goto
-    while !parser.is_token(TokenKind::LeftParen) && !parser.is_token(TokenKind::Semicolon) && !parser.at_eof() {
-        if parser.is_token(TokenKind::Volatile) {
+    while !parser.matches(&[TokenKind::LeftParen, TokenKind::Semicolon]) && !parser.at_eof() {
+        if parser.accept(TokenKind::Volatile).is_some() {
             is_volatile = true;
+        } else {
+            parser.advance();
         }
-        parser.advance();
     }
 
     parser.expect(TokenKind::LeftParen)?;
-
-    // Parse template
-    let template = match parser.current_token()?.kind {
-        TokenKind::Literal(lit) => {
-            parser.advance();
-            lit
-        }
-        _ => {
-            return Err(ParseDiag {
-                span: parser.current_token_span()?,
-                kind: crate::parser::errors::ParseError::UnexpectedToken {
-                    expected: "string literal",
-                    found: parser.current_token()?.kind,
-                },
-            });
-        }
-    };
+    let (template, _) = parser.expect_string_literal()?;
 
     let mut outputs = Vec::new();
     let mut inputs = Vec::new();
@@ -376,92 +331,49 @@ fn parse_asm_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> 
 
     let parse_operands = |parser: &mut Parser| -> Result<Vec<ParsedAsmOperand>, ParseDiag> {
         let mut ops = Vec::new();
-        if parser.is_token(TokenKind::RightParen) || parser.is_token(TokenKind::Colon) {
-            return Ok(ops);
-        }
-        loop {
+        while !parser.matches(&[TokenKind::RightParen, TokenKind::Colon]) {
             // Optional [ name ]
-            if parser.is_token(TokenKind::LeftBracket) {
-                parser.advance();
+            if parser.accept(TokenKind::LeftBracket).is_some() {
                 parser.expect_name()?;
                 parser.expect(TokenKind::RightBracket)?;
             }
 
-            let constraint = match parser.current_token()?.kind {
-                TokenKind::Literal(lit) => {
-                    parser.advance();
-                    lit
-                }
-                _ => {
-                    return Err(ParseDiag {
-                        span: parser.current_token_span()?,
-                        kind: crate::parser::errors::ParseError::UnexpectedToken {
-                            expected: "string literal",
-                            found: parser.current_token()?.kind,
-                        },
-                    });
-                }
-            };
-
+            let (constraint, _) = parser.expect_string_literal()?;
             parser.expect(TokenKind::LeftParen)?;
             let expr = parser.parse_expr_min()?;
             parser.expect(TokenKind::RightParen)?;
 
             ops.push(ParsedAsmOperand { constraint, expr });
 
-            if parser.is_token(TokenKind::Comma) {
-                parser.advance();
-            } else {
+            if parser.accept(TokenKind::Comma).is_none() {
                 break;
             }
         }
         Ok(ops)
     };
 
-    if parser.is_token(TokenKind::Colon) {
-        parser.advance();
+    if parser.accept(TokenKind::Colon).is_some() {
         outputs = parse_operands(parser)?;
     }
 
-    if parser.is_token(TokenKind::Colon) {
-        parser.advance();
+    if parser.accept(TokenKind::Colon).is_some() {
         inputs = parse_operands(parser)?;
     }
 
-    if parser.is_token(TokenKind::Colon) {
-        parser.advance();
-        if !parser.is_token(TokenKind::RightParen) && !parser.is_token(TokenKind::Colon) {
-            loop {
-                let clobber = match parser.current_token()?.kind {
-                    TokenKind::Literal(lit) => {
-                        parser.advance();
-                        lit
-                    }
-                    _ => {
-                        return Err(ParseDiag {
-                            span: parser.current_token_span()?,
-                            kind: crate::parser::errors::ParseError::UnexpectedToken {
-                                expected: "string literal",
-                                found: parser.current_token()?.kind,
-                            },
-                        });
-                    }
-                };
-                clobbers.push(clobber);
+    if parser.accept(TokenKind::Colon).is_some() {
+        while !parser.matches(&[TokenKind::RightParen, TokenKind::Colon]) {
+            let (clobber, _) = parser.expect_string_literal()?;
+            clobbers.push(clobber);
 
-                if parser.is_token(TokenKind::Comma) {
-                    parser.advance();
-                } else {
-                    break;
-                }
+            if parser.accept(TokenKind::Comma).is_none() {
+                break;
             }
         }
     }
 
     // Ignore any remaining colons for goto labels, etc.
-    while parser.is_token(TokenKind::Colon) {
-        parser.advance();
-        while !parser.is_token(TokenKind::Colon) && !parser.is_token(TokenKind::RightParen) && !parser.at_eof() {
+    while parser.accept(TokenKind::Colon).is_some() {
+        while !parser.matches(&[TokenKind::Colon, TokenKind::RightParen]) && !parser.at_eof() {
             parser.advance();
         }
     }

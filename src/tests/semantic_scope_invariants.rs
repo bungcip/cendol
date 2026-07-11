@@ -28,5 +28,5 @@ fn test_function_scope_and_linkage_invariants() {
     );
 
     // 8. Rejects implicit __func__ redefinition
-    run_fail_with_message(r#"void f() { int __func__; }"#, "Unexpected token");
+    run_fail_with_message(r#"void f() { int __func__; }"#, "redefinition");
 }

@@ -93,9 +93,7 @@ pub enum TokenKind {
 
     // Reserved identifiers as keywords
     Label,          // __label__
-    Func,           // __func__
-    Function,       // __FUNCTION__
-    PrettyFunction, // __PRETTY_FUNCTION__
+    VaArgs,         // __VA_ARGS__
 
     // === OPERATORS ===
     // Arithmetic operators
@@ -332,7 +330,7 @@ impl TokenKind {
             Asm => "asm",
             AutoType => "__auto_type",
             Label => "__label__",
-            PrettyFunction => "__PRETTY_FUNCTION__",
+            VaArgs => "__VA_ARGS__",
             Plus => "+",
             Minus => "-",
             Star => "*",
@@ -383,8 +381,6 @@ impl TokenKind {
             Unknown => "unknown token",
             PragmaPack(_) => "#pragma pack",
             PragmaVisibility(_) => "#pragma GCC visibility",
-            Func => "__func__",
-            Function => "__FUNCTION__",
             Invalid => "invalid token",
         }
     }
@@ -670,9 +666,6 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("asm"), TokenKind::Asm);
 
         // Reserved identifiers
-        m.insert(StringId::new("__func__"), TokenKind::Func);
-        m.insert(StringId::new("__FUNCTION__"), TokenKind::Function);
-        m.insert(StringId::new("__PRETTY_FUNCTION__"), TokenKind::PrettyFunction);
         m
     })
 }

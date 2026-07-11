@@ -356,6 +356,19 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
         self.parse_expression(BindingPower::ASSIGNMENT)
     }
 
+    /// Parse an expression if the current token is not the given `end_token`.
+    /// Then expect and consume the `end_token`.
+    pub(crate) fn parse_optional_expr_before(
+        &mut self,
+        end_token: TokenKind,
+    ) -> Result<Option<ParsedNodeRef>, ParseDiag> {
+        let expr = (!self.is_token(end_token))
+            .then(|| self.parse_expr_min())
+            .transpose()?;
+        self.expect(end_token)?;
+        Ok(expr)
+    }
+
     /// Parse translation unit (top level)
     pub(crate) fn parse_translation_unit(&mut self) -> Result<ParsedNodeRef, ParseDiag> {
         declarations::parse_translation_unit(self)

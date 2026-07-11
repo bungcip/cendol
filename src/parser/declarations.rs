@@ -91,11 +91,9 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
                 super::declarator::parse_declarator(p, false)?
             };
 
-            let initializer = if p.accept(TokenKind::Assign).is_some() {
-                Some(super::declarations::parse_initializer(p)?)
-            } else {
-                None
-            };
+            let initializer = p.accept(TokenKind::Assign)
+                .map(|_| super::declarations::parse_initializer(p))
+                .transpose()?;
 
             let span = start_span.merge(p.last_token_span().unwrap_or(start_span));
 
@@ -116,26 +114,14 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
                 span,
             });
 
-            if !p.is_token(TokenKind::Comma) {
+            if p.accept(TokenKind::Comma).is_none() {
                 break;
             }
-            p.advance();
         }
 
         parse_trailing_attributes_and_asm(p, &mut specifiers)?;
 
-        let semi = if let Some(token) = p.accept(TokenKind::Semicolon) {
-            token
-        } else {
-            let current_token = p.current_token()?;
-            return Err(ParseDiag {
-                span: current_token.span,
-                kind: ParseError::UnexpectedToken {
-                    expected: "';' after declaration",
-                    found: current_token.kind,
-                },
-            });
-        };
+        let semi = p.expect(TokenKind::Semicolon)?;
 
         let decl = ParsedDecl {
             specifiers,
@@ -235,13 +221,12 @@ pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Re
     parser.expect(TokenKind::LeftParen)?;
     let condition = parser.parse_expr_assignment()?;
 
-    let message_node = if parser.accept(TokenKind::Comma).is_some() {
-        let (lit, span) = parser.expect_string_literal()?;
-        Some(parser.push_node(ParsedNodeKind::Literal(lit), span))
-    } else {
-        // We allow single-argument _Static_assert as an extension in < C23
-        None
-    };
+    let message_node = parser.accept(TokenKind::Comma)
+        .map(|_| -> Result<ParsedNodeRef, ParseDiag> {
+            let (lit, span) = parser.expect_string_literal()?;
+            Ok(parser.push_node(ParsedNodeKind::Literal(lit), span))
+        })
+        .transpose()?;
 
     parser.expect(TokenKind::RightParen)?;
     let semi = parser.expect(TokenKind::Semicolon)?;
@@ -381,11 +366,7 @@ pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
             if parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
                 parse_designated_initializer(parser)
             } else {
-                let initializer = if parser.is_token(TokenKind::LeftBrace) {
-                    parse_initializer(parser)?
-                } else {
-                    parser.parse_expr_assignment()?
-                };
+                let initializer = parse_initializer(parser)?;
 
                 Ok(ParsedDesignatedInitializer {
                     designation: Vec::new().into_boxed_slice(),

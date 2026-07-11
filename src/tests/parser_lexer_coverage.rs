@@ -71,7 +71,6 @@ fn test_token_kind_display() {
     );
     assert_eq!(TokenKind::Asm.display(), "asm");
     assert_eq!(TokenKind::AutoType.display(), "__auto_type");
-    assert_eq!(TokenKind::PrettyFunction.display(), "__PRETTY_FUNCTION__");
     assert_eq!(TokenKind::Plus.display(), "+");
     assert_eq!(TokenKind::Minus.display(), "-");
     assert_eq!(TokenKind::Star.display(), "*");

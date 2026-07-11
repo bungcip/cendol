@@ -1,4 +1,4 @@
-use crate::ast::NameId;
+use crate::ast::{NameId, StorageClass};
 use crate::diagnostic::{DiagDisplay, DiagFormatter, Diagnostic, DiagnosticLevel, format_diag};
 use crate::semantic::{QualType, TypeRef, TypeRegistry};
 use crate::source_manager::SourceSpan;
@@ -400,7 +400,7 @@ pub enum SemanticError {
     },
     InvalidStorageClassForFunction {
         name: NameId,
-        specifier: &'static str,
+        specifier: StorageClass,
     },
     VmStaticStorage,
     VmThreadStorage,
@@ -956,7 +956,7 @@ impl DiagDisplay for SemanticError {
             SemanticError::NoteSwitchStartsHere => write!(f, "switch starts here"),
             SemanticError::NoteVLADeclaredHere { name } => write!(f, "'{}' declared here", name),
             SemanticError::InvalidStorageClassForFunction { name, specifier } => {
-                write!(f, "invalid storage class '{}' for function '{}'", specifier, name)
+                write!(f, "invalid storage class '{}' for function '{}'", specifier.as_str(), name)
             }
             SemanticError::VmStaticStorage => {
                 write!(

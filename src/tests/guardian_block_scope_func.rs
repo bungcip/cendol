@@ -32,10 +32,10 @@ fn test_block_scope_static_func_def_prohibited() {
             return 0;
         }
     "#;
-    // The parser might catch this as "Unexpected token: expected ';' after declaration, found {"
-    // but our semantic check in visit_function_definition should also catch it if the parser allows it.
-    // Based on my manual test, it's a parser error first.
-    run_fail_with_message(code, "expected ';' after declaration");
+    // The parser might catch this as "Unexpected token: expected ;, found {"
+    // Or the semantic analyzer will catch it.
+    // In our current implementation, the parser correctly flags it:
+    run_fail_with_message(code, "expected ;, found {");
 }
 
 #[test]

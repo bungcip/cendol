@@ -302,3 +302,8 @@ Action: Ensure semantic checks always enforce the minimum required argument coun
 
 Learning: Break statements must be enclosed within a loop or switch statement. This constraint is properly validated during the `CompilePhase::Mir` by traversing the AST to detect breaks outside valid blocks. A standalone `break`, or one inside an `if` but outside a loop or switch, will throw `SemanticError::BreakNotInLoop`. Adding specific unit tests ensures that the phase correctly catches and rejects this invalid control flow structure.
 Action: Add `guardian_break_not_in_loop_or_switch.rs` to validate this invariant, ensuring the diagnostic triggers at `CompilePhase::Mir` with the correct error message and specific line/column spans.
+
+## 2024-07-11 - Diagnosing Compiler Spans Safely
+
+Learning: When verifying diagnostic spans (lines and columns) for `run_fail_with_diagnostic` in Cendol, tests run by the lib test harness swallow standard output by default, making direct `println!` debugging difficult without `--nocapture`. Also, the `run_pass` and `run_fail` utilities from `test_utils` don't expose simple `get_diagnostics()` methods on the returned driver. Diagnostics must be accessed internally via `driver.de.diagnostics`, and line/column information mapped using `driver.sm.get_line_column(diag.span.start())`.
+Action: Future Guardian test creations will use temporary custom tests that print `driver.de.diagnostics` combined with `cargo test -p cendol [test_name] -- --nocapture` to accurately discover and verify correct token spans for failure conditions before hardcoding them into the assertion methods.

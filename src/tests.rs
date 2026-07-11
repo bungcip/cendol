@@ -142,6 +142,7 @@ pub mod guardian_offsetof;
 pub mod guardian_parameter_compatibility;
 pub mod guardian_parameter_completeness;
 pub mod guardian_register_constraints;
+pub mod guardian_restrict_constraints;
 pub mod guardian_sizeof_alignof;
 pub mod guardian_static_array_constraints;
 pub mod guardian_storage_class_parameter;

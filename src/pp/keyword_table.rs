@@ -142,7 +142,7 @@ pub struct PPKeywordTable {
     pub(crate) diagnostic: StringId,
     pub(crate) visibility: StringId,
     pub(crate) poison: StringId,
-    pub(crate) ignored_kw: StringId,
+    pub(crate) ignored: StringId,
     pub(crate) fatal: StringId,
 }
 
@@ -277,7 +277,7 @@ impl PPKeywordTable {
                 diagnostic: StringId::new("diagnostic"),
                 visibility: StringId::new("visibility"),
                 poison: StringId::new("poison"),
-                ignored_kw: StringId::new("ignored"),
+                ignored: StringId::new("ignored"),
                 fatal: StringId::new("fatal"),
             })
             .clone()

@@ -4,7 +4,7 @@
 //! that natively supports GCC/Clang-style single-dash long options
 //! (e.g., `-std=c99`, `-fwrapv`, `-fPIC`, `-Wl,...`).
 
-use std::path::PathBuf;
+use std::{cmp, path::PathBuf};
 
 use target_lexicon::{DefaultToHost, Triple};
 
@@ -204,11 +204,6 @@ where
     let mut input_files: Vec<PathBuf> = Vec::new();
     let mut output: Option<PathBuf> = None;
     let mut verbose = false;
-    let mut dump_ast_after_parser = false;
-    let mut dump_ast_after_semantic_lowering = false;
-    let mut dump_mir = false;
-    let mut dump_cranelift = false;
-    let mut preprocess_only = false;
     let mut suppress_line_markers = false;
     let mut include_paths: Vec<PathBuf> = Vec::new();
     let mut defines: Vec<String> = Vec::new();
@@ -233,6 +228,7 @@ where
     let mut timing = false;
     let mut suppress_warnings = false;
     let mut max_include_depth: usize = 100;
+    let mut stop_after = CompilePhase::EmitObject;
 
     // For "last wins" semantics on overflow flags, we record each flag in order.
     #[derive(Clone, Copy)]
@@ -276,7 +272,7 @@ where
 
             // ── Simple boolean flags ──
             "-v" | "--verbose" => verbose = true,
-            "-E" => preprocess_only = true,
+            "-E" => stop_after = cmp::min(stop_after, CompilePhase::Preprocess),
             "-P" => suppress_line_markers = true,
             "-c" => compile_only = true,
             "-g" => debug_info = true,
@@ -290,10 +286,10 @@ where
             "--timing" => timing = true,
 
             // ── Dump flags ──
-            "--dump-ast-after-parser" => dump_ast_after_parser = true,
-            "--dump-ast-after-semantic-lowering" => dump_ast_after_semantic_lowering = true,
-            "--dump-mir" => dump_mir = true,
-            "--dump-cranelift" => dump_cranelift = true,
+            "--dump-ast-after-parser" => stop_after = cmp::min(stop_after, CompilePhase::Parse),
+            "--dump-ast-after-semantic-lowering" => stop_after = cmp::min(stop_after, CompilePhase::SemanticLowering),
+            "--dump-mir" => stop_after = cmp::min(stop_after, CompilePhase::Mir),
+            "--dump-cranelift" => stop_after = cmp::min(stop_after, CompilePhase::Cranelift),
 
             // ── Signed overflow flags ("last wins") ──
             "-fwrapv" => overflow_flags.push(OverflowFlag::Wrapv),
@@ -521,22 +517,6 @@ where
         })
         .collect();
 
-    // ── Determine stop_after ────────────────────────────────────────────
-
-    let stop_after = if preprocess_only {
-        CompilePhase::Preprocess
-    } else if dump_ast_after_parser {
-        CompilePhase::Parse
-    } else if dump_ast_after_semantic_lowering {
-        CompilePhase::SemanticLowering
-    } else if dump_mir {
-        CompilePhase::Mir
-    } else if dump_cranelift {
-        CompilePhase::Cranelift
-    } else {
-        CompilePhase::EmitObject
-    };
-
     // ── Build target triple ─────────────────────────────────────────────
 
     let target_triple = if let Some(t) = target {
@@ -577,9 +557,9 @@ where
 
     // ── Build final config ──────────────────────────────────────────────
 
-    let c_std = c_standard.unwrap_or_default();
+    let c_standard = c_standard.unwrap_or_default();
     let lang_options = LangOptions {
-        c_standard: c_std,
+        c_standard,
         pedantic_mode,
         signed_overflow_mode,
         fpic,
@@ -604,7 +584,7 @@ where
         suppress_line_markers,
         defines: parsed_defines,
         warnings,
-        c_standard: c_std,
+        c_standard,
         lang_options,
         target: DefaultToHost(target_triple),
         optimization,
@@ -740,7 +720,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fwrapv() {
+    fn test_signed_overflow_mode() {
         // Default should be Wrap
         let c1 = parse(&["cendol", "dummy.c"]).unwrap();
         assert_eq!(c1.lang_options.signed_overflow_mode, SignedOverflowMode::Wrap);
@@ -784,29 +764,22 @@ mod tests {
         // Mix: -fstrict-overflow -fwrapv -> Wrap
         let c11 = parse(&["cendol", "dummy.c", "-fstrict-overflow", "-fwrapv"]).unwrap();
         assert_eq!(c11.lang_options.signed_overflow_mode, SignedOverflowMode::Wrap);
-    }
-
-    #[test]
-    fn test_ftrapv() {
-        // Default should be Wrap (not Trap)
-        let c1 = parse(&["cendol", "dummy.c"]).unwrap();
-        assert_eq!(c1.lang_options.signed_overflow_mode, SignedOverflowMode::Wrap);
 
         // Explicit -ftrapv
-        let c2 = parse(&["cendol", "dummy.c", "-ftrapv"]).unwrap();
-        assert_eq!(c2.lang_options.signed_overflow_mode, SignedOverflowMode::Trap);
+        let c12 = parse(&["cendol", "dummy.c", "-ftrapv"]).unwrap();
+        assert_eq!(c12.lang_options.signed_overflow_mode, SignedOverflowMode::Trap);
 
         // Explicit -fno-trapv
-        let c3 = parse(&["cendol", "dummy.c", "-fno-trapv"]).unwrap();
-        assert_eq!(c3.lang_options.signed_overflow_mode, SignedOverflowMode::Wrap);
+        let c13 = parse(&["cendol", "dummy.c", "-fno-trapv"]).unwrap();
+        assert_eq!(c13.lang_options.signed_overflow_mode, SignedOverflowMode::Wrap);
 
         // Last one wins: -ftrapv -fno-trapv -> Wrap
-        let c4 = parse(&["cendol", "dummy.c", "-ftrapv", "-fno-trapv"]).unwrap();
-        assert_eq!(c4.lang_options.signed_overflow_mode, SignedOverflowMode::Wrap);
+        let c14 = parse(&["cendol", "dummy.c", "-ftrapv", "-fno-trapv"]).unwrap();
+        assert_eq!(c14.lang_options.signed_overflow_mode, SignedOverflowMode::Wrap);
 
         // Last one wins: -fno-trapv -ftrapv -> Trap
-        let c5 = parse(&["cendol", "dummy.c", "-fno-trapv", "-ftrapv"]).unwrap();
-        assert_eq!(c5.lang_options.signed_overflow_mode, SignedOverflowMode::Trap);
+        let c15 = parse(&["cendol", "dummy.c", "-fno-trapv", "-ftrapv"]).unwrap();
+        assert_eq!(c15.lang_options.signed_overflow_mode, SignedOverflowMode::Trap);
     }
 
     #[test]
@@ -822,12 +795,9 @@ mod tests {
 
         let c4 = parse(&["cendol", "test.c", "-fvisibility=internal"]).unwrap();
         assert_eq!(c4.lang_options.visibility, Visibility::Internal);
-    }
 
-    #[test]
-    fn test_fvisibility_invalid() {
-        let result = parse(&["cendol", "test.c", "-fvisibility=unknown"]);
-        assert!(result.is_err());
+        let c5 = parse(&["cendol", "test.c", "-fvisibility=unknown"]);
+        assert!(c5.is_err());
     }
 
     #[test]

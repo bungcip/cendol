@@ -213,38 +213,34 @@ impl<'src> Preprocessor<'src> {
 
     fn handle_define(&mut self) -> Result<(), PPDiag> {
         let (name_token, name) = self.expect_identifier()?;
-
-        let (flags, params, variadic) = self.parse_define_args(name)?;
-
-        // Collect body tokens
-        // Use collect_tokens_until_eod which handles the loop and checking for Eod
+        let (flags, params, variadic_arg) = self.parse_define_args(name)?;
         let tokens = self.collect_tokens_until_eod();
 
-        // Store the macro
         let mut macro_info = MacroInfo {
             location: name_token.location,
             flags,
             tokens: Arc::from(tokens),
             parameter_list: Arc::from(params),
-            variadic_arg: variadic,
-            parameter_needs_expansion: Arc::from([]), // Temporarily empty
+            variadic_arg,
+            ..Default::default()
         };
 
         // Bolt ⚡: Pre-calculate expansion needs and detect __VA_OPT__.
-        let mut needs_expansion = vec![false; macro_info.parameter_list.len() + if variadic.is_some() { 1 } else { 0 }];
+        let mut needs_expansion =
+            vec![false; macro_info.parameter_list.len() + if variadic_arg.is_some() { 1 } else { 0 }];
 
         for i in 0..macro_info.tokens.len() {
             let t = &macro_info.tokens[i];
             if let PPTokenKind::Identifier(sym) = t.kind {
                 // Check for __VA_OPT__
-                if variadic.is_some() && sym == self.keywords.va_opt {
+                if variadic_arg.is_some() && sym == self.keywords.va_opt {
                     macro_info.flags |= MacroFlags::HAS_VA_OPT;
                 }
 
                 // Check for parameter usage that requires expansion
                 let param_idx = if let Some(pos) = macro_info.parameter_list.iter().position(|&p| p == sym) {
                     Some(pos)
-                } else if variadic == Some(sym) {
+                } else if variadic_arg == Some(sym) {
                     Some(macro_info.parameter_list.len())
                 } else {
                     None
@@ -814,7 +810,7 @@ impl<'src> Preprocessor<'src> {
             if let Some(t) = t1
                 && t.kind != PPTokenKind::Eod
             {
-                self.collect_tokens_until_eod();
+                self.skip_directive()?;
             }
             return Ok(());
         }
@@ -909,7 +905,7 @@ impl<'src> Preprocessor<'src> {
             self.report_pp_warning(err);
         }
 
-        self.collect_tokens_until_eod();
+        self.skip_directive()?;
         Ok(())
     }
 
@@ -932,7 +928,7 @@ impl<'src> Preprocessor<'src> {
             Some(DiagnosticLevel::Warning)
         } else if sym == self.keywords.error {
             Some(DiagnosticLevel::Error)
-        } else if sym == self.keywords.ignored_kw {
+        } else if sym == self.keywords.ignored {
             None // "ignored" means suppress
         } else if sym == self.keywords.fatal {
             Some(DiagnosticLevel::Error) // treat as error
@@ -994,11 +990,11 @@ impl<'src> Preprocessor<'src> {
         } else {
             let err = self.error(PPError::UnknownPragma(sym), tok.location);
             self.report_pp_warning(err);
-            self.collect_tokens_until_eod();
+            self.skip_directive()?;
             return Ok(());
         };
 
-        self.collect_tokens_until_eod();
+        self.skip_directive()?;
 
         // Emit a synthetic PragmaVisibility token into the pending stream so the
         // parser can consume it the same way it handles PragmaPack tokens.

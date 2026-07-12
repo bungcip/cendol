@@ -11,7 +11,7 @@ pub struct PipelineOutputs {
     pub(crate) external_object_files: Vec<std::path::PathBuf>,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum CompilePhase {
     Preprocess,
     Lex,

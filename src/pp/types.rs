@@ -11,7 +11,7 @@ use target_lexicon::Triple;
 
 // Packed boolean flags for macro properties
 bitflags::bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
     pub struct MacroFlags: u8 {
         const FUNCTION_LIKE = 1 << 0;
         const C99_VARARGS = 1 << 1;
@@ -136,7 +136,7 @@ impl HideSetTable {
 }
 
 /// Represents a macro definition
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct MacroInfo {
     pub(crate) location: SourceLoc,
     pub(crate) flags: MacroFlags, // Packed boolean flags

@@ -355,12 +355,8 @@ impl<'src> Preprocessor<'src> {
 
         let symbol = StringId::new(name);
         let macro_info = MacroInfo {
-            location: SourceLoc::builtin(),
-            flags: MacroFlags::empty(), // Not BUILTIN, so it can be redefined (with warning if different)
             tokens: Arc::from(tokens),
-            parameter_list: Arc::from([]),
-            variadic_arg: None,
-            parameter_needs_expansion: Arc::from([]),
+            ..Default::default()
         };
         self.macros.insert(symbol, macro_info);
     }
@@ -369,12 +365,9 @@ impl<'src> Preprocessor<'src> {
     fn define_builtin_macro(&mut self, name: &str, tokens: Vec<PPToken>) {
         let symbol = StringId::new(name);
         let macro_info = MacroInfo {
-            location: SourceLoc::builtin(),
             flags: MacroFlags::BUILTIN,
             tokens: Arc::from(tokens),
-            parameter_list: Arc::from([]),
-            variadic_arg: None,
-            parameter_needs_expansion: Arc::from([]),
+            ..Default::default()
         };
         self.macros.insert(symbol, macro_info);
     }
@@ -402,12 +395,11 @@ impl<'src> Preprocessor<'src> {
         }
 
         let macro_info = MacroInfo {
-            location: SourceLoc::builtin(),
             flags: MacroFlags::BUILTIN | MacroFlags::FUNCTION_LIKE,
             tokens: Arc::from(tokens),
             parameter_list: Arc::from(param_symbols),
-            variadic_arg: None,
             parameter_needs_expansion: Arc::from(needs_expansion),
+            ..Default::default()
         };
         self.macros.insert(symbol, macro_info);
     }

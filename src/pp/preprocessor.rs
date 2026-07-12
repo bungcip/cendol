@@ -602,7 +602,7 @@ impl<'src> Preprocessor<'src> {
         None
     }
 
-    /// Skip current directive tokens until EOD
+    /// Skip current directive tokens until EOD/EOF
     pub(super) fn skip_directive(&mut self) -> Result<(), PPDiag> {
         while let Some(token) = self.lex_token() {
             if token.kind == PPTokenKind::Eod {

@@ -75,7 +75,7 @@ fn test_include_next_paths() {
     let (mut sm, mut diag) = setup_sm_and_de();
     let source_id = sm.add_file(&main_path, None).unwrap();
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
-    let _ = pp.process(source_id, &config).unwrap();
+    let _ = pp.process(source_id).unwrap();
 
     assert!(pp.is_macro_defined(StringId::new("FOO_1")));
     assert!(pp.is_macro_defined(StringId::new("FOO_2")));
@@ -104,7 +104,7 @@ fn test_include_next_builtin() {
     let (mut sm, mut diag) = setup_sm_and_de();
     let source_id = sm.add_file(&main_path, None).unwrap();
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
-    let _ = pp.process(source_id, &config).unwrap();
+    let _ = pp.process(source_id).unwrap();
 
     assert!(pp.is_macro_defined(StringId::new("MY_STDDEF_WRAPPER")));
     assert!(pp.is_macro_defined(StringId::new("NULL")));

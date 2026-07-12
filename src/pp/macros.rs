@@ -835,7 +835,7 @@ impl<'src> Preprocessor<'src> {
         {
             let token_text = tokens[i + 2].get_text(self.sm);
             let content = self.destringize(&token_text).into_owned();
-            self.perform_pragma(&content);
+            let _ = self.perform_pragma(&content);
             tokens.drain(i..i + 4);
             return true;
         }

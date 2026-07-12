@@ -42,7 +42,7 @@ pub(crate) fn preprocess_to_str(src: &str) -> String {
     let source_id = sm.add_buffer(src.as_bytes().to_vec(), "<test>", None, FileKind::Real);
 
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
-    let tokens = pp.process(source_id, &config).unwrap();
+    let tokens = pp.process(source_id).unwrap();
 
     let significant_tokens: Vec<_> = tokens
         .into_iter()
@@ -71,7 +71,7 @@ pub(crate) fn assert_pp(src: &str, expected: &str) {
 
 /// Assert that preprocessing `src` produces at least one diagnostic whose
 /// rendered text contains `expected`.
-pub(crate) fn check_diag(src: &str, expected: &str) {
+pub(crate) fn assert_pp_diag(src: &str, expected: &str) {
     let (_, diags) = setup_pp_snapshot_with_diags(src);
     assert!(!diags.is_empty(), "Expected diagnostics for: {src}");
     assert!(
@@ -167,7 +167,7 @@ fn setup_multi_file_pp_with_diagnostics_raw(
 
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
 
-    let tokens = pp.process(main_id, &config)?;
+    let tokens = pp.process(main_id)?;
     Ok((tokens, sm, diag.diagnostics.clone()))
 }
 

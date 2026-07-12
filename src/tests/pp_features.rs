@@ -127,7 +127,7 @@ fn test_has_include_next() {
     let (mut sm, mut diag) = crate::tests::test_utils::setup_sm_and_de();
     let source_id = sm.add_file(&main_path, None).unwrap();
     let mut pp = crate::pp::Preprocessor::new(&mut sm, &mut diag, &config);
-    let tokens = pp.process(source_id, &config).unwrap();
+    let tokens = pp.process(source_id).unwrap();
 
     let debug_tokens: Vec<DebugToken> = tokens
         .iter()

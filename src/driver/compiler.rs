@@ -127,14 +127,10 @@ impl CompilerDriver {
         // 1. Preprocessing
         let t0 = Instant::now();
         if stop_after == CompilePhase::Preprocess {
-            out.preprocessed = Some(
-                preprocessor
-                    .process(source_id, &self.config.preprocessor)
-                    .map_err(|e| {
-                        self.de.report_streaming(e.into(), &self.sm);
-                        PipelineError::Fatal
-                    })?,
-            );
+            out.preprocessed = Some(preprocessor.process(source_id).map_err(|e| {
+                self.de.report_streaming(e.into(), &self.sm);
+                PipelineError::Fatal
+            })?);
             if timing_enabled {
                 eprintln!("[TIMING] Preprocessor: {:?}", t0.elapsed());
             }

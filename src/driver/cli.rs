@@ -597,9 +597,8 @@ where
         preprocessor: crate::pp::PPConfig {
             max_include_depth,
             system_include_paths,
+            lang_options,
             target: target_triple.clone(),
-            c_standard: c_std,
-            lang_options: lang_options.clone(),
             ..Default::default()
         },
         suppress_line_markers,

@@ -1,7 +1,7 @@
 use super::pp_lexer::PPLexer;
 use crate::ast::StringId;
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
-use crate::lang_options::{CStandard, LangOptions, PedanticMode};
+use crate::lang_options::{LangOptions, PedanticMode};
 use crate::pp::error::{PPDiag, PPError};
 use crate::pp::interpreter::Interpreter;
 use crate::pp::keyword_table::PPKeywordTable;
@@ -16,7 +16,6 @@ use target_lexicon::Triple;
 pub struct Preprocessor<'src> {
     pub(crate) sm: &'src mut SourceManager,
     pub(crate) diag: &'src mut DiagnosticEngine,
-    pub(crate) c_standard: CStandard,
     pub(crate) target: Triple,
     pub(crate) lang_options: LangOptions,
 
@@ -28,13 +27,11 @@ pub struct Preprocessor<'src> {
     pub(crate) hide_sets: HideSetTable,
     pub(crate) macro_stack: FxHashMap<StringId, Vec<Option<MacroInfo>>>,
 
-    // Include management
-    pub(crate) once_included: FxHashSet<SourceId>,
-
     // Conditional compilation state
     pub(crate) conditional_stack: Vec<PPConditionalInfo>,
 
     // Include handling
+    pub(crate) once_included: FxHashSet<SourceId>,
     pub(crate) include_stack: Vec<IncludeStackInfo>,
     pub(crate) header_search: HeaderSearch,
     pub(crate) built_in_headers: FxHashMap<&'static str, &'static str>,
@@ -42,20 +39,15 @@ pub struct Preprocessor<'src> {
 
     // Token management
     pub(crate) lexer_stack: Vec<PPLexer>,
-    // Bolt ⚡: Use a Vec instead of a VecDeque for the pending tokens stack.
-    // The preprocessor uses this exclusively as a LIFO stack (push/pop).
-    // Vec is more efficient than VecDeque as it avoids ring-buffer overhead,
-    // provides better cache locality, and allows for efficient batch pushes
-    // using `.extend()` with reversed iterators during macro expansion.
     pub(crate) pending_tokens: Vec<PPToken>,
 
     // State
-    pub(crate) include_depth: usize,
-    pub(crate) max_include_depth: usize,
-    pub(crate) counter: u32,
-    pub(crate) in_macro_argument_parsing: usize,
+    pub(super) include_depth: usize,
+    pub(super) max_include_depth: usize,
+    counter: u32,
+    pub(super) in_macro_argument_parsing: usize,
     eof_emitted: bool,
-    pub(crate) poisoned_identifiers: FxHashSet<StringId>,
+    pub(super) poisoned_identifiers: FxHashSet<StringId>,
 }
 
 impl<'src> Preprocessor<'src> {
@@ -99,7 +91,6 @@ impl<'src> Preprocessor<'src> {
         let mut preprocessor = Preprocessor {
             sm: source_manager,
             diag,
-            c_standard: config.c_standard,
             keywords: PPKeywordTable::new(),
             macros: FxHashMap::default(),
             hide_sets: HideSetTable::new(),
@@ -115,7 +106,7 @@ impl<'src> Preprocessor<'src> {
             include_depth: 0,
             max_include_depth: config.max_include_depth,
             target: config.target.clone(),
-            lang_options: config.lang_options.clone(),
+            lang_options: config.lang_options,
             counter: 0,
             in_macro_argument_parsing: 0,
             eof_emitted: false,
@@ -354,8 +345,7 @@ impl<'src> Preprocessor<'src> {
     /// Process source file and return preprocessed tokens
     /// Start processing a source file by initializing the lexer stack
     pub(crate) fn start_processing(&mut self, source_id: SourceId) {
-        let buffer = self.sm.get_buffer_arc(source_id);
-        self.lexer_stack.push(PPLexer::new(source_id, buffer));
+        self.push_lexer(source_id, false);
     }
 
     /// Retrieve the next fully processed and expanded token from the preprocessor stream
@@ -438,7 +428,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Process source file and return preprocessed tokens (for non-streaming compatibility)
-    pub(crate) fn process(&mut self, source_id: SourceId, _config: &PPConfig) -> Result<Vec<PPToken>, PPDiag> {
+    pub(crate) fn process(&mut self, source_id: SourceId) -> Result<Vec<PPToken>, PPDiag> {
         let buffer_len = self.sm.get_buffer(source_id).len() as u32;
         self.start_processing(source_id);
 
@@ -543,8 +533,18 @@ impl<'src> Preprocessor<'src> {
         result.map(|val| val.is_truthy())
     }
 
-    /// Lex the next token
-    fn pop_finished_lexer(&mut self) -> bool {
+    /// Push a new lexer onto the stack for the given source ID, increasing the include depth if this is an included file.
+    pub(super) fn push_lexer(&mut self, source_id: SourceId, is_include: bool) {
+        let buffer = self.sm.get_buffer_arc(source_id);
+        self.lexer_stack.push(PPLexer::new(source_id, buffer));
+        if is_include {
+            self.include_stack.push(IncludeStackInfo { file_id: source_id });
+            self.include_depth += 1;
+        }
+    }
+
+    /// pop the current lexer from the stack, returning true if there are more lexers to process
+    pub(super) fn pop_lexer(&mut self) -> bool {
         // EOF reached, pop the lexer
         let popped_lexer = self.lexer_stack.pop().unwrap();
 
@@ -595,7 +595,7 @@ impl<'src> Preprocessor<'src> {
                     self.report_pp_warning(err);
                 }
                 return Some(token);
-            } else if self.pop_finished_lexer() == false {
+            } else if self.pop_lexer() == false {
                 return None;
             }
         }

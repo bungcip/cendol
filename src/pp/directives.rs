@@ -2,9 +2,8 @@ use crate::ast::StringId;
 use crate::diagnostic::{Diagnostic, DiagnosticLevel};
 use crate::lang_options::Visibility;
 use crate::pp::error::{PPDiag, PPError};
-use crate::pp::pp_lexer::PPLexer;
 use crate::pp::preprocessor::Preprocessor;
-use crate::pp::types::{IncludeStackInfo, MacroFlags, MacroInfo, PPConditionalInfo};
+use crate::pp::types::{MacroFlags, MacroInfo, PPConditionalInfo};
 use crate::pp::{DirectiveKind, PPToken, PPTokenFlags, PPTokenKind, PragmaPackKind, PragmaVisibilityKind};
 use crate::source_manager::{FileKind, SourceId, SourceLoc, SourceManager, SourceSpan};
 use std::sync::Arc;
@@ -113,7 +112,7 @@ impl<'src> Preprocessor<'src> {
         let pragma_content = self.destringize(symbol.as_str());
         self.expect_kind(PPTokenKind::RightParen)?;
 
-        self.perform_pragma(&pragma_content);
+        self.perform_pragma(&pragma_content)?;
 
         Ok(())
     }
@@ -141,24 +140,14 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Perform the action of a pragma directive
-    pub(super) fn perform_pragma(&mut self, pragma_content: &str) {
+    pub(super) fn perform_pragma(&mut self, pragma_content: &str) -> Result<(), PPDiag> {
         let tokens = self.tokenize_pragma_content(pragma_content);
-
-        // Bolt ⚡: Use batch insertion to efficiently push pragma tokens onto the stack.
-        // This avoids individual allocation checks for each token.
         self.pending_tokens.extend(tokens.into_iter().rev());
-
-        // Execute pragma handler
-        // handle_pragma will consume tokens from pending_tokens
         if self.handle_pragma().is_err() {
-            // If handle_pragma failed (e.g. unknown pragma), it might not have consumed all tokens.
-            // We must consume the remaining tokens of this pragma until EOD to ensure they don't leak.
-            while let Some(token) = self.lex_token() {
-                if token.kind == PPTokenKind::Eod {
-                    break;
-                }
-            }
+            self.skip_directive()?;
         }
+
+        Ok(())
     }
 
     /// Handle #define directive
@@ -329,13 +318,7 @@ impl<'src> Preprocessor<'src> {
         }?;
 
         if !self.once_included.contains(&include_source_id) {
-            self.include_stack.push(IncludeStackInfo {
-                file_id: include_source_id,
-            });
-
-            let buffer = self.sm.get_buffer_arc(include_source_id);
-            self.lexer_stack.push(PPLexer::new(include_source_id, buffer));
-            self.include_depth += 1;
+            self.push_lexer(include_source_id, true);
         }
 
         Ok(())
@@ -713,9 +696,9 @@ impl<'src> Preprocessor<'src> {
                 self.once_included.insert(lexer.source_id);
             }
         } else if symbol == self.keywords.push_macro {
-            self.handle_push_macro()?;
+            self.handle_pragma_push_macro()?;
         } else if symbol == self.keywords.pop_macro {
-            self.handle_pop_macro()?;
+            self.handle_pragma_pop_macro()?;
         } else if symbol == self.keywords.message {
             self.handle_pragma_diagnostic_message(DiagnosticLevel::Note)?;
         } else if symbol == self.keywords.warning {
@@ -731,21 +714,20 @@ impl<'src> Preprocessor<'src> {
             self.report_pp_warning(err);
         }
 
-        self.collect_tokens_until_eod();
+        self.skip_directive()?;
         Ok(())
     }
 
     fn parse_pragma_macro_name(&mut self) -> Result<StringId, PPDiag> {
         self.expect_kind(PPTokenKind::LeftParen)?;
         let (text, token_loc) = self.expect_string_literal()?;
-
         let name = self.extract_literal_content(&text, token_loc, PPError::InvalidDirective)?;
         self.expect_kind(PPTokenKind::RightParen)?;
 
         Ok(StringId::new(name))
     }
 
-    fn handle_push_macro(&mut self) -> Result<(), PPDiag> {
+    fn handle_pragma_push_macro(&mut self) -> Result<(), PPDiag> {
         let name = self.parse_pragma_macro_name()?;
         let info = self.macros.get(&name).cloned();
         self.macro_stack.entry(name).or_default().push(info);
@@ -753,7 +735,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    fn handle_pop_macro(&mut self) -> Result<(), PPDiag> {
+    fn handle_pragma_pop_macro(&mut self) -> Result<(), PPDiag> {
         let name = self.parse_pragma_macro_name()?;
 
         if let Some(stack) = self.macro_stack.get_mut(&name)

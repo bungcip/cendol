@@ -1,4 +1,4 @@
-use crate::tests::pp_common::{assert_pp, check_diag, setup_multi_file_pp_snapshot, setup_pp_snapshot_with_diags};
+use crate::tests::pp_common::{assert_pp, assert_pp_diag, setup_multi_file_pp_snapshot, setup_pp_snapshot_with_diags};
 
 #[test]
 fn test_error_directive_produces_failure() {
@@ -8,7 +8,7 @@ fn test_error_directive_produces_failure() {
 #error "this should be reported"
 #endif
 "#;
-    check_diag(src, "ErrorDirective");
+    assert_pp_diag(src, "ErrorDirective");
 }
 
 #[test]
@@ -18,7 +18,7 @@ fn test_warning_directive() {
 OK
 "#;
     assert_pp(src, "OK");
-    check_diag(src, "this is a warning");
+    assert_pp_diag(src, "this is a warning");
 }
 
 #[test]
@@ -34,9 +34,9 @@ OK
 
 #[test]
 fn test_invalid_line_directives() {
-    check_diag("#line invalid\nOK", "InvalidLineDirective");
-    check_diag("#line 0\nOK", "InvalidLineDirective");
-    check_diag("#line 100 invalid_filename\nOK", "InvalidLineDirective");
+    assert_pp_diag("#line invalid\nOK", "InvalidLineDirective");
+    assert_pp_diag("#line 0\nOK", "InvalidLineDirective");
+    assert_pp_diag("#line 100 invalid_filename\nOK", "InvalidLineDirective");
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn test_unknown_pragma_warns() {
     let src = r#"
 #pragma unknown_pragma
 "#;
-    check_diag(src, "Unknown pragma: unknown_pragma");
+    assert_pp_diag(src, "Unknown pragma: unknown_pragma");
 }
 
 #[test]
@@ -81,7 +81,7 @@ OK
 #[test]
 fn test_pragma_message() {
     let src = r#"#pragma message("Hello World")"#;
-    check_diag(src, "Hello World");
+    assert_pp_diag(src, "Hello World");
     // Should produce no tokens
     let (tokens, _) = setup_pp_snapshot_with_diags(src);
     assert!(tokens.is_empty());
@@ -90,13 +90,13 @@ fn test_pragma_message() {
 #[test]
 fn test_pragma_warning() {
     let src = r#"#pragma warning("This is a warning")"#;
-    check_diag(src, "This is a warning");
+    assert_pp_diag(src, "This is a warning");
 }
 
 #[test]
 fn test_pragma_error() {
     let src = r#"#pragma error("This is an error")"#;
-    check_diag(src, "PragmaError(\"This is an error\")");
+    assert_pp_diag(src, "PragmaError(\"This is an error\")");
 }
 
 // _Pragma Operator
@@ -104,7 +104,7 @@ fn test_pragma_error() {
 fn test_pragma_operator() {
     // Basic _Pragma
     let src1 = r#"_Pragma("message(\"Hello Pragma Operator\")")"#;
-    check_diag(src1, "Hello Pragma Operator");
+    assert_pp_diag(src1, "Hello Pragma Operator");
     let (tokens1, _) = setup_pp_snapshot_with_diags(src1);
     assert!(tokens1.is_empty());
 
@@ -113,7 +113,7 @@ fn test_pragma_operator() {
 #define M _Pragma("message(\"Inside Macro\")")
 M
     "#;
-    check_diag(src2, "Inside Macro");
+    assert_pp_diag(src2, "Inside Macro");
     let (tokens2, _) = setup_pp_snapshot_with_diags(src2);
     assert!(tokens2.is_empty());
 
@@ -122,7 +122,7 @@ M
 #if _Pragma("message(\"Inside If\")") 1
 #endif
     "#;
-    check_diag(src3, "Inside If");
+    assert_pp_diag(src3, "Inside If");
     let (tokens3, _) = setup_pp_snapshot_with_diags(src3);
     assert!(tokens3.is_empty());
 }
@@ -167,7 +167,7 @@ M
 #[test]
 fn test_eod_extra_tokens() {
     // #undef with extra tokens
-    check_diag("#undef FOO extra", "ExpectedEod");
+    assert_pp_diag("#undef FOO extra", "ExpectedEod");
 
     // #else with extra tokens
     let else_src = r#"
@@ -175,17 +175,17 @@ fn test_eod_extra_tokens() {
 #else extra
 #endif
 "#;
-    check_diag(else_src, "ExpectedEod");
+    assert_pp_diag(else_src, "ExpectedEod");
 
     // #endif with extra tokens
     let endif_src = r#"
 #if 1
 #endif extra
 "#;
-    check_diag(endif_src, "ExpectedEod");
+    assert_pp_diag(endif_src, "ExpectedEod");
 
     // #include with extra tokens
-    check_diag("#include <stddef.h> extra", "ExpectedEod");
+    assert_pp_diag("#include <stddef.h> extra", "ExpectedEod");
 }
 
 #[test]

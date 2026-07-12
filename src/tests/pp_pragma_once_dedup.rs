@@ -26,7 +26,7 @@ fn test_pragma_once_path_dedup() {
     config.quoted_include_paths.push(base_path.to_path_buf());
 
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
-    let tokens = pp.process(main_id, &config).expect("Preprocessing failed");
+    let tokens = pp.process(main_id).expect("Preprocessing failed");
 
     // Convert tokens to string for easier verification
     let mut output = String::new();

@@ -1,4 +1,4 @@
-use crate::tests::pp_common::{assert_pp, check_diag, setup_multi_file_pp_snapshot};
+use crate::tests::pp_common::{assert_pp, assert_pp_diag, setup_multi_file_pp_snapshot};
 
 #[test]
 fn test_ifdef_ifndef_elif() {
@@ -205,16 +205,16 @@ OK_MOD_OVERFLOW
 
 #[test]
 fn test_pp_conditional_diagnostics() {
-    check_diag("#if 0\n#else\n#elif 1\n#endif", "ElifAfterElse");
-    check_diag("#elif 1", "ElifWithoutIf");
-    check_diag("#elifdef FOO\nFAIL", "ElifWithoutIf");
-    check_diag("#elifndef FOO\nFAIL", "ElifWithoutIf");
-    check_diag("#if 1 / 0\nOK\n#endif", "DivisionByZero");
-    check_diag("#if 1 % 0\nOK\n#endif", "RemainderByZero");
-    check_diag("#if 1 + (2 * 3\n#endif", "InvalidConditionalExpression");
-    check_diag("#if\n#endif", "InvalidConditionalExpression");
-    check_diag("#if defined(FOO\n#endif", "InvalidConditionalExpression");
-    check_diag("#if defined(5)\n#endif", "InvalidConditionalExpression");
+    assert_pp_diag("#if 0\n#else\n#elif 1\n#endif", "ElifAfterElse");
+    assert_pp_diag("#elif 1", "ElifWithoutIf");
+    assert_pp_diag("#elifdef FOO\nFAIL", "ElifWithoutIf");
+    assert_pp_diag("#elifndef FOO\nFAIL", "ElifWithoutIf");
+    assert_pp_diag("#if 1 / 0\nOK\n#endif", "DivisionByZero");
+    assert_pp_diag("#if 1 % 0\nOK\n#endif", "RemainderByZero");
+    assert_pp_diag("#if 1 + (2 * 3\n#endif", "InvalidConditionalExpression");
+    assert_pp_diag("#if\n#endif", "InvalidConditionalExpression");
+    assert_pp_diag("#if defined(FOO\n#endif", "InvalidConditionalExpression");
+    assert_pp_diag("#if defined(5)\n#endif", "InvalidConditionalExpression");
 }
 
 #[test]

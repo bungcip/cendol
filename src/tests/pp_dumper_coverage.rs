@@ -98,7 +98,7 @@ fn dump_pp_output(src: &str, suppress_line_markers: bool) -> String {
     let source_id = sm.add_buffer(src.as_bytes().to_vec(), "<test>", None, FileKind::Real);
 
     let mut preprocessor = Preprocessor::new(&mut sm, &mut diag, &config);
-    let tokens = preprocessor.process(source_id, &config).unwrap();
+    let tokens = preprocessor.process(source_id).unwrap();
 
     let significant_tokens: Vec<_> = tokens
         .into_iter()

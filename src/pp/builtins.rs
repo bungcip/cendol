@@ -232,7 +232,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn init_builtin_macros_standards(&mut self) {
-        if self.c_standard.is_c11() {
+        if self.lang_options.c_standard.is_c11() {
             self.define_builtin_macro_with_val("__STDC_VERSION__", "201112L");
             self.define_builtin_macro_one("__STDC_HOSTED__");
             self.define_builtin_macro_one("__STDC_MB_MIGHT_NEQ_WC__");

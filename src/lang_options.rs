@@ -46,7 +46,7 @@ impl std::str::FromStr for Visibility {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct LangOptions {
     pub c_standard: CStandard,
     pub pedantic_mode: PedanticMode,
@@ -58,11 +58,11 @@ pub struct LangOptions {
 impl Default for LangOptions {
     fn default() -> Self {
         Self {
-            c_standard: CStandard::default(),
-            pedantic_mode: PedanticMode::default(),
-            signed_overflow_mode: SignedOverflowMode::default(),
+            c_standard: Default::default(),
+            pedantic_mode: Default::default(),
+            signed_overflow_mode: Default::default(),
             fpic: true, // cendol defaults to PIC
-            visibility: Visibility::default(),
+            visibility: Default::default(),
         }
     }
 }

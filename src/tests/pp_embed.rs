@@ -3,6 +3,7 @@ use crate::pp::PPTokenKind;
 use crate::pp::preprocessor::Preprocessor;
 use crate::pp::types::PPConfig;
 use crate::source_manager::SourceManager;
+use crate::tests::pp_common::assert_pp_diag;
 
 #[test]
 fn test_embed_basic() {
@@ -25,7 +26,7 @@ fn test_embed_basic() {
     sm.add_buffer(vec![1, 2, 3], "test.bin", None, crate::source_manager::FileKind::Real);
 
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
-    let tokens = pp.process(source_id, &config).unwrap();
+    let tokens = pp.process(source_id).unwrap();
 
     let kinds: Vec<_> = tokens.iter().map(|t| t.kind).collect();
     // 1, Comma, 2, Comma, 3, Eof
@@ -61,7 +62,7 @@ fn test_embed_limit() {
     );
 
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
-    let tokens = pp.process(source_id, &config).unwrap();
+    let tokens = pp.process(source_id).unwrap();
 
     let kinds: Vec<_> = tokens.iter().map(|t| t.kind).collect();
     // 1, Comma, 2, Eof
@@ -77,20 +78,7 @@ fn test_embed_not_found() {
     let source = r#"
 #embed "nonexistent.bin"
 "#;
-    let mut sm = SourceManager::new();
-    let mut diag = DiagnosticEngine::default();
-    let config = PPConfig::default();
-
-    let source_id = sm.add_buffer(
-        source.as_bytes().to_vec(),
-        "main.c",
-        None,
-        crate::source_manager::FileKind::Real,
-    );
-
-    let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
-    let result = pp.process(source_id, &config);
-    assert!(result.is_err());
+    assert_pp_diag(source, "FileNotFound");
 }
 
 #[test]
@@ -112,7 +100,7 @@ fn test_embed_macro() {
     sm.add_buffer(vec![42], "test.bin", None, crate::source_manager::FileKind::Real);
 
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
-    let tokens = pp.process(source_id, &config).unwrap();
+    let tokens = pp.process(source_id).unwrap();
 
     let kinds: Vec<_> = tokens.iter().map(|t| t.kind).collect();
     // 42, Eof

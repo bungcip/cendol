@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Cendol compiler driver orchestrates the entire compilation pipeline, from source file input through native code generation and linking. It provides a command-line interface using `clap` and manages the transition between different data representations (Source -> PPToken -> Token -> ParsedAst -> Ast -> MIR -> Object).
+The Cendol compiler driver orchestrates the entire compilation pipeline, from source file input through native code generation and linking. It provides a command-line interface using a custom parser that natively supports GCC/Clang-style single-dash long options and manages the transition between different data representations (Source -> PPToken -> Token -> ParsedAst -> Ast -> MIR -> Object).
 
 ## Responsibilities
 
@@ -14,12 +14,11 @@ The Cendol compiler driver orchestrates the entire compilation pipeline, from so
 
 ## CLI Interface
 
-The driver uses `clap` to provide a GCC/Clang-like interface. Key options include:
+The driver uses a custom parser to provide a GCC/Clang-like interface. Key options include:
 
 - `-o <file>`: Specify output path.
 - `-E`: Preprocess only.
 - `-c`: Compile only (emit object file).
-- `-S`: Emit assembly (Cranelift IR dump).
 - `-I <dir>`: Add include search path.
 - `-D <macro>`: Define preprocessor macro.
 - `--std=<std>`: Select C standard (defaults to C23).

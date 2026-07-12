@@ -5,6 +5,7 @@ pub use crate::pp::pp_lexer::{PPToken, PPTokenFlags, PPTokenKind, PragmaPackKind
 pub use crate::pp::preprocessor::Preprocessor;
 pub use crate::pp::types::PPConfig;
 
+pub(super) mod builtins;
 pub(super) mod directives;
 pub mod dumper;
 pub(crate) mod error;

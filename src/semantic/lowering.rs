@@ -111,22 +111,22 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     /// Report a semantic error and mark context as having errors
     /// Report a semantic error
     pub(crate) fn report_error(&mut self, span: SourceSpan, kind: SemanticError) {
-        let mut error = SemanticDiag::new(span, kind);
-        error.level = Some(DiagnosticLevel::Error);
+        let error = SemanticDiag::new(span, kind);
         for diag in error.into_diagnostic(self.registry) {
             self.diag.report_diagnostic(diag);
         }
     }
 
     pub(crate) fn report_warning(&mut self, span: SourceSpan, kind: SemanticError) {
-        if kind.is_pedantic() && self.lang_opts.pedantic_errors {
-            self.report_error(span, kind);
+        let is_pedantic = kind.is_pedantic();
+        let mut error = SemanticDiag::new(span, kind);
+        if is_pedantic && self.lang_opts.pedantic_errors {
+            error.level = Some(DiagnosticLevel::Error);
         } else {
-            let mut error = SemanticDiag::new(span, kind);
             error.level = Some(DiagnosticLevel::Warning);
-            for diag in error.into_diagnostic(self.registry) {
-                self.diag.report_diagnostic(diag);
-            }
+        }
+        for diag in error.into_diagnostic(self.registry) {
+            self.diag.report_diagnostic(diag);
         }
     }
 

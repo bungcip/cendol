@@ -1,192 +1,17 @@
 //! CLI parsing and configuration module
 //!
-//! This module handles command-line argument parsing using clap and
-//! provides configuration structures for the compiler driver.
+//! This module handles command-line argument parsing with a custom parser
+//! that natively supports GCC/Clang-style single-dash long options
+//! (e.g., `-std=c99`, `-fwrapv`, `-fPIC`, `-Wl,...`).
 
-use clap::{Args, Parser as CliParser};
 use std::path::PathBuf;
+
 use target_lexicon::{DefaultToHost, Triple};
 
 use crate::{
     driver::artifact::CompilePhase,
-    lang_options::{CStandard, LangOptions, SignedOverflowMode},
+    lang_options::{CStandard, LangOptions, SignedOverflowMode, Visibility},
 };
-
-/// CLI interface using clap
-#[derive(CliParser, Debug, Default)]
-#[clap(name = "cendol", version, about = "C11 Compiler written in Rust")]
-pub struct Cli {
-    /// Input C source files
-    #[clap(value_parser, required = true)]
-    pub input_files: Vec<PathBuf>,
-
-    /// Output file for AST dump
-    #[clap(short, long, value_name = "FILE")]
-    pub output: Option<PathBuf>,
-
-    /// Enable verbose diagnostic output
-    #[clap(short, long, action = clap::ArgAction::SetTrue)]
-    pub verbose: bool,
-
-    /// Dump AST after parser phase
-    #[clap(long, action = clap::ArgAction::SetTrue)]
-    pub dump_ast_after_parser: bool,
-
-    /// Dump AST after semantic lowering phase
-    #[clap(long, action = clap::ArgAction::SetTrue)]
-    pub dump_ast_after_semantic_lowering: bool,
-
-    /// Dump MIR (Mid-level Intermediate Representation) to console
-    #[clap(long, action = clap::ArgAction::SetTrue)]
-    pub dump_mir: bool,
-
-    /// Dump Cranelift IR (Intermediate Representation) to console
-    #[clap(long, action = clap::ArgAction::SetTrue)]
-    pub dump_cranelift: bool,
-
-    /// Preprocess only, output preprocessed source to stdout
-    #[clap(short = 'E', action = clap::ArgAction::SetTrue)]
-    pub preprocess_only: bool,
-
-    /// Preprocessor options
-    #[clap(flatten)]
-    pub preprocessor: PreprocessorOptions,
-
-    /// Suppress line markers in preprocessor output
-    #[clap(short = 'P', action = clap::ArgAction::SetTrue)]
-    pub suppress_line_markers: bool,
-
-    /// Include search paths
-    #[clap(short = 'I', long = "include-path", value_name = "DIR", action = clap::ArgAction::Append)]
-    pub include_paths: Vec<PathBuf>,
-
-    /// Preprocessor macro definitions
-    #[clap(short = 'D', long = "define", value_name = "NAME[=VALUE]", action = clap::ArgAction::Append)]
-    pub defines: Vec<String>,
-
-    /// Compiler warnings (e.g., -Wall, -Wshadow)
-    #[clap(short = 'W', action = clap::ArgAction::Append)]
-    pub warnings: Vec<String>,
-
-    /// Issue all the warnings demanded by strict ISO C
-    #[clap(long, action = clap::ArgAction::SetTrue)]
-    pub pedantic: bool,
-
-    /// Issue all the warnings demanded by strict ISO C as errors
-    #[clap(long, action = clap::ArgAction::SetTrue)]
-    pub pedantic_errors: bool,
-
-    /// Set C language standard (e.g., c99, c11)
-    #[clap(long = "std", value_name = "STANDARD")]
-    pub c_standard: Option<CStandard>,
-
-    /// Set default symbol visibility (e.g., default, hidden, protected, internal)
-    #[clap(long = "fvisibility", value_name = "VISIBILITY")]
-    pub fvisibility: Option<crate::lang_options::Visibility>,
-
-    /// Target triple (e.g. x86_64-unknown-linux-gnu)
-    #[clap(long = "target", value_name = "TRIPLE")]
-    pub target: Option<String>,
-
-    /// Optimization level (e.g., -O0, -O1, -O2, -O3, -Os, -Oz)
-    #[clap(short = 'O', action = clap::ArgAction::Set)]
-    pub optimization: Option<String>,
-
-    /// Linked libraries (e.g., -lm)
-    #[clap(short = 'l', action = clap::ArgAction::Append)]
-    pub libraries: Vec<String>,
-
-    /// Library search paths (e.g., -L/usr/local/lib)
-    #[clap(short = 'L', action = clap::ArgAction::Append)]
-    pub library_paths: Vec<PathBuf>,
-
-    /// Compile only, do not link
-    #[clap(short = 'c', action = clap::ArgAction::SetTrue, overrides_with = "compile_only")]
-    pub compile_only: bool,
-
-    /// Generate debug information
-    #[clap(short = 'g', action = clap::ArgAction::SetTrue, overrides_with = "debug_info")]
-    pub debug_info: bool,
-
-    /// Strip symbols (ignored)
-    #[clap(short = 's', action = clap::ArgAction::SetTrue, overrides_with = "strip")]
-    pub strip: bool,
-
-    /// Pass -rdynamic to linker (ignored)
-    #[clap(long = "rdynamic", action = clap::ArgAction::SetTrue, overrides_with = "rdynamic")]
-    pub rdynamic: bool,
-
-    /// Create a shared library
-    #[clap(long = "shared", action = clap::ArgAction::SetTrue, overrides_with = "shared")]
-    pub shared: bool,
-
-    /// Pass arguments to linker
-    #[clap(short = 'X', long = "linker-arg", value_name = "ARG", action = clap::ArgAction::Append, allow_hyphen_values = true)]
-    pub linker_args: Vec<String>,
-
-    /// Use a specific linker
-    #[clap(long = "fuse-ld", value_name = "LINKER")]
-    pub fuse_ld: Option<String>,
-
-    /// Maximum number of errors to report (default: 1)
-    #[clap(long = "fmax-errors", value_name = "N")]
-    pub fmax_errors: Option<usize>,
-
-    /// Treat signed integer overflow as well-defined (wrapping)
-    #[clap(long = "fwrapv", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
-    pub fwrapv: bool,
-
-    /// Treat signed integer overflow as undefined behavior
-    #[clap(long = "fno-wrapv", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
-    pub fno_wrapv: bool,
-
-    /// Treat signed integer overflow as undefined behavior
-    #[clap(long = "fstrict-overflow", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
-    pub fstrict_overflow: bool,
-
-    /// Treat signed integer overflow as well-defined (wrapping)
-    #[clap(long = "fno-strict-overflow", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
-    pub fno_strict_overflow: bool,
-
-    /// Generate traps for signed overflow on addition, subtraction, and multiplication
-    #[clap(long = "ftrapv", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
-    pub ftrapv: bool,
-
-    /// Do not generate traps for signed overflow
-    #[clap(long = "fno-trapv", overrides_with = "fwrapv", overrides_with = "fno_wrapv", overrides_with = "fstrict_overflow", overrides_with = "fno_strict_overflow", overrides_with = "ftrapv", overrides_with = "fno_trapv", action = clap::ArgAction::SetTrue)]
-    pub fno_trapv: bool,
-
-    /// Generate position-independent code
-    #[clap(long = "fPIC", overrides_with = "f_pic", overrides_with = "f_no_pic", action = clap::ArgAction::SetTrue)]
-    pub f_pic: bool,
-
-    /// Do not generate position-independent code
-    #[clap(long = "fno-PIC", overrides_with = "f_pic", overrides_with = "f_no_pic", action = clap::ArgAction::SetTrue)]
-    pub f_no_pic: bool,
-
-    /// GCC/Clang compatible flags to ignore (e.g., -fno-stack-protector)
-    #[clap(short = 'f', action = clap::ArgAction::Append)]
-    pub ignored_f_flags: Vec<String>,
-
-    /// GCC/Clang compatible flags to ignore (e.g., -MD, -MP, -MF, -MT)
-    #[clap(short = 'M', action = clap::ArgAction::Append)]
-    pub ignored_m_flags: Vec<String>,
-
-    /// Print timing information for each compilation phase
-    #[clap(long, action = clap::ArgAction::SetTrue)]
-    pub timing: bool,
-
-    /// Suppress all warnings
-    #[clap(short = 'w', action = clap::ArgAction::SetTrue)]
-    pub suppress_warnings: bool,
-}
-
-#[derive(Args, Debug, Default)]
-pub struct PreprocessorOptions {
-    /// Maximum include depth
-    #[clap(long, default_value = "100")]
-    pub max_include_depth: usize,
-}
 
 /// input file can be path to file or string buffer pair (filename, buffer)
 #[derive(Debug, Clone)]
@@ -259,182 +84,572 @@ pub struct CompileConfig {
     pub suppress_warnings: bool,
 }
 
-impl Cli {
-    /// Validate input files and check for option-like filenames
-    fn validate_input_files(&self) -> Result<(), String> {
-        for input_file in &self.input_files {
-            let file_name = input_file.to_string_lossy();
-            // Allow files starting with '-' if they exist, or if they have an extension that looks like a C file
-            if file_name.starts_with('-') && !input_file.exists() {
-                // If it starts with - and doesn't exist, it might be an unrecognized flag
-                // but clap should have handled it if it was a valid flag.
-                // However, some flags like -O2 or -Wshadow might not be explicitly defined in clap yet.
-                // So we should only error if it's definitely NOT meant to be a flag.
+// ── Help / Version ──────────────────────────────────────────────────────
 
-                // For now, let's keep it but maybe we should allow it if we want to ignore unknown flags?
-                // Actually, the user wants us to support these flags.
-                return Err(format!("File '{}' not found: No such file or directory", file_name)
-                    + "\n"
-                    + "If this is meant to be a command-line option, place it before the filename.\n"
-                    + &format!(
-                        "Example: {} -o output_file",
-                        std::env::args().next().unwrap_or("cendol".to_string())
-                    ));
+fn print_help() {
+    println!(
+        "\
+cendol {} — C11 Compiler written in Rust
+
+USAGE:
+    cendol [OPTIONS] <FILE>...
+
+GENERAL OPTIONS:
+    -o <FILE>                   Output file
+    -v, --verbose               Enable verbose diagnostic output
+    -w                          Suppress all warnings
+    --help                      Print this help message
+    --version                   Print version information
+    --timing                    Print timing information for each compilation phase
+    --max-include-depth <N>     Maximum include depth (default: 100)
+
+LANGUAGE & STANDARD:
+    -std=<STANDARD>             Set C language standard (c11, c17, c23)
+    -pedantic                   Issue all warnings demanded by strict ISO C
+    -pedantic-errors            Issue all ISO C warnings as errors
+
+PREPROCESSOR:
+    -E                          Preprocess only, output to stdout
+    -P                          Suppress line markers in preprocessor output
+    -I <DIR>                    Add include search path
+    -D <NAME>[=<VALUE>]         Define preprocessor macro
+
+WARNINGS:
+    -W<WARNING>                 Enable warning (e.g., -Wall, -Wextra, -Wshadow)
+
+OPTIMIZATION:
+    -O<LEVEL>                   Optimization level (0, 1, 2, 3, s, z)
+
+CODE GENERATION:
+    -c                          Compile only, do not link
+    -g                          Generate debug information
+    -s                          Strip symbols (ignored)
+    -target=<TRIPLE>            Target triple (e.g., x86_64-unknown-linux-gnu)
+    -fPIC                       Generate position-independent code (default)
+    -fno-PIC                    Disable position-independent code
+    -fvisibility=<VIS>          Set default symbol visibility (default, hidden, protected, internal)
+    -shared                     Create a shared library
+
+SIGNED OVERFLOW:
+    -fwrapv                     Treat signed integer overflow as wrapping (default)
+    -fno-wrapv                  Treat signed integer overflow as undefined
+    -fstrict-overflow           Treat signed integer overflow as undefined
+    -fno-strict-overflow        Treat signed integer overflow as wrapping
+    -ftrapv                     Generate traps for signed overflow
+    -fno-trapv                  Do not generate traps for signed overflow
+    -fmax-errors=<N>            Maximum number of errors to report
+
+LINKING:
+    -l <LIB>                    Link library
+    -L <DIR>                    Library search path
+    -fuse-ld=<LINKER>           Use a specific linker
+    -Xlinker <ARG>              Pass argument to linker
+    -Wl,<ARGS>                  Pass comma-separated arguments to linker
+    -rdynamic                   Pass -rdynamic to linker (ignored)
+    -pthread                    Link with pthread support
+    --linker-arg=<ARG>          Pass argument to linker (alternative form)
+
+DEBUGGING:
+    --dump-ast-after-parser             Dump AST after parser phase
+    --dump-ast-after-semantic-lowering  Dump AST after semantic lowering phase
+    --dump-mir                          Dump MIR to console
+    --dump-cranelift                    Dump Cranelift IR to console",
+        env!("CARGO_PKG_VERSION")
+    );
+}
+
+fn print_version() {
+    println!("cendol {}", env!("CARGO_PKG_VERSION"));
+}
+
+// ── Error type ──────────────────────────────────────────────────────────
+
+/// Error from argument parsing (not a compiler error, exits immediately)
+#[derive(Debug)]
+pub enum ArgError {
+    /// A hard error — print and exit(1)
+    Error(String),
+    /// --help was requested — exit(0)
+    Help,
+    /// --version was requested — exit(0)
+    Version,
+}
+
+impl std::fmt::Display for ArgError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ArgError::Error(msg) => write!(f, "{}", msg),
+            ArgError::Help => write!(f, ""),
+            ArgError::Version => write!(f, ""),
+        }
+    }
+}
+
+// ── Main parser ─────────────────────────────────────────────────────────
+
+/// Parse command-line arguments from an iterator and return a CompileConfig.
+///
+/// This is the primary entry point for CLI parsing. It handles GCC/Clang
+/// style arguments natively (single-dash long options, `-f*` flags, etc.).
+pub(crate) fn parse_args_from<I>(args: I) -> Result<CompileConfig, ArgError>
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut iter = args.into_iter().peekable();
+
+    // Skip argv[0] (program name)
+    let _program = iter.next();
+
+    // Accumulate raw parsed values
+    let mut input_files: Vec<PathBuf> = Vec::new();
+    let mut output: Option<PathBuf> = None;
+    let mut verbose = false;
+    let mut dump_ast_after_parser = false;
+    let mut dump_ast_after_semantic_lowering = false;
+    let mut dump_mir = false;
+    let mut dump_cranelift = false;
+    let mut preprocess_only = false;
+    let mut suppress_line_markers = false;
+    let mut include_paths: Vec<PathBuf> = Vec::new();
+    let mut defines: Vec<String> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
+    let mut pedantic = false;
+    let mut pedantic_errors = false;
+    let mut c_standard: Option<CStandard> = None;
+    let mut fvisibility: Option<Visibility> = None;
+    let mut target: Option<String> = None;
+    let mut optimization: Option<String> = None;
+    let mut libraries: Vec<String> = Vec::new();
+    let mut library_paths: Vec<PathBuf> = Vec::new();
+    let mut compile_only = false;
+    let mut debug_info = false;
+    let mut strip = false;
+    let mut rdynamic = false;
+    let mut shared = false;
+    let mut linker_args: Vec<String> = Vec::new();
+    let mut fuse_ld: Option<String> = None;
+    let mut fmax_errors: Option<usize> = None;
+    let mut ignored_f_flags: Vec<String> = Vec::new();
+    let mut ignored_m_flags: Vec<String> = Vec::new();
+    let mut timing = false;
+    let mut suppress_warnings = false;
+    let mut max_include_depth: usize = 100;
+
+    // For "last wins" semantics on overflow flags, we record each flag in order.
+    #[derive(Clone, Copy)]
+    enum OverflowFlag {
+        Wrapv,
+        NoWrapv,
+        StrictOverflow,
+        NoStrictOverflow,
+        Trapv,
+        NoTrapv,
+    }
+    let mut overflow_flags: Vec<OverflowFlag> = Vec::new();
+
+    // For "last wins" on PIC flags
+    #[derive(Clone, Copy)]
+    enum PicFlag {
+        Pic,
+        NoPic,
+    }
+    let mut pic_flags: Vec<PicFlag> = Vec::new();
+
+    while let Some(arg) = iter.next() {
+        if !arg.starts_with('-') || arg == "-" {
+            // positional argument → input file
+            input_files.push(PathBuf::from(arg));
+            continue;
+        }
+
+        // Double-dash terminator: everything after is positional
+        if arg == "--" {
+            for rest in &mut iter {
+                input_files.push(PathBuf::from(rest));
+            }
+            break;
+        }
+
+        match arg.as_str() {
+            // ── Help / Version ──
+            "--help" | "-help" => return Err(ArgError::Help),
+            "--version" | "-version" => return Err(ArgError::Version),
+
+            // ── Simple boolean flags ──
+            "-v" | "--verbose" => verbose = true,
+            "-E" => preprocess_only = true,
+            "-P" => suppress_line_markers = true,
+            "-c" => compile_only = true,
+            "-g" => debug_info = true,
+            "-s" => strip = true,
+            "-w" => suppress_warnings = true,
+            "-rdynamic" => rdynamic = true,
+            "-shared" | "--shared" => shared = true,
+            "-pedantic" => pedantic = true,
+            "-pedantic-errors" => pedantic_errors = true,
+            "-pthread" => linker_args.push("-Wl,-pthread".to_string()),
+            "--timing" => timing = true,
+
+            // ── Dump flags ──
+            "--dump-ast-after-parser" => dump_ast_after_parser = true,
+            "--dump-ast-after-semantic-lowering" => dump_ast_after_semantic_lowering = true,
+            "--dump-mir" => dump_mir = true,
+            "--dump-cranelift" => dump_cranelift = true,
+
+            // ── Signed overflow flags ("last wins") ──
+            "-fwrapv" => overflow_flags.push(OverflowFlag::Wrapv),
+            "-fno-wrapv" => overflow_flags.push(OverflowFlag::NoWrapv),
+            "-fstrict-overflow" => overflow_flags.push(OverflowFlag::StrictOverflow),
+            "-fno-strict-overflow" => overflow_flags.push(OverflowFlag::NoStrictOverflow),
+            "-ftrapv" => overflow_flags.push(OverflowFlag::Trapv),
+            "-fno-trapv" => overflow_flags.push(OverflowFlag::NoTrapv),
+
+            // ── PIC flags ("last wins") ──
+            "-fPIC" => pic_flags.push(PicFlag::Pic),
+            "-fno-PIC" => pic_flags.push(PicFlag::NoPic),
+
+            _ => {
+                // ── Flags with values ──
+
+                // -o <FILE> or -o<FILE>
+                if arg == "-o" {
+                    let val = iter
+                        .next()
+                        .ok_or_else(|| ArgError::Error("missing argument for -o".to_string()))?;
+                    output = Some(PathBuf::from(val));
+                } else if let Some(rest) = arg.strip_prefix("-o") {
+                    output = Some(PathBuf::from(rest));
+                }
+                // -std=<STANDARD>
+                else if let Some(val) = arg.strip_prefix("-std=") {
+                    c_standard = Some(val.parse::<CStandard>().map_err(ArgError::Error)?);
+                }
+                // -target=<TRIPLE> or -target <TRIPLE>
+                else if arg == "-target" || arg == "--target" {
+                    let val = iter
+                        .next()
+                        .ok_or_else(|| ArgError::Error("missing argument for -target".to_string()))?;
+                    target = Some(val);
+                } else if let Some(val) = arg.strip_prefix("-target=").or_else(|| arg.strip_prefix("--target=")) {
+                    target = Some(val.to_string());
+                }
+                // -fvisibility=<VIS>
+                else if let Some(val) = arg.strip_prefix("-fvisibility=") {
+                    fvisibility = Some(val.parse::<Visibility>().map_err(ArgError::Error)?);
+                }
+                // -fuse-ld=<LINKER>
+                else if let Some(val) = arg.strip_prefix("-fuse-ld=") {
+                    fuse_ld = Some(val.to_string());
+                }
+                // -fmax-errors=<N>
+                else if let Some(val) = arg.strip_prefix("-fmax-errors=") {
+                    fmax_errors = Some(
+                        val.parse::<usize>()
+                            .map_err(|_| ArgError::Error(format!("invalid value for -fmax-errors: '{}'", val)))?,
+                    );
+                }
+                // -O<level> (handles -O, -O0, -O1, -O2, -O3, -Os, -Oz)
+                else if arg == "-O" {
+                    optimization = Some("1".to_string());
+                } else if let Some(level) = arg.strip_prefix("-O") {
+                    optimization = Some(level.to_string());
+                }
+                // -I<DIR> or -I <DIR>
+                else if arg == "-I" {
+                    let val = iter
+                        .next()
+                        .ok_or_else(|| ArgError::Error("missing argument for -I".to_string()))?;
+                    include_paths.push(PathBuf::from(val));
+                } else if let Some(rest) = arg.strip_prefix("-I") {
+                    include_paths.push(PathBuf::from(rest));
+                }
+                // -D<NAME>[=<VALUE>] or -D <NAME>[=<VALUE>]
+                else if arg == "-D" {
+                    let val = iter
+                        .next()
+                        .ok_or_else(|| ArgError::Error("missing argument for -D".to_string()))?;
+                    defines.push(val);
+                } else if let Some(rest) = arg.strip_prefix("-D") {
+                    defines.push(rest.to_string());
+                }
+                // -W<WARNING> (e.g., -Wall, -Wextra, -Wshadow)
+                // Also handle -W as alias for -Wextra
+                else if arg == "-W" {
+                    warnings.push("extra".to_string());
+                } else if let Some(rest) = arg.strip_prefix("-W") {
+                    // -Wl,... is a linker pass-through
+                    if let Some(linker_val) = rest.strip_prefix("l,") {
+                        linker_args.push(format!("-Wl,{}", linker_val));
+                    } else {
+                        warnings.push(rest.to_string());
+                    }
+                }
+                // -l<LIB> or -l <LIB>
+                else if arg == "-l" {
+                    let val = iter
+                        .next()
+                        .ok_or_else(|| ArgError::Error("missing argument for -l".to_string()))?;
+                    libraries.push(val);
+                } else if let Some(rest) = arg.strip_prefix("-l") {
+                    libraries.push(rest.to_string());
+                }
+                // -L<DIR> or -L <DIR>
+                else if arg == "-L" {
+                    let val = iter
+                        .next()
+                        .ok_or_else(|| ArgError::Error("missing argument for -L".to_string()))?;
+                    library_paths.push(PathBuf::from(val));
+                } else if let Some(rest) = arg.strip_prefix("-L") {
+                    library_paths.push(PathBuf::from(rest));
+                }
+                // -Xlinker <ARG> (next arg is the linker arg)
+                else if arg == "-Xlinker" {
+                    let val = iter
+                        .next()
+                        .ok_or_else(|| ArgError::Error("missing argument for -Xlinker".to_string()))?;
+                    if val.starts_with("-Wl,") {
+                        linker_args.push(val);
+                    } else {
+                        linker_args.push(format!("-Wl,{}", val));
+                    }
+                }
+                // --linker-arg=<ARG> (alternative form)
+                else if let Some(val) = arg.strip_prefix("--linker-arg=") {
+                    linker_args.push(val.to_string());
+                } else if arg == "--linker-arg" {
+                    let val = iter
+                        .next()
+                        .ok_or_else(|| ArgError::Error("missing argument for --linker-arg".to_string()))?;
+                    linker_args.push(val);
+                }
+                // --max-include-depth <N>
+                else if arg == "--max-include-depth" {
+                    let val = iter
+                        .next()
+                        .ok_or_else(|| ArgError::Error("missing argument for --max-include-depth".to_string()))?;
+                    max_include_depth = val
+                        .parse::<usize>()
+                        .map_err(|_| ArgError::Error(format!("invalid value for --max-include-depth: '{}'", val)))?;
+                } else if let Some(val) = arg.strip_prefix("--max-include-depth=") {
+                    max_include_depth = val
+                        .parse::<usize>()
+                        .map_err(|_| ArgError::Error(format!("invalid value for --max-include-depth: '{}'", val)))?;
+                }
+                // -g<anything> → treat as -g (ignore debug level suffix like -g3, -ggdb)
+                else if arg.starts_with("-g") {
+                    debug_info = true;
+                }
+                // -M<flag> → ignored dependency flags (e.g., -MD, -MP, -MF, -MT)
+                else if let Some(rest) = arg.strip_prefix("-M") {
+                    // -MF and -MT take an argument
+                    if rest == "F" || rest == "T" {
+                        let _ = iter.next(); // consume the next arg
+                    }
+                    ignored_m_flags.push(rest.to_string());
+                }
+                // -f<flag> → catch-all for unrecognized -f flags
+                else if let Some(rest) = arg.strip_prefix("-f") {
+                    ignored_f_flags.push(rest.to_string());
+                }
+                // Unknown flag starting with '-' that doesn't exist as a file
+                else {
+                    let path = PathBuf::from(&arg);
+                    if path.exists() {
+                        input_files.push(path);
+                    } else {
+                        return Err(ArgError::Error(format!(
+                            "cendol: error: unrecognized command-line option '{}'",
+                            arg
+                        )));
+                    }
+                }
             }
         }
-        Ok(())
     }
 
-    /// Convert CLI arguments into compilation configuration
-    pub(crate) fn into_config(self) -> Result<CompileConfig, String> {
-        // Validate input files first
-        self.validate_input_files()?;
+    // ── Validation ──────────────────────────────────────────────────────
 
-        // Parse defines
-        let defines = self
-            .defines
-            .iter()
-            .map(|def| {
-                if let Some(eq_pos) = def.find('=') {
-                    let name = def[..eq_pos].to_string();
-                    let value = Some(def[eq_pos + 1..].to_string());
-                    (name, value)
-                } else {
-                    (def.clone(), None)
-                }
-            })
-            .collect();
+    if input_files.is_empty() {
+        return Err(ArgError::Error("cendol: error: no input files".to_string()));
+    }
 
-        // Handle -Wall flag by adding "all" to warnings if -Wall is specified
-        // Actually, with short='W' and append, -Wall will result in "all" in warnings.
-        let mut warnings = self.warnings;
+    // ── Resolve "last wins" flags ───────────────────────────────────────
 
-        if self.pedantic {
-            warnings.push("pedantic".to_string());
+    let mut signed_overflow_mode = SignedOverflowMode::Wrap;
+    for flag in &overflow_flags {
+        match flag {
+            OverflowFlag::Wrapv | OverflowFlag::NoStrictOverflow | OverflowFlag::NoTrapv => {
+                signed_overflow_mode = SignedOverflowMode::Wrap;
+            }
+            OverflowFlag::NoWrapv | OverflowFlag::StrictOverflow => {
+                signed_overflow_mode = SignedOverflowMode::Undefined;
+            }
+            OverflowFlag::Trapv => {
+                signed_overflow_mode = SignedOverflowMode::Trap;
+            }
         }
-        if self.pedantic_errors {
-            warnings.push("pedantic-errors".to_string());
-        }
+    }
 
-        // Build language options
-
-        let mut signed_overflow_mode = SignedOverflowMode::Wrap;
-        if self.fno_wrapv || self.fstrict_overflow {
-            signed_overflow_mode = SignedOverflowMode::Undefined;
+    let mut fpic = true;
+    for flag in &pic_flags {
+        match flag {
+            PicFlag::Pic => fpic = true,
+            PicFlag::NoPic => fpic = false,
         }
-        if self.fwrapv || self.fno_strict_overflow || self.fno_trapv {
-            signed_overflow_mode = SignedOverflowMode::Wrap;
-        }
-        if self.ftrapv {
-            signed_overflow_mode = SignedOverflowMode::Trap;
-        }
+    }
 
-        let mut fpic = true;
-        if self.f_no_pic {
-            fpic = false;
-        }
-        if self.f_pic {
-            fpic = true;
-        }
+    // ── Build warnings list ─────────────────────────────────────────────
 
-        let c_standard = self.c_standard.unwrap_or_default();
-        let lang_options = crate::lang_options::LangOptions {
-            c_standard,
-            pedantic: self.pedantic,
-            pedantic_errors: self.pedantic_errors,
-            signed_overflow_mode,
-            fpic,
-            visibility: self.fvisibility.unwrap_or_default(),
-        };
+    if pedantic {
+        warnings.push("pedantic".to_string());
+    }
+    if pedantic_errors {
+        warnings.push("pedantic-errors".to_string());
+    }
 
-        // Build preprocessor configuration with include paths
-        let mut system_include_paths = Vec::new();
+    // ── Parse defines ───────────────────────────────────────────────────
 
-        let mut add_path = |path: PathBuf| {
-            if let Ok(canonical) = path.canonicalize() {
-                system_include_paths.push(canonical);
+    let parsed_defines = defines
+        .iter()
+        .map(|def| {
+            if let Some(eq_pos) = def.find('=') {
+                let name = def[..eq_pos].to_string();
+                let value = Some(def[eq_pos + 1..].to_string());
+                (name, value)
             } else {
-                system_include_paths.push(path);
+                (def.clone(), None)
             }
-        };
-
-        // Add user-specified include paths as system include paths
-        for path in &self.include_paths {
-            add_path(path.clone());
-        }
-
-        // Add default system include paths
-        if std::path::Path::new("custom-include").exists() {
-            add_path(PathBuf::from("custom-include"));
-        }
-        add_path(PathBuf::from("/usr/include"));
-        add_path(PathBuf::from("/usr/local/include"));
-
-        // Add architecture-specific include paths
-        let arch_paths = ["/usr/include/x86_64-linux-gnu"];
-
-        for arch_path in &arch_paths {
-            let path = PathBuf::from(arch_path);
-            if path.exists() {
-                add_path(path);
-            }
-        }
-
-        let stop_after = if self.preprocess_only {
-            CompilePhase::Preprocess
-        } else if self.dump_ast_after_parser {
-            CompilePhase::Parse
-        } else if self.dump_ast_after_semantic_lowering {
-            CompilePhase::SemanticLowering
-        } else if self.dump_mir {
-            CompilePhase::Mir
-        } else if self.dump_cranelift {
-            CompilePhase::Cranelift
-        } else {
-            CompilePhase::EmitObject
-        };
-
-        let target_triple = if let Some(t) = self.target {
-            t.parse::<Triple>()
-                .map_err(|e| format!("Invalid target triple: {}", e))?
-        } else {
-            Triple::host()
-        };
-
-        Ok(CompileConfig {
-            input_files: self.input_files.into_iter().map(PathOrBuffer::Path).collect(),
-            output_path: self.output,
-            stop_after,
-            verbose: self.verbose,
-            preprocessor: crate::pp::PPConfig {
-                max_include_depth: self.preprocessor.max_include_depth,
-                system_include_paths,
-                target: target_triple.clone(),
-                c_standard,
-                pedantic: self.pedantic,
-                pedantic_errors: self.pedantic_errors,
-                ..Default::default()
-            },
-            suppress_line_markers: self.suppress_line_markers,
-            defines,
-            warnings,
-            c_standard,
-            lang_options,
-            target: DefaultToHost(target_triple),
-            optimization: self.optimization,
-            libraries: self.libraries,
-            library_paths: self.library_paths,
-            compile_only: self.compile_only,
-            debug_info: self.debug_info,
-            shared: self.shared,
-            linker_args: self.linker_args,
-            fuse_ld: self.fuse_ld,
-            fmax_errors: self.fmax_errors,
-            ignored_f_flags: self.ignored_f_flags,
-            ignored_m_flags: self.ignored_m_flags,
-            timing: self.timing,
-            suppress_warnings: self.suppress_warnings,
         })
+        .collect();
+
+    // ── Determine stop_after ────────────────────────────────────────────
+
+    let stop_after = if preprocess_only {
+        CompilePhase::Preprocess
+    } else if dump_ast_after_parser {
+        CompilePhase::Parse
+    } else if dump_ast_after_semantic_lowering {
+        CompilePhase::SemanticLowering
+    } else if dump_mir {
+        CompilePhase::Mir
+    } else if dump_cranelift {
+        CompilePhase::Cranelift
+    } else {
+        CompilePhase::EmitObject
+    };
+
+    // ── Build target triple ─────────────────────────────────────────────
+
+    let target_triple = if let Some(t) = target {
+        t.parse::<Triple>()
+            .map_err(|e| ArgError::Error(format!("Invalid target triple: {}", e)))?
+    } else {
+        Triple::host()
+    };
+
+    // ── Build include paths ─────────────────────────────────────────────
+
+    let mut system_include_paths = Vec::new();
+    let mut add_path = |path: PathBuf| {
+        if let Ok(canonical) = path.canonicalize() {
+            system_include_paths.push(canonical);
+        } else {
+            system_include_paths.push(path);
+        }
+    };
+
+    for path in &include_paths {
+        add_path(path.clone());
+    }
+
+    if std::path::Path::new("custom-include").exists() {
+        add_path(PathBuf::from("custom-include"));
+    }
+    add_path(PathBuf::from("/usr/include"));
+    add_path(PathBuf::from("/usr/local/include"));
+
+    let arch_paths = ["/usr/include/x86_64-linux-gnu"];
+    for arch_path in &arch_paths {
+        let path = PathBuf::from(arch_path);
+        if path.exists() {
+            add_path(path);
+        }
+    }
+
+    // ── Build final config ──────────────────────────────────────────────
+
+    let c_std = c_standard.unwrap_or_default();
+    let lang_options = LangOptions {
+        c_standard: c_std,
+        pedantic,
+        pedantic_errors,
+        signed_overflow_mode,
+        fpic,
+        visibility: fvisibility.unwrap_or_default(),
+    };
+
+    let _ = strip; // intentionally ignored
+    let _ = rdynamic; // intentionally ignored
+
+    Ok(CompileConfig {
+        input_files: input_files.into_iter().map(PathOrBuffer::Path).collect(),
+        output_path: output,
+        stop_after,
+        verbose,
+        preprocessor: crate::pp::PPConfig {
+            max_include_depth,
+            system_include_paths,
+            target: target_triple.clone(),
+            c_standard: c_std,
+            pedantic,
+            pedantic_errors,
+            ..Default::default()
+        },
+        suppress_line_markers,
+        defines: parsed_defines,
+        warnings,
+        c_standard: c_std,
+        lang_options,
+        target: DefaultToHost(target_triple),
+        optimization,
+        libraries,
+        library_paths,
+        compile_only,
+        debug_info,
+        shared,
+        linker_args,
+        fuse_ld,
+        fmax_errors,
+        ignored_f_flags,
+        ignored_m_flags,
+        timing,
+        suppress_warnings,
+    })
+}
+
+/// Parse arguments from `std::env::args()`.
+pub fn parse_args() -> Result<CompileConfig, ArgError> {
+    parse_args_from(std::env::args())
+}
+
+// ── Public re-exports for the help/version actions ──────────────────────
+
+impl ArgError {
+    /// Handle the error by printing the appropriate message and returning the exit code.
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            ArgError::Error(_) => 1,
+            ArgError::Help | ArgError::Version => 0,
+        }
+    }
+
+    /// Print the appropriate output for this error.
+    pub fn print(&self) {
+        match self {
+            ArgError::Error(msg) => eprintln!("{}", msg),
+            ArgError::Help => print_help(),
+            ArgError::Version => print_version(),
+        }
     }
 }
 
@@ -442,6 +657,12 @@ impl Cli {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    /// Helper: parse from a list of &str (prepending "cendol" as argv[0])
+    fn parse(args: &[&str]) -> Result<CompileConfig, ArgError> {
+        let v: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        parse_args_from(v)
+    }
 
     #[test]
     fn test_path_or_buffer() {
@@ -469,71 +690,56 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_into_config_and_validation() {
-        // Test case: Valid configuration with defines and specific stop_after
-        let cli = Cli {
-            input_files: vec![PathBuf::from("test.c")],
-            output: Some(PathBuf::from("out")),
-            verbose: true,
-            dump_mir: true,
-            preprocessor: PreprocessorOptions { max_include_depth: 50 },
-            suppress_line_markers: true,
-            include_paths: vec![PathBuf::from("inc")],
-            defines: vec!["FOO=1".to_string(), "BAR".to_string()],
-            warnings: vec!["all".to_string()],
-            target: Some("x86_64-unknown-linux-gnu".to_string()),
-            optimization: Some("2".to_string()),
-            libraries: vec!["m".to_string()],
-            library_paths: vec![PathBuf::from("/lib")],
-            compile_only: true,
-            debug_info: true,
-            fuse_ld: Some("lld".to_string()),
-            fmax_errors: Some(5),
-            ..Default::default()
-        };
-
-        let config = cli.into_config().expect("Failed to create config");
+    fn test_basic_config() {
+        let config = parse(&[
+            "cendol",
+            "test.c",
+            "-o",
+            "out",
+            "-v",
+            "--dump-mir",
+            "-I",
+            "inc",
+            "-DFOO=1",
+            "-DBAR",
+            "-Wall",
+            "-target=x86_64-unknown-linux-gnu",
+            "-O2",
+            "-lm",
+            "-L/lib",
+            "-c",
+            "-g",
+            "-fuse-ld=lld",
+            "-fmax-errors=5",
+        ])
+        .unwrap();
 
         assert_eq!(config.fuse_ld, Some("lld".to_string()));
         assert_eq!(config.fmax_errors, Some(5));
         assert_eq!(config.stop_after, CompilePhase::Mir);
         assert!(config.verbose);
-        assert!(config.suppress_line_markers);
-        assert_eq!(config.preprocessor.max_include_depth, 50);
         assert_eq!(config.target.0.to_string(), "x86_64-unknown-linux-gnu");
 
         let defines: Vec<_> = config.defines.into_iter().collect();
         assert!(defines.contains(&("FOO".to_string(), Some("1".to_string()))));
         assert!(defines.contains(&("BAR".to_string(), None)));
-
-        // Test error case: Input file starting with '-' that does not exist
-        let cli_error = Cli {
-            input_files: vec![PathBuf::from("-nonexistent")],
-            preprocessor: PreprocessorOptions { max_include_depth: 100 },
-            ..Default::default()
-        };
-
-        let err = cli_error.into_config().unwrap_err();
-        assert!(err.contains("File '-nonexistent' not found"));
-        assert!(err.contains("meant to be a command-line option"));
     }
 
     #[test]
-    fn test_cli_config_features() {
-        let cli = Cli {
-            input_files: vec![PathBuf::from("dummy.c")],
-            dump_ast_after_parser: true,
-            dump_ast_after_semantic_lowering: true,
-            dump_cranelift: true,
-            preprocess_only: true,
-            preprocessor: PreprocessorOptions { max_include_depth: 100 },
-            pedantic: true,
-            pedantic_errors: true,
-            ..Default::default()
-        };
+    fn test_config_features() {
+        let config = parse(&[
+            "cendol",
+            "dummy.c",
+            "--dump-ast-after-parser",
+            "--dump-ast-after-semantic-lowering",
+            "--dump-cranelift",
+            "-E",
+            "-pedantic",
+            "-pedantic-errors",
+        ])
+        .unwrap();
 
-        // This tests testing the default bounds, pedantic bounds, and dump priorities
-        let config = cli.into_config().unwrap();
+        // -E takes priority
         assert_eq!(config.stop_after, CompilePhase::Preprocess);
         assert!(config.warnings.contains(&"pedantic".to_string()));
         assert!(config.warnings.contains(&"pedantic-errors".to_string()));
@@ -541,144 +747,205 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_dump_flags_coverage() {
-        use clap::Parser;
+    fn test_dump_flags_coverage() {
+        let c1 = parse(&["cendol", "dummy.c", "--dump-ast-after-parser"]).unwrap();
+        assert_eq!(c1.stop_after, CompilePhase::Parse);
 
-        let cli1 = Cli::parse_from(["cendol", "dummy.c", "--dump-ast-after-parser"]);
-        assert_eq!(cli1.into_config().unwrap().stop_after, CompilePhase::Parse);
+        let c2 = parse(&["cendol", "dummy.c", "--dump-ast-after-semantic-lowering"]).unwrap();
+        assert_eq!(c2.stop_after, CompilePhase::SemanticLowering);
 
-        let cli2 = Cli::parse_from(["cendol", "dummy.c", "--dump-ast-after-semantic-lowering"]);
-        assert_eq!(cli2.into_config().unwrap().stop_after, CompilePhase::SemanticLowering);
+        let c3 = parse(&["cendol", "dummy.c", "--dump-mir"]).unwrap();
+        assert_eq!(c3.stop_after, CompilePhase::Mir);
 
-        let cli3 = Cli::parse_from(["cendol", "dummy.c", "--dump-mir"]);
-        assert_eq!(cli3.into_config().unwrap().stop_after, CompilePhase::Mir);
+        let c4 = parse(&["cendol", "dummy.c", "--dump-cranelift"]).unwrap();
+        assert_eq!(c4.stop_after, CompilePhase::Cranelift);
 
-        let cli4 = Cli::parse_from(["cendol", "dummy.c", "--dump-cranelift"]);
-        assert_eq!(cli4.into_config().unwrap().stop_after, CompilePhase::Cranelift);
-
-        let cli5 = Cli::parse_from(["cendol", "dummy.c"]);
-        assert_eq!(cli5.into_config().unwrap().stop_after, CompilePhase::EmitObject);
+        let c5 = parse(&["cendol", "dummy.c"]).unwrap();
+        assert_eq!(c5.stop_after, CompilePhase::EmitObject);
     }
 
     #[test]
-    fn test_cli_fwrapv() {
-        use clap::Parser;
-
+    fn test_fwrapv() {
         // Default should be Wrap
-        let cli1 = Cli::parse_from(["cendol", "dummy.c"]);
-        assert_eq!(
-            cli1.into_config().unwrap().lang_options.signed_overflow_mode,
-            SignedOverflowMode::Wrap
-        );
+        let c1 = parse(&["cendol", "dummy.c"]).unwrap();
+        assert_eq!(c1.lang_options.signed_overflow_mode, SignedOverflowMode::Wrap);
 
         // Explicit -fwrapv
-        let cli2 = Cli::parse_from(["cendol", "dummy.c", "--fwrapv"]);
-        assert_eq!(
-            cli2.into_config().unwrap().lang_options.signed_overflow_mode,
-            SignedOverflowMode::Wrap
-        );
+        let c2 = parse(&["cendol", "dummy.c", "-fwrapv"]).unwrap();
+        assert_eq!(c2.lang_options.signed_overflow_mode, SignedOverflowMode::Wrap);
 
         // Explicit -fno-wrapv
-        let cli3 = Cli::parse_from(["cendol", "dummy.c", "--fno-wrapv"]);
-        assert_eq!(
-            cli3.into_config().unwrap().lang_options.signed_overflow_mode,
-            SignedOverflowMode::Undefined
-        );
+        let c3 = parse(&["cendol", "dummy.c", "-fno-wrapv"]).unwrap();
+        assert_eq!(c3.lang_options.signed_overflow_mode, SignedOverflowMode::Undefined);
 
         // Last one wins: -fwrapv -fno-wrapv -> Undefined
-        let cli4 = Cli::parse_from(["cendol", "dummy.c", "--fwrapv", "--fno-wrapv"]);
-        assert_eq!(
-            cli4.into_config().unwrap().lang_options.signed_overflow_mode,
-            SignedOverflowMode::Undefined
-        );
+        let c4 = parse(&["cendol", "dummy.c", "-fwrapv", "-fno-wrapv"]).unwrap();
+        assert_eq!(c4.lang_options.signed_overflow_mode, SignedOverflowMode::Undefined);
 
         // Last one wins: -fno-wrapv -fwrapv -> Wrap
-        let cli5 = Cli::parse_from(["cendol", "dummy.c", "--fno-wrapv", "--fwrapv"]);
-        assert_eq!(
-            cli5.into_config().unwrap().lang_options.signed_overflow_mode,
-            SignedOverflowMode::Wrap
-        );
+        let c5 = parse(&["cendol", "dummy.c", "-fno-wrapv", "-fwrapv"]).unwrap();
+        assert_eq!(c5.lang_options.signed_overflow_mode, SignedOverflowMode::Wrap);
 
         // Explicit -fstrict-overflow
-        let cli6 = Cli::parse_from(["cendol", "dummy.c", "--fstrict-overflow"]);
-        assert_eq!(
-            cli6.into_config().unwrap().lang_options.signed_overflow_mode,
-            SignedOverflowMode::Undefined
-        );
+        let c6 = parse(&["cendol", "dummy.c", "-fstrict-overflow"]).unwrap();
+        assert_eq!(c6.lang_options.signed_overflow_mode, SignedOverflowMode::Undefined);
 
         // Explicit -fno-strict-overflow
-        let cli7 = Cli::parse_from(["cendol", "dummy.c", "--fno-strict-overflow"]);
-        assert_eq!(
-            cli7.into_config().unwrap().lang_options.signed_overflow_mode,
-            SignedOverflowMode::Wrap
-        );
+        let c7 = parse(&["cendol", "dummy.c", "-fno-strict-overflow"]).unwrap();
+        assert_eq!(c7.lang_options.signed_overflow_mode, SignedOverflowMode::Wrap);
 
         // Mix: -fstrict-overflow -fno-strict-overflow -> Wrap
-        let cli8 = Cli::parse_from(["cendol", "dummy.c", "--fstrict-overflow", "--fno-strict-overflow"]);
-        assert_eq!(
-            cli8.into_config().unwrap().lang_options.signed_overflow_mode,
-            SignedOverflowMode::Wrap
-        );
+        let c8 = parse(&["cendol", "dummy.c", "-fstrict-overflow", "-fno-strict-overflow"]).unwrap();
+        assert_eq!(c8.lang_options.signed_overflow_mode, SignedOverflowMode::Wrap);
 
         // Mix: -fno-strict-overflow -fstrict-overflow -> Undefined
-        let cli9 = Cli::parse_from(["cendol", "dummy.c", "--fno-strict-overflow", "--fstrict-overflow"]);
-        assert_eq!(
-            cli9.into_config().unwrap().lang_options.signed_overflow_mode,
-            SignedOverflowMode::Undefined
-        );
+        let c9 = parse(&["cendol", "dummy.c", "-fno-strict-overflow", "-fstrict-overflow"]).unwrap();
+        assert_eq!(c9.lang_options.signed_overflow_mode, SignedOverflowMode::Undefined);
 
         // Mix: -fwrapv -fstrict-overflow -> Undefined
-        let cli10 = Cli::parse_from(["cendol", "dummy.c", "--fwrapv", "--fstrict-overflow"]);
-        assert_eq!(
-            cli10.into_config().unwrap().lang_options.signed_overflow_mode,
-            SignedOverflowMode::Undefined
-        );
+        let c10 = parse(&["cendol", "dummy.c", "-fwrapv", "-fstrict-overflow"]).unwrap();
+        assert_eq!(c10.lang_options.signed_overflow_mode, SignedOverflowMode::Undefined);
 
         // Mix: -fstrict-overflow -fwrapv -> Wrap
-        let cli11 = Cli::parse_from(["cendol", "dummy.c", "--fstrict-overflow", "--fwrapv"]);
-        assert_eq!(
-            cli11.into_config().unwrap().lang_options.signed_overflow_mode,
-            SignedOverflowMode::Wrap
-        );
+        let c11 = parse(&["cendol", "dummy.c", "-fstrict-overflow", "-fwrapv"]).unwrap();
+        assert_eq!(c11.lang_options.signed_overflow_mode, SignedOverflowMode::Wrap);
     }
 
     #[test]
-    fn test_cli_ftrapv() {
-        use clap::Parser;
-
-        // Default should be Wrap (i.e. not Trap)
-        let cli1 = Cli::parse_from(["cendol", "dummy.c"]);
-        assert_eq!(
-            cli1.into_config().unwrap().lang_options.signed_overflow_mode,
-            SignedOverflowMode::Wrap
-        );
+    fn test_ftrapv() {
+        // Default should be Wrap (not Trap)
+        let c1 = parse(&["cendol", "dummy.c"]).unwrap();
+        assert_eq!(c1.lang_options.signed_overflow_mode, SignedOverflowMode::Wrap);
 
         // Explicit -ftrapv
-        let cli2 = Cli::parse_from(["cendol", "dummy.c", "--ftrapv"]);
-        assert_eq!(
-            cli2.into_config().unwrap().lang_options.signed_overflow_mode,
-            SignedOverflowMode::Trap
-        );
+        let c2 = parse(&["cendol", "dummy.c", "-ftrapv"]).unwrap();
+        assert_eq!(c2.lang_options.signed_overflow_mode, SignedOverflowMode::Trap);
 
         // Explicit -fno-trapv
-        let cli3 = Cli::parse_from(["cendol", "dummy.c", "--fno-trapv"]);
-        assert_eq!(
-            cli3.into_config().unwrap().lang_options.signed_overflow_mode,
-            SignedOverflowMode::Wrap
-        );
+        let c3 = parse(&["cendol", "dummy.c", "-fno-trapv"]).unwrap();
+        assert_eq!(c3.lang_options.signed_overflow_mode, SignedOverflowMode::Wrap);
 
         // Last one wins: -ftrapv -fno-trapv -> Wrap
-        let cli4 = Cli::parse_from(["cendol", "dummy.c", "--ftrapv", "--fno-trapv"]);
-        assert_eq!(
-            cli4.into_config().unwrap().lang_options.signed_overflow_mode,
-            SignedOverflowMode::Wrap
-        );
+        let c4 = parse(&["cendol", "dummy.c", "-ftrapv", "-fno-trapv"]).unwrap();
+        assert_eq!(c4.lang_options.signed_overflow_mode, SignedOverflowMode::Wrap);
 
         // Last one wins: -fno-trapv -ftrapv -> Trap
-        let cli5 = Cli::parse_from(["cendol", "dummy.c", "--fno-trapv", "--ftrapv"]);
-        assert_eq!(
-            cli5.into_config().unwrap().lang_options.signed_overflow_mode,
-            SignedOverflowMode::Trap
-        );
+        let c5 = parse(&["cendol", "dummy.c", "-fno-trapv", "-ftrapv"]).unwrap();
+        assert_eq!(c5.lang_options.signed_overflow_mode, SignedOverflowMode::Trap);
+    }
+
+    #[test]
+    fn test_fvisibility_parsing() {
+        let c1 = parse(&["cendol", "test.c", "-fvisibility=hidden"]).unwrap();
+        assert_eq!(c1.lang_options.visibility, Visibility::Hidden);
+
+        let c2 = parse(&["cendol", "test.c", "-fvisibility=default"]).unwrap();
+        assert_eq!(c2.lang_options.visibility, Visibility::Default);
+
+        let c3 = parse(&["cendol", "test.c", "-fvisibility=protected"]).unwrap();
+        assert_eq!(c3.lang_options.visibility, Visibility::Protected);
+
+        let c4 = parse(&["cendol", "test.c", "-fvisibility=internal"]).unwrap();
+        assert_eq!(c4.lang_options.visibility, Visibility::Internal);
+    }
+
+    #[test]
+    fn test_fvisibility_invalid() {
+        let result = parse(&["cendol", "test.c", "-fvisibility=unknown"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_no_input_files() {
+        let result = parse(&["cendol"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_help_and_version() {
+        let r1 = parse(&["cendol", "--help"]);
+        assert!(matches!(r1, Err(ArgError::Help)));
+
+        let r2 = parse(&["cendol", "--version"]);
+        assert!(matches!(r2, Err(ArgError::Version)));
+    }
+
+    #[test]
+    fn test_o_juxtaposed() {
+        let config = parse(&["cendol", "test.c", "-oout"]).unwrap();
+        assert_eq!(config.output_path, Some(PathBuf::from("out")));
+    }
+
+    #[test]
+    fn test_wl_linker_args() {
+        let config = parse(&["cendol", "test.c", "-Wl,-rpath,/usr/lib"]).unwrap();
+        assert_eq!(config.linker_args, vec!["-Wl,-rpath,/usr/lib"]);
+    }
+
+    #[test]
+    fn test_xlinker() {
+        let config = parse(&["cendol", "test.c", "-Xlinker", "-rpath"]).unwrap();
+        assert_eq!(config.linker_args, vec!["-Wl,-rpath"]);
+    }
+
+    #[test]
+    fn test_pthread() {
+        let config = parse(&["cendol", "test.c", "-pthread"]).unwrap();
+        assert!(config.linker_args.contains(&"-Wl,-pthread".to_string()));
+    }
+
+    #[test]
+    fn test_std_option() {
+        let c1 = parse(&["cendol", "test.c", "-std=c23"]).unwrap();
+        assert_eq!(c1.c_standard, CStandard::C23);
+
+        let c2 = parse(&["cendol", "test.c", "-std=c11"]).unwrap();
+        assert_eq!(c2.c_standard, CStandard::C11);
+    }
+
+    #[test]
+    fn test_optimization_bare_o() {
+        let config = parse(&["cendol", "test.c", "-O"]).unwrap();
+        assert_eq!(config.optimization, Some("1".to_string()));
+    }
+
+    #[test]
+    fn test_w_bare_maps_to_extra() {
+        let config = parse(&["cendol", "test.c", "-W"]).unwrap();
+        assert!(config.warnings.contains(&"extra".to_string()));
+    }
+
+    #[test]
+    fn test_g_with_suffix() {
+        let config = parse(&["cendol", "test.c", "-ggdb3"]).unwrap();
+        assert!(config.debug_info);
+    }
+
+    #[test]
+    fn test_double_dash_terminator() {
+        let config = parse(&["cendol", "--", "-weird-file.c"]).unwrap();
+        assert_eq!(config.input_files.len(), 1);
+    }
+
+    #[test]
+    fn test_fpic_last_wins() {
+        let c1 = parse(&["cendol", "test.c", "-fPIC"]).unwrap();
+        assert!(c1.lang_options.fpic);
+
+        let c2 = parse(&["cendol", "test.c", "-fno-PIC"]).unwrap();
+        assert!(!c2.lang_options.fpic);
+
+        let c3 = parse(&["cendol", "test.c", "-fPIC", "-fno-PIC"]).unwrap();
+        assert!(!c3.lang_options.fpic);
+
+        let c4 = parse(&["cendol", "test.c", "-fno-PIC", "-fPIC"]).unwrap();
+        assert!(c4.lang_options.fpic);
+    }
+
+    #[test]
+    fn test_unrecognized_f_flags_are_ignored() {
+        let config = parse(&["cendol", "test.c", "-fno-stack-protector", "-fomit-frame-pointer"]).unwrap();
+        assert!(config.ignored_f_flags.contains(&"no-stack-protector".to_string()));
+        assert!(config.ignored_f_flags.contains(&"omit-frame-pointer".to_string()));
     }
 }

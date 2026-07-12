@@ -4,7 +4,6 @@ version = "0.4.0"
 edition = "2024"
 
 [dependencies]
-clap = { version = "4.5", features = ["derive"] }
 hashbrown = { version = "0.17", features = ["serde"] }
 rustc-hash = "2.1"
 thiserror = "2.0"

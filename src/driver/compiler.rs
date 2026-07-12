@@ -36,12 +36,6 @@ pub struct CompilerDriver {
 }
 
 impl CompilerDriver {
-    /// Create a new compiler driver from CLI arguments
-    pub fn new(cli: super::cli::Cli) -> Result<Self, String> {
-        let config = cli.into_config()?;
-        Ok(Self::from_config(config))
-    }
-
     /// Create a new compiler driver from configuration
     pub fn from_config(config: CompileConfig) -> Self {
         let mut de = DiagnosticEngine::from_warnings(&config.warnings);

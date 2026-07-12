@@ -8,5 +8,4 @@ pub mod cli;
 pub mod compiler;
 
 // Re-export public API
-pub use cli::Cli;
 pub use compiler::{CompilerDriver, DriverError};

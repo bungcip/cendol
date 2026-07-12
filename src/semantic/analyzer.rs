@@ -6,7 +6,7 @@ use crate::{
         *,
     },
     diagnostic::{DiagnosticEngine, DiagnosticLevel},
-    lang_options::{CStandard, LangOptions},
+    lang_options::{CStandard, LangOptions, PedanticMode},
     semantic::{
         ArraySizeType, BuiltinFunctionKind, BuiltinType, FunctionParam, QualType, RecordMember, SymbolKind, SymbolRef,
         SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
@@ -202,7 +202,7 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn report_warning(&mut self, node: NodeRef, kind: SemanticError) {
-        if kind.is_pedantic() && self.lang_opts.pedantic_errors {
+        if kind.is_pedantic() && self.lang_opts.pedantic_mode == PedanticMode::Error {
             self.report_error(node, kind);
         } else {
             let span = self.ast.get_span(node);

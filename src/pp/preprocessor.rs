@@ -1,7 +1,7 @@
 use super::pp_lexer::PPLexer;
 use crate::ast::StringId;
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
-use crate::lang_options::CStandard;
+use crate::lang_options::{CStandard, LangOptions, PedanticMode};
 use crate::pp::error::{PPDiag, PPError};
 use crate::pp::interpreter::Interpreter;
 use crate::pp::keyword_table::PPKeywordTable;
@@ -18,8 +18,7 @@ pub struct Preprocessor<'src> {
     pub(crate) diag: &'src mut DiagnosticEngine,
     pub(crate) c_standard: CStandard,
     pub(crate) target: Triple,
-    pub(crate) pedantic: bool,
-    pub(crate) pedantic_errors: bool,
+    pub(crate) lang_options: LangOptions,
 
     // Pre-interned directive keywords for fast comparison
     pub(crate) keywords: PPKeywordTable,
@@ -116,8 +115,7 @@ impl<'src> Preprocessor<'src> {
             include_depth: 0,
             max_include_depth: config.max_include_depth,
             target: config.target.clone(),
-            pedantic: config.pedantic,
-            pedantic_errors: config.pedantic_errors,
+            lang_options: config.lang_options.clone(),
             counter: 0,
             in_macro_argument_parsing: 0,
             eof_emitted: false,
@@ -519,33 +517,10 @@ impl<'src> Preprocessor<'src> {
         self.conditional_stack.last().is_some_and(|info| info.was_skipping)
     }
 
-    /// Parse a conditional expression for #if and #elif
-    pub(super) fn parse_conditional_expression(&mut self) -> Result<Vec<PPToken>, PPDiag> {
-        let tokens = self.collect_tokens_until_eod();
-
-        if tokens.is_empty() {
-            return self.emit_error(PPError::InvalidConditionalExpression, self.get_current_location());
-        }
-
-        Ok(tokens)
-    }
-
     /// Evaluate a conditional expression (simplified - handle defined and basic arithmetic)
-    pub(super) fn evaluate_conditional_expression(&mut self, tokens: Vec<PPToken>) -> Result<bool, PPDiag> {
-        // Bolt ⚡: Removed redundant filtering of Eod tokens and a buggy optimization.
-        // parse_conditional_expression already ensures no Eod tokens are present.
-        // This avoids two allocations and two full clones of the token list.
-        // The buggy 'defined' optimization was also removed as it incorrectly
-        // returned early for complex expressions like '#if defined(FOO) && 0'.
-        // Bolt ⚡: Optimized to take tokens by value, avoiding a redundant `to_vec()` clone.
-        if tokens.is_empty() {
-            // For empty expressions, treat as false
-            return Ok(false);
-        }
-
-        // First, expand macros in the expression
-        let mut expanded_tokens = tokens;
-        match self.expand_tokens(&mut expanded_tokens, true) {
+    pub(super) fn evaluate_conditional_expression(&mut self) -> Result<bool, PPDiag> {
+        let mut tokens = self.collect_tokens_until_eod();
+        match self.expand_tokens(&mut tokens, true) {
             Ok(_) => {}
             Err(_e) => {
                 // If macro expansion fails, emit diagnostic and treat as false
@@ -557,17 +532,12 @@ impl<'src> Preprocessor<'src> {
             }
         }
 
-        self.evaluate_arithmetic_expression(&expanded_tokens)
-    }
-
-    /// Evaluate a simple arithmetic expression for #if/#elif
-    fn evaluate_arithmetic_expression(&mut self, tokens: &[PPToken]) -> Result<bool, PPDiag> {
         if tokens.is_empty() {
             let loc = self.get_current_location();
             return self.emit_error(PPError::InvalidConditionalExpression, loc);
         }
 
-        let mut interpreter = Interpreter::new(tokens, self);
+        let mut interpreter = Interpreter::new(&tokens, self);
         let result = interpreter.evaluate();
 
         result.map(|val| val.is_truthy())
@@ -610,35 +580,26 @@ impl<'src> Preprocessor<'src> {
             return Some(token);
         }
 
-        loop {
-            if let Some(lexer) = self.lexer_stack.last_mut() {
-                if let Some(token) = lexer.next_token() {
-                    if token.flags.contains(PPTokenFlags::HAS_INVALID_UCN) {
-                        let err = self.error(PPError::InvalidUniversalCharacterName, token.location);
-                        self.report_pp_error(err);
-                    }
-
-                    if (self.pedantic || self.pedantic_errors)
-                        && matches!(token.kind, PPTokenKind::Identifier(_) | PPTokenKind::Number)
-                    {
-                        let text = token.get_text(self.sm);
-                        if text.contains('$') {
-                            let err = self.error(PPError::DollarInIdentifier, token.location);
-                            self.report_pp_warning(err);
-                        }
-                    }
-                    return Some(token);
-                } else {
-                    // Current lexer finished
-                    if !self.pop_finished_lexer() {
-                        return None;
-                    }
-                    // Continue to try the next lexer in the stack
+        while let Some(lexer) = self.lexer_stack.last_mut() {
+            if let Some(token) = lexer.next_token() {
+                if token.flags.contains(PPTokenFlags::HAS_INVALID_UCN) {
+                    let err = self.error(PPError::InvalidUniversalCharacterName, token.location);
+                    self.report_pp_error(err);
                 }
-            } else {
+
+                if self.lang_options.is_pedantic()
+                    && matches!(token.kind, PPTokenKind::Identifier(_) | PPTokenKind::Number)
+                    && token.get_text(self.sm).contains('$')
+                {
+                    let err = self.error(PPError::DollarInIdentifier, token.location);
+                    self.report_pp_warning(err);
+                }
+                return Some(token);
+            } else if self.pop_finished_lexer() == false {
                 return None;
             }
         }
+        None
     }
 
     /// Skip current directive tokens until EOD
@@ -697,11 +658,11 @@ impl<'src> Preprocessor<'src> {
         let mut diags = err.into_diagnostic();
 
         if is_pedantic {
-            if self.pedantic_errors {
+            if self.lang_options.pedantic_mode == PedanticMode::Error {
                 for diag in &mut diags {
                     diag.level = DiagnosticLevel::Error;
                 }
-            } else if self.pedantic {
+            } else if self.lang_options.pedantic_mode == PedanticMode::Warning {
                 for diag in &mut diags {
                     diag.level = DiagnosticLevel::Warning;
                 }
@@ -733,11 +694,10 @@ impl<'src> Preprocessor<'src> {
 
     /// Helper to report warning diagnostics with a warning name
     pub(super) fn report_warning_with_name(&mut self, loc: SourceLoc, message: impl Into<String>, name: &'static str) {
-        let span = SourceSpan::from_loc(loc);
         let diag = Diagnostic {
             level: DiagnosticLevel::Warning,
             message: message.into(),
-            span,
+            span: SourceSpan::from_loc(loc),
             warning_name: Some(name),
             ..Default::default()
         };

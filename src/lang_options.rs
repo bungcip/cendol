@@ -8,6 +8,14 @@ pub enum CStandard {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, serde::Serialize)]
+pub enum PedanticMode {
+    #[default]
+    Default,
+    Warning,
+    Error,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, serde::Serialize)]
 pub enum SignedOverflowMode {
     #[default]
     Wrap,
@@ -41,8 +49,7 @@ impl std::str::FromStr for Visibility {
 #[derive(Clone, Debug)]
 pub struct LangOptions {
     pub c_standard: CStandard,
-    pub pedantic: bool,
-    pub pedantic_errors: bool,
+    pub pedantic_mode: PedanticMode,
     pub signed_overflow_mode: SignedOverflowMode,
     pub fpic: bool,
     pub visibility: Visibility,
@@ -52,18 +59,17 @@ impl Default for LangOptions {
     fn default() -> Self {
         Self {
             c_standard: CStandard::default(),
-            pedantic: false,
-            pedantic_errors: false,
-            signed_overflow_mode: SignedOverflowMode::Wrap, // cendol defaults to wrapping
-            fpic: true,                                     // cendol defaults to PIC
-            visibility: Visibility::Default,
+            pedantic_mode: PedanticMode::default(),
+            signed_overflow_mode: SignedOverflowMode::default(),
+            fpic: true, // cendol defaults to PIC
+            visibility: Visibility::default(),
         }
     }
 }
 
 impl LangOptions {
     pub(crate) fn is_pedantic(&self) -> bool {
-        self.pedantic || self.pedantic_errors
+        self.pedantic_mode != PedanticMode::Default
     }
 }
 

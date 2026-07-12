@@ -17,7 +17,7 @@ use crate::ast::literal::{LitKind, LitRef, LitVal, StrPrefix};
 use crate::ast::parsed::{ParsedDecl, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, TypeSpec};
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, DiagnosticLevel};
-use crate::lang_options::{CStandard, LangOptions, Visibility};
+use crate::lang_options::{CStandard, LangOptions, PedanticMode, Visibility};
 use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::errors::{SemanticDiag, SemanticError};
 use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
@@ -120,7 +120,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     pub(crate) fn report_warning(&mut self, span: SourceSpan, kind: SemanticError) {
         let is_pedantic = kind.is_pedantic();
         let mut error = SemanticDiag::new(span, kind);
-        if is_pedantic && self.lang_opts.pedantic_errors {
+        if is_pedantic && self.lang_opts.pedantic_mode == PedanticMode::Error {
             error.level = Some(DiagnosticLevel::Error);
         } else {
             error.level = Some(DiagnosticLevel::Warning);
@@ -2175,7 +2175,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             // Complex variants extracted to helpers
             ParsedNodeKind::GnuStatementExpr(stmt, _) => {
-                if self.lang_opts.pedantic || self.lang_opts.pedantic_errors {
+                if self.lang_opts.is_pedantic() {
                     self.report_warning(span, SemanticError::GnuStatementExpression);
                 }
                 lower_simple!(self.visit_gnu_statement_expr(*stmt, span))

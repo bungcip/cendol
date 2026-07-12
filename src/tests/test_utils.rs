@@ -2,6 +2,7 @@ use crate::diagnostic::DiagnosticEngine;
 use crate::driver::artifact::{CompilePhase, PipelineOutputs};
 use crate::driver::cli::CompileConfig;
 use crate::driver::compiler::CompilerDriver;
+use crate::lang_options::PedanticMode;
 use crate::source_manager::SourceManager;
 
 fn setup_driver(source: &str, phase: CompilePhase) -> CompilerDriver {
@@ -152,18 +153,18 @@ pub(crate) fn run_pass_with_diagnostic_message(source: &str, phase: CompilePhase
 
 pub(crate) fn run_pedantic_fail_with_message(source: &str, message: &str) {
     let mut config = CompileConfig::from_virtual_file(source.to_string(), CompilePhase::Mir);
-    config.lang_options.pedantic_errors = true;
-    config.preprocessor.pedantic_errors = true;
+    config.lang_options.pedantic_mode = PedanticMode::Error;
+    config.preprocessor.lang_options.pedantic_mode = PedanticMode::Error;
     let mut driver = CompilerDriver::from_config(config);
     let result = driver.run_pipeline(CompilePhase::Mir).map_err(|e| format!("{:?}", e));
-    assert!(result.is_err(), "Compilation should have failed in pedantic mode");
+    assert!(result.is_err(), "Compilation should have failed in pedantic error mode");
     check_diagnostic_message_only(&driver, message);
 }
 
 pub(crate) fn run_pedantic_pass_with_message(source: &str, phase: CompilePhase, message: &str) {
     let mut config = CompileConfig::from_virtual_file(source.to_string(), phase);
-    config.lang_options.pedantic = true;
-    config.preprocessor.pedantic = true;
+    config.lang_options.pedantic_mode = PedanticMode::Warning;
+    config.preprocessor.lang_options.pedantic_mode = PedanticMode::Warning;
     let mut driver = CompilerDriver::from_config(config);
     let result = driver.run_pipeline(phase).map_err(|e| format!("{:?}", e));
     assert!(result.is_ok(), "Compilation should have succeeded in pedantic mode");

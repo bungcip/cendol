@@ -1,5 +1,5 @@
 use crate::ast::StringId;
-use crate::lang_options::CStandard;
+use crate::lang_options::{CStandard, LangOptions};
 use crate::pp::pp_lexer::PPToken;
 use crate::source_manager::{SourceId, SourceLoc};
 use chrono::{DateTime, Utc};
@@ -171,8 +171,7 @@ pub struct PPConfig {
     pub(crate) c_standard: CStandard,
     pub(crate) target: Triple,
     pub(crate) current_time: Option<DateTime<Utc>>,
-    pub(crate) pedantic: bool,
-    pub(crate) pedantic_errors: bool,
+    pub(crate) lang_options: LangOptions,
 }
 
 impl Default for PPConfig {
@@ -186,8 +185,7 @@ impl Default for PPConfig {
             c_standard: CStandard::default(),
             target: Triple::host(),
             current_time: None,
-            pedantic: false,
-            pedantic_errors: false,
+            lang_options: LangOptions::default(),
         }
     }
 }

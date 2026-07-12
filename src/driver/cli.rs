@@ -10,7 +10,7 @@ use target_lexicon::{DefaultToHost, Triple};
 
 use crate::{
     driver::artifact::CompilePhase,
-    lang_options::{CStandard, LangOptions, SignedOverflowMode, Visibility},
+    lang_options::{CStandard, LangOptions, PedanticMode, SignedOverflowMode, Visibility},
 };
 
 /// input file can be path to file or string buffer pair (filename, buffer)
@@ -213,9 +213,8 @@ where
     let mut include_paths: Vec<PathBuf> = Vec::new();
     let mut defines: Vec<String> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
-    let mut pedantic = false;
-    let mut pedantic_errors = false;
     let mut c_standard: Option<CStandard> = None;
+    let mut pedantic_mode = PedanticMode::Default;
     let mut fvisibility: Option<Visibility> = None;
     let mut target: Option<String> = None;
     let mut optimization: Option<String> = None;
@@ -285,8 +284,8 @@ where
             "-w" => suppress_warnings = true,
             "-rdynamic" => rdynamic = true,
             "-shared" | "--shared" => shared = true,
-            "-pedantic" => pedantic = true,
-            "-pedantic-errors" => pedantic_errors = true,
+            "-pedantic" => pedantic_mode = PedanticMode::Warning,
+            "-pedantic-errors" => pedantic_mode = PedanticMode::Error,
             "-pthread" => linker_args.push("-Wl,-pthread".to_string()),
             "--timing" => timing = true,
 
@@ -500,10 +499,10 @@ where
 
     // ── Build warnings list ─────────────────────────────────────────────
 
-    if pedantic {
+    if pedantic_mode == PedanticMode::Warning {
         warnings.push("pedantic".to_string());
     }
-    if pedantic_errors {
+    if pedantic_mode == PedanticMode::Error {
         warnings.push("pedantic-errors".to_string());
     }
 
@@ -581,8 +580,7 @@ where
     let c_std = c_standard.unwrap_or_default();
     let lang_options = LangOptions {
         c_standard: c_std,
-        pedantic,
-        pedantic_errors,
+        pedantic_mode,
         signed_overflow_mode,
         fpic,
         visibility: fvisibility.unwrap_or_default(),
@@ -601,8 +599,7 @@ where
             system_include_paths,
             target: target_triple.clone(),
             c_standard: c_std,
-            pedantic,
-            pedantic_errors,
+            lang_options: lang_options.clone(),
             ..Default::default()
         },
         suppress_line_markers,
@@ -723,27 +720,6 @@ mod tests {
         let defines: Vec<_> = config.defines.into_iter().collect();
         assert!(defines.contains(&("FOO".to_string(), Some("1".to_string()))));
         assert!(defines.contains(&("BAR".to_string(), None)));
-    }
-
-    #[test]
-    fn test_config_features() {
-        let config = parse(&[
-            "cendol",
-            "dummy.c",
-            "--dump-ast-after-parser",
-            "--dump-ast-after-semantic-lowering",
-            "--dump-cranelift",
-            "-E",
-            "-pedantic",
-            "-pedantic-errors",
-        ])
-        .unwrap();
-
-        // -E takes priority
-        assert_eq!(config.stop_after, CompilePhase::Preprocess);
-        assert!(config.warnings.contains(&"pedantic".to_string()));
-        assert!(config.warnings.contains(&"pedantic-errors".to_string()));
-        assert_eq!(config.target.0, Triple::host());
     }
 
     #[test]

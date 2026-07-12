@@ -42,7 +42,7 @@ fn test_circular_include_in_memory() {
 
 // include_next Tests
 #[test]
-fn test_include_next_quoted() {
+fn test_include_next_paths() {
     let dir1 = TempDir::new().unwrap();
     let dir2 = TempDir::new().unwrap();
 
@@ -56,6 +56,7 @@ fn test_include_next_quoted() {
     {
         let mut file = File::create(&foo2_path).unwrap();
         writeln!(file, "#include_next \"foo.h\"").unwrap();
+        writeln!(file, "#include_next <foo.h>").unwrap();
         writeln!(file, "#define FOO_2 1").unwrap();
     }
 
@@ -68,41 +69,6 @@ fn test_include_next_quoted() {
     let mut config = PPConfig::default();
     config.quoted_include_paths.push(dir2.path().to_path_buf());
     config.quoted_include_paths.push(dir1.path().to_path_buf());
-
-    let (mut sm, mut diag) = setup_sm_and_de();
-    let source_id = sm.add_file(&main_path, None).unwrap();
-    let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
-    let _ = pp.process(source_id, &config).unwrap();
-
-    assert!(pp.is_macro_defined(StringId::new("FOO_1")));
-    assert!(pp.is_macro_defined(StringId::new("FOO_2")));
-}
-
-#[test]
-fn test_include_next_angled() {
-    let dir1 = TempDir::new().unwrap();
-    let dir2 = TempDir::new().unwrap();
-
-    let foo1_path = dir1.path().join("foo.h");
-    {
-        let mut file = File::create(&foo1_path).unwrap();
-        writeln!(file, "#define FOO_1 1").unwrap();
-    }
-
-    let foo2_path = dir2.path().join("foo.h");
-    {
-        let mut file = File::create(&foo2_path).unwrap();
-        writeln!(file, "#include_next <foo.h>").unwrap();
-        writeln!(file, "#define FOO_2 1").unwrap();
-    }
-
-    let main_path = dir2.path().join("main.c");
-    {
-        let mut file = File::create(&main_path).unwrap();
-        writeln!(file, "#include <foo.h>").unwrap();
-    }
-
-    let mut config = PPConfig::default();
     config.angled_include_paths.push(dir2.path().to_path_buf());
     config.angled_include_paths.push(dir1.path().to_path_buf());
 
@@ -157,85 +123,31 @@ fn test_computed_include_string() {
 }
 
 #[test]
-fn test_computed_include_angled() {
-    let files = vec![("foo.h", "OK"), ("main.c", "#define H <foo.h>\n#include H")];
-    let (_tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    assert!(diags.len() == 1, "Expected 1 diagnostic, got {:?}", diags);
-    assert!(
-        diags[0].contains("FileNotFound"),
-        "Expected FileNotFound, got {}",
-        diags[0]
-    );
-}
+fn test_computed_includes_errors() {
+    let cases = [
+        ("#define H <foo.h>\n#include H", "FileNotFound"),
+        ("#define L <\n#define R >\n#include L foo.h R", "FileNotFound"),
+        ("#define E\n#include E", "InvalidIncludePath"),
+        ("#define I 123\n#include I", "InvalidIncludePath"),
+        ("#define H \"foo.h\"\n#include H extra", "ExpectedEod"),
+        ("#define H <foo.h>\n#include H extra", "ExpectedEod"),
+        ("#define H <foo.h\n#include H", "InvalidIncludePath"),
+    ];
 
-#[test]
-fn test_computed_include_composite() {
-    let files = vec![("main.c", "#define L <\n#define R >\n#include L foo.h R")];
-    let (_tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    assert!(diags.len() == 1, "Expected 1 diagnostic, got {:?}", diags);
-    assert!(
-        diags[0].contains("FileNotFound"),
-        "Expected FileNotFound, got {}",
-        diags[0]
-    );
-}
-
-#[test]
-fn test_computed_include_empty() {
-    let files = vec![("main.c", "#define E\n#include E")];
-    let (_tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    assert!(diags.len() == 1, "Expected 1 diagnostic, got {:?}", diags);
-    assert!(
-        diags[0].contains("InvalidIncludePath"),
-        "Expected InvalidIncludePath, got {}",
-        diags[0]
-    );
-}
-
-#[test]
-fn test_computed_include_invalid() {
-    let files = vec![("main.c", "#define I 123\n#include I")];
-    let (_tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    assert!(diags.len() == 1, "Expected 1 diagnostic, got {:?}", diags);
-    assert!(
-        diags[0].contains("InvalidIncludePath"),
-        "Expected InvalidIncludePath, got {}",
-        diags[0]
-    );
-}
-
-#[test]
-fn test_computed_include_extra_tokens_string() {
-    let files = vec![("foo.h", ""), ("main.c", "#define H \"foo.h\"\n#include H extra")];
-    let (_tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    assert!(diags.len() == 1, "Expected 1 diagnostic, got {:?}", diags);
-    assert!(
-        diags[0].contains("ExpectedEod"),
-        "Expected ExpectedEod, got {}",
-        diags[0]
-    );
-}
-
-#[test]
-fn test_computed_include_extra_tokens_angled() {
-    let files = vec![("main.c", "#define H <foo.h>\n#include H extra")];
-    let (_tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    assert!(diags.len() == 1, "Expected 1 diagnostic, got {:?}", diags);
-    assert!(
-        diags[0].contains("ExpectedEod"),
-        "Expected ExpectedEod, got {}",
-        diags[0]
-    );
-}
-
-#[test]
-fn test_computed_include_missing_greater() {
-    let files = vec![("main.c", "#define H <foo.h\n#include H")];
-    let (_tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    assert!(diags.len() == 1, "Expected 1 diagnostic, got {:?}", diags);
-    assert!(
-        diags[0].contains("InvalidIncludePath"),
-        "Expected InvalidIncludePath, got {}",
-        diags[0]
-    );
+    for (src, expected_err) in cases {
+        let files = vec![("foo.h", ""), ("main.c", src)];
+        let (_tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
+        assert!(
+            diags.len() == 1,
+            "Expected 1 diagnostic for case '{}', got {:?}",
+            src,
+            diags
+        );
+        assert!(
+            diags[0].contains(expected_err),
+            "Expected {}, got {}",
+            expected_err,
+            diags[0]
+        );
+    }
 }

@@ -1,5 +1,7 @@
-use crate::pp::{PPToken, PPTokenFlags, PPTokenKind, dumper::PPDumper};
+use crate::pp::PPConfig;
+use crate::pp::{PPToken, PPTokenFlags, PPTokenKind, Preprocessor, dumper::PPDumper};
 use crate::source_manager::{FileKind, SourceLoc, SourceManager};
+use crate::tests::test_utils::setup_sm_and_de;
 
 #[test]
 fn test_dumper_with_includes() {
@@ -87,4 +89,56 @@ fn test_dumper_regression_out_of_bounds() {
 
     let output = String::from_utf8(buf).unwrap();
     assert!(output.contains("larger_offset_identifier"));
+}
+
+// helper function to produce what user see in preprocessed output, for testing PPDumper
+fn dump_pp_output(src: &str, suppress_line_markers: bool) -> String {
+    let (mut sm, mut diag) = setup_sm_and_de();
+    let config = PPConfig::default();
+    let source_id = sm.add_buffer(src.as_bytes().to_vec(), "<test>", None, FileKind::Real);
+
+    let mut preprocessor = Preprocessor::new(&mut sm, &mut diag, &config);
+    let tokens = preprocessor.process(source_id, &config).unwrap();
+
+    let significant_tokens: Vec<_> = tokens
+        .into_iter()
+        .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
+        .collect();
+
+    let mut buffer = Vec::new();
+
+    PPDumper::new(&significant_tokens, &sm, suppress_line_markers)
+        .dump(&mut buffer)
+        .unwrap();
+
+    String::from_utf8(buffer).unwrap()
+}
+
+#[test]
+fn test_dumper_snapshots() {
+    let simple_src = r#"
+int main() {
+    return 0;
+}
+"#;
+    insta::assert_snapshot!(dump_pp_output(simple_src, false), @r#"
+    # 1 "<test>" 1
+
+    int main() {
+     return 0;
+    }
+    "#);
+
+    let macro_src = r#"
+#define TEN 10
+int x = TEN;
+"#;
+    insta::assert_snapshot!(dump_pp_output(macro_src, false), @r#"
+    # 1 "<test>" 1
+
+
+    int x = 10;
+    "#);
+
+    insta::assert_snapshot!(dump_pp_output(macro_src, true), @"int x = 10;");
 }

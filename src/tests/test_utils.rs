@@ -160,7 +160,7 @@ pub(crate) fn run_pedantic_fail_with_message(source: &str, message: &str) {
     check_diagnostic_message_only(&driver, message);
 }
 
-pub(crate) fn run_pedantic_pass_with_diagnostic_message(source: &str, phase: CompilePhase, message: &str) {
+pub(crate) fn run_pedantic_pass_with_message(source: &str, phase: CompilePhase, message: &str) {
     let mut config = CompileConfig::from_virtual_file(source.to_string(), phase);
     config.lang_options.pedantic = true;
     config.preprocessor.pedantic = true;

@@ -216,3 +216,17 @@ fn test_pp_conditional_diagnostics() {
     check_diag("#if defined(FOO\n#endif", "InvalidConditionalExpression");
     check_diag("#if defined(5)\n#endif", "InvalidConditionalExpression");
 }
+
+#[test]
+fn test_pp_short_circuit_evaluation() {
+    assert_pp("#if 1 ? 1 : (1/0)\nOK\n#endif", "OK");
+    assert_pp("#if 0 ? (1/0) : 1\nOK\n#endif", "OK");
+    assert_pp("#if 3 != (-1 ? 3 : (0/0))\nFAIL\n#else\nOK\n#endif", "OK");
+    assert_pp("#if 0 && (1/0)\nFAIL\n#else\nOK\n#endif", "OK");
+    assert_pp("#if 1 || (1/0)\nOK\n#endif", "OK");
+}
+
+#[test]
+fn test_pp_conditional_unsigned_promotion() {
+    assert_pp("#if (1 ? 1 : 1u) < -1\nOK\n#else\nFAIL\n#endif", "OK");
+}

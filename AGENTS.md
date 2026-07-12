@@ -14,7 +14,7 @@ C source → Preprocessor → Lexer → Parser → Semantic Analysis → MIR →
 
 ```
 src/
-├── main.rs                   # CLI entry point (clap)
+├── main.rs                   # CLI entry point
 ├── lib.rs                    # Crate root — declares all modules
 ├── bin/                      # Additional binary utilities
 ├── ast.rs + ast/             # Flattened AST, literals, dumper, parsed types
@@ -26,7 +26,7 @@ src/
 ├── diagnostic.rs             # DiagnosticEngine, ParseError, severity levels
 ├── source_manager.rs         # Source file tracking, SourceSpan, SourceLoc
 ├── lang_options.rs           # Language standard options
-├── driver.rs + driver/       # Compiler driver, CLI, pipeline orchestration
+├── driver.rs + driver/       # Compiler driver, custom GCC-style CLI parser, pipeline orchestration
 └── tests.rs + tests/         # All unit tests (140+ test files)
 ```
 
@@ -36,7 +36,6 @@ src/
 | ----------------------------------------------------- | -------------------------------------------- |
 | `cranelift` / `cranelift-module` / `cranelift-object` | Native code generation                       |
 | `cranelift-frontend`                                  | Cranelift IR construction helpers            |
-| `clap`                                                | CLI argument parsing                         |
 | `insta`                                               | Snapshot testing                             |
 | `annotate-snippets`                                   | Rich diagnostic rendering                    |
 | `symbol_table`                                        | Interned strings (`NameId` / `GlobalSymbol`) |
@@ -258,6 +257,13 @@ run_pass_with_std(source, CompilePhase::Cranelift, CStandard::C23);
 run_fail_with_message_and_std(source, "message", CStandard::C23);
 ```
 
+### Preprocessor Test Helpers (`src/tests/pp_common.rs`)
+
+```rust
+assert_pp(source, expected_output)  // Assert that preprocessing matches exactly
+check_diag(source, expected_error)  // Assert that preprocessing emits a specific error/warning
+```
+
 ### Semantic Test Helpers (`src/tests/semantic_common.rs`)
 
 ```rust
@@ -326,6 +332,12 @@ fn test_assignment_to_const() { ... }
 #[test]
 fn test_addrof_rvalue() { ... }
 ```
+
+### Test Design Guidelines
+
+- **Consolidate Tests**: Group small, related test cases into a single `#[test]` function to reduce boilerplate and overhead (e.g., one test function for all invalid `#line` directives).
+- **Use Helpers First**: Always prefer phase-specific helpers (like `assert_pp` or `check_diag`) over manual setup (like `setup_pp_with_sm_and_diagnostics`).
+- **Regression Placement**: Place small, phase-specific regression tests directly in their corresponding feature test file (e.g., put PP short-circuit tests in `pp_conditionals.rs` instead of a standalone `regr_*.rs` file).
 
 ## Compile Phases
 

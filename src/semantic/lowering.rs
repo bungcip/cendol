@@ -111,7 +111,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     /// Report a semantic error and mark context as having errors
     /// Report a semantic error
     pub(crate) fn report_error(&mut self, span: SourceSpan, kind: SemanticError) {
-        let error = SemanticDiag::new(span, kind);
+        let mut error = SemanticDiag::new(span, kind);
+        error.level = Some(DiagnosticLevel::Error);
         for diag in error.into_diagnostic(self.registry) {
             self.diag.report_diagnostic(diag);
         }

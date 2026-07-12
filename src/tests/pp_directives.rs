@@ -33,30 +33,10 @@ OK
 }
 
 #[test]
-fn test_invalid_line_directive() {
-    let src = r#"
-#line invalid
-OK
-"#;
-    check_diag(src, "InvalidLineDirective");
-}
-
-#[test]
-fn test_line_directive_zero_line_number() {
-    let src = r#"
-#line 0
-OK
-"#;
-    check_diag(src, "InvalidLineDirective");
-}
-
-#[test]
-fn test_line_directive_malformed_filename() {
-    let src = r#"
-#line 100 invalid_filename
-OK
-"#;
-    check_diag(src, "InvalidLineDirective");
+fn test_invalid_line_directives() {
+    check_diag("#line invalid\nOK", "InvalidLineDirective");
+    check_diag("#line 0\nOK", "InvalidLineDirective");
+    check_diag("#line 100 invalid_filename\nOK", "InvalidLineDirective");
 }
 
 #[test]
@@ -121,12 +101,30 @@ fn test_pragma_error() {
 
 // _Pragma Operator
 #[test]
-fn test_pragma_operator_message() {
-    let src = r#"_Pragma("message(\"Hello Pragma Operator\")")"#;
-    check_diag(src, "Hello Pragma Operator");
-    // Should produce no tokens
-    let (tokens, _) = setup_pp_snapshot_with_diags(src);
-    assert!(tokens.is_empty());
+fn test_pragma_operator() {
+    // Basic _Pragma
+    let src1 = r#"_Pragma("message(\"Hello Pragma Operator\")")"#;
+    check_diag(src1, "Hello Pragma Operator");
+    let (tokens1, _) = setup_pp_snapshot_with_diags(src1);
+    assert!(tokens1.is_empty());
+
+    // _Pragma inside macro
+    let src2 = r#"
+#define M _Pragma("message(\"Inside Macro\")")
+M
+    "#;
+    check_diag(src2, "Inside Macro");
+    let (tokens2, _) = setup_pp_snapshot_with_diags(src2);
+    assert!(tokens2.is_empty());
+
+    // _Pragma inside #if
+    let src3 = r#"
+#if _Pragma("message(\"Inside If\")") 1
+#endif
+    "#;
+    check_diag(src3, "Inside If");
+    let (tokens3, _) = setup_pp_snapshot_with_diags(src3);
+    assert!(tokens3.is_empty());
 }
 
 #[test]
@@ -144,50 +142,25 @@ fn test_pragma_once_via_pragma_operator() {
 // push_macro / pop_macro
 #[test]
 fn test_push_pop_macro() {
-    let src = r#"
+    // Defined macro
+    let src1 = r#"
 #define M 1
 #pragma push_macro("M")
 #undef M
 #define M 2
 #pragma pop_macro("M")
-OK
-"#;
-    assert_pp(src, "OK");
-}
-
-#[test]
-fn test_pragma_operator_inside_macro() {
-    let src = r#"
-#define M _Pragma("message(\"Inside Macro\")")
 M
-    "#;
-    check_diag(src, "Inside Macro");
-    // Should produce no tokens
-    let (tokens, _) = setup_pp_snapshot_with_diags(src);
-    assert!(tokens.is_empty());
-}
+"#;
+    assert_pp(src1, "1");
 
-#[test]
-fn test_pragma_operator_in_if() {
-    let src = r#"
-#if _Pragma("message(\"Inside If\")") 1
-#endif
-    "#;
-    check_diag(src, "Inside If");
-    // Should produce no tokens
-    let (tokens, _) = setup_pp_snapshot_with_diags(src);
-    assert!(tokens.is_empty());
-}
-
-#[test]
-fn test_push_pop_undefined_macro() {
-    let src = r#"
+    // Undefined macro
+    let src2 = r#"
 #pragma push_macro("M")
 #define M 1
 #pragma pop_macro("M")
 M
 "#;
-    assert_pp(src, "M");
+    assert_pp(src2, "M");
 }
 
 // EOD (End of Directive) Tests

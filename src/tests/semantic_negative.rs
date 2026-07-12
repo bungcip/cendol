@@ -206,10 +206,6 @@ fn test_invalid_use_of_void_in_expr() {
     );
 }
 
-// NOTE: Currently the compiler accepts non-constant global initializers
-// This should be rejected but isn't yet implemented
-
-// Consolidated from guardian_linkage.rs and guardian_tentative_definitions.rs
 #[test]
 fn test_extern_followed_by_static_variable_mismatch() {
     run_fail_with_message(

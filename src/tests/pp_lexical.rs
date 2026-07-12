@@ -1,9 +1,7 @@
 use crate::ast::StringId;
-use crate::pp::{PPConfig, PPTokenFlags, PPTokenKind, Preprocessor, dumper::PPDumper};
-use crate::source_manager::FileKind;
+use crate::pp::{PPTokenFlags, PPTokenKind};
 use crate::test_tokens;
 use crate::tests::pp_common::{assert_pp, create_test_pp_lexer, setup_pp_with_sm_and_diagnostics};
-use crate::tests::test_utils::setup_sm_and_de;
 
 // Lexer basic tests
 #[test]
@@ -284,32 +282,41 @@ fn test_char_literal_escapes() {
 // UCNs
 #[test]
 fn test_ucn_identifier() {
-    let src = r#"
+    assert_pp(
+        r#"
 #define \u00E4 10
 int x = \u00E4;
-"#;
-    let (tokens, _, _) = setup_pp_with_sm_and_diagnostics(src, None).unwrap();
-    assert!(tokens.iter().any(|t| t.text == "10"));
+        "#,
+        "int x = 10;",
+    );
 }
 
 #[test]
 fn test_raw_utf8_identifier() {
-    let src = r#"
+    assert_pp(
+        r#"
 #define ä 20
 int x = ä;
-"#;
-    let (tokens, _, _) = setup_pp_with_sm_and_diagnostics(src, None).unwrap();
-    assert!(tokens.iter().any(|t| t.text == "20"));
+        "#,
+        "int x = 20;",
+    );
 }
 
 #[test]
 fn test_ucn_string_literal() {
-    let src = r#"
+    assert_pp(
+        r#"
 char *s = "\u00E4";
-"#;
-    let (tokens, _, _) = setup_pp_with_sm_and_diagnostics(src, None).unwrap();
-    let s_token = tokens.iter().find(|t| t.text.contains(r#"\u00E4"#));
-    assert!(s_token.is_some());
+        "#,
+        r#"char *s = "\u00E4";"#,
+    );
+}
+
+#[test]
+fn test_invalid_ucn() {
+    let src = r#"const char* s = "\uZZZZ";"#; // malformed UCN in string literal
+    let (_, _, diags) = setup_pp_with_sm_and_diagnostics(src, None).unwrap();
+    assert!(!diags.is_empty(), "Expected diagnostics for invalid UCN");
 }
 
 #[test]
@@ -430,75 +437,4 @@ fn test_u8_char_literal() {
     let mut lexer = create_test_pp_lexer(source);
 
     test_tokens!(lexer, ("u8'a'", PPTokenKind::CharLiteral(97)),);
-}
-
-fn dump_pp_output(src: &str, suppress_line_markers: bool) -> String {
-    let (mut sm, mut diag) = setup_sm_and_de();
-    let config = PPConfig::default();
-    let source_id = sm.add_buffer(src.as_bytes().to_vec(), "<test>", None, FileKind::Real);
-
-    let mut preprocessor = Preprocessor::new(&mut sm, &mut diag, &config);
-    let tokens = preprocessor.process(source_id, &config).unwrap();
-
-    let significant_tokens: Vec<_> = tokens
-        .into_iter()
-        .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
-        .collect();
-
-    let mut buffer = Vec::new();
-
-    PPDumper::new(&significant_tokens, &sm, suppress_line_markers)
-        .dump(&mut buffer)
-        .unwrap();
-
-    String::from_utf8(buffer).unwrap()
-}
-
-#[test]
-fn test_dump_preprocessed_output_simple() {
-    let src = r#"
-int main() {
-    return 0;
-}
-"#;
-    let content = dump_pp_output(src, false);
-    insta::assert_snapshot!(content, @r#"
-    # 1 "<test>" 1
-
-    int main() {
-     return 0;
-    }
-    "#);
-}
-
-#[test]
-fn test_dump_preprocessed_output_with_macros() {
-    let src = r#"
-#define TEN 10
-int x = TEN;
-"#;
-    let content = dump_pp_output(src, false);
-    insta::assert_snapshot!(content, @r#"
-    # 1 "<test>" 1
-
-
-    int x = 10;
-    "#);
-}
-
-#[test]
-fn test_dump_preprocessed_output_suppress_line_markers() {
-    let src = r#"
-#define TEN 10
-int x = TEN;
-"#;
-    let content = dump_pp_output(src, true);
-    insta::assert_snapshot!(content, @"int x = 10;");
-}
-
-#[test]
-fn test_invalid_ucn() {
-    let src = r#"const char* s = "\uZZZZ";"#; // malformed UCN in string literal
-    let (_, _, diags) = setup_pp_with_sm_and_diagnostics(src, None).unwrap();
-    assert!(!diags.is_empty(), "Expected diagnostics for invalid UCN");
 }

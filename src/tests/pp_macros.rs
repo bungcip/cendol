@@ -108,17 +108,12 @@ fn test_paren_comma_protection() {
 
 // GNU Extensions
 #[test]
-fn test_gnu_named_variadic_macros() {
+fn test_gnu_variadic_macros() {
+    // Named variadics
     assert_pp("#define M(a, args...) args\nM(1, 2, 3, 4)", "2, 3, 4");
-}
-
-#[test]
-fn test_gnu_comma_swallowing() {
+    // Comma swallowing (named)
     assert_pp("#define M(a, args...) a, ## args\nM(1)", "1");
-}
-
-#[test]
-fn test_gnu_comma_swallowing_va_args() {
+    // Comma swallowing (__VA_ARGS__)
     assert_pp(
         "#define LOG(fmt, ...) printf(fmt, ##__VA_ARGS__)\nLOG(\"foo\");\nLOG(\"bar\", 1);",
         "printf(\"foo\");\nprintf(\"bar\",1\n);",
@@ -152,16 +147,9 @@ fn test_magic_macros() {
 #[test]
 fn test_placemarker_concatenation() {
     assert_pp("#define M(a, b) a ## b\nM(, 1)", "1");
-}
-
-#[test]
-fn test_placemarker_concatenation_with_prefix() {
     assert_pp("#define M(a, b) X a ## b\nM(, 1)", "X 1");
-}
-
-#[test]
-fn test_placemarker_concatenation_chained() {
     assert_pp("#define M(a, b, c) a ## b ## c\nM(, , C)", "C");
+    assert_pp("#define __CONCAT(x,y) x ## y\n__CONCAT(a,)", "a");
 }
 
 // GCC Compatibility
@@ -171,10 +159,6 @@ fn test_gcc_version_macros() {
 }
 
 // Regression Tests for TinyExpr Fixes
-#[test]
-fn test_concat_with_empty_argument() {
-    assert_pp("#define __CONCAT(x,y) x ## y\n__CONCAT(a,)", "a");
-}
 
 #[test]
 fn test_gcc_extension_keywords() {

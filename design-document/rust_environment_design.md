@@ -11,7 +11,6 @@ The project carefully selects high-quality crates to handle specialized tasks:
 | Crate | Purpose |
 | :--- | :--- |
 | **Cranelift** | High-performance backend for code generation. |
-| **clap** | Robust command-line argument parsing. |
 | **symbol_table** | Fast and thread-safe string interning. |
 | **bitflags** | Efficient bit-field representation for flags (e.g., storage classes). |
 | **thiserror** | Minimalist error deriving for internal errors. |

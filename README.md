@@ -80,11 +80,16 @@ cargo run -- -o <output_file> <input_file>
 #### Other Options
 
 - `-E`: Preprocess only, output preprocessed source to stdout
+- `-c`: Compile only, output object file
+- `-g`: Generate debug information
+- `-s`: Strip symbol information
 - `-P`: Suppress line markers in preprocessor output
 - `-C`: Retain comments in preprocessor output
 - `-I <path>`: Add include search path
 - `-D <name>[=<value>]`: Define preprocessor macro
-- `--verbose`: Enable verbose diagnostic output
+- `-v, --verbose`: Enable verbose diagnostic output
+- `-w`: Suppress all warnings
+- `-pedantic`: Issue all warnings demanded by strict ISO C
 
 #### Examples
 

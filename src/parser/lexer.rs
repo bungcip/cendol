@@ -329,7 +329,6 @@ impl TokenKind {
             Asm => "asm",
             AutoType => "__auto_type",
             Label => "__label__",
-            VaArgs => "__VA_ARGS__",
             Plus => "+",
             Minus => "-",
             Star => "*",
@@ -392,7 +391,7 @@ impl std::fmt::Display for TokenKind {
                 LitVal::Int { value, .. } => write!(f, "{}", value),
                 LitVal::Float { bits, .. } => write!(f, "{}", f64::from_bits(bits)),
                 LitVal::String { value, .. } => write!(f, "\"{}\"", value),
-                LitVal::Char(c, _prefix) => {
+                LitVal::Char(c, ..) => {
                     if let Some(ch) = char::from_u32(c) {
                         write!(f, "'{}'", ch)
                     } else {

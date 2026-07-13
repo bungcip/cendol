@@ -21,6 +21,7 @@ use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::{Conversion, ScopeId};
 use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
 use rustc_hash::{FxHashMap, FxHashSet};
+use smallvec::SmallVec;
 use target_lexicon::Architecture;
 
 use crate::mir::GlobalId;
@@ -399,8 +400,9 @@ impl<'a> MirGen<'a> {
 
                 if current_depth > target_depth {
                     for i in (target_depth..current_depth).rev() {
-                        let cleanup = self.func_state().scope_cleanup[i].clone();
-                        for action in cleanup.into_iter().rev() {
+                        let actions: SmallVec<[CleanupAction; 8]> =
+                            SmallVec::from_slice(&self.func_state().scope_cleanup[i]);
+                        for action in actions.into_iter().rev() {
                             self.emit_cleanup(action);
                         }
                     }
@@ -414,8 +416,9 @@ impl<'a> MirGen<'a> {
 
                 if current_depth > target_depth {
                     for i in (target_depth..current_depth).rev() {
-                        let cleanup = self.func_state().scope_cleanup[i].clone();
-                        for action in cleanup.into_iter().rev() {
+                        let actions: SmallVec<[CleanupAction; 8]> =
+                            SmallVec::from_slice(&self.func_state().scope_cleanup[i]);
+                        for action in actions.into_iter().rev() {
                             self.emit_cleanup(action);
                         }
                     }
@@ -1012,9 +1015,9 @@ impl<'a> MirGen<'a> {
         });
 
         // Emit cleanups for all scopes being exited
-        let cleanups: Vec<Vec<CleanupAction>> = self.func_state().scope_cleanup.clone();
-        for scope_cleanup in cleanups.into_iter().rev() {
-            for action in scope_cleanup.into_iter().rev() {
+        for i in (0..self.func_state().scope_cleanup.len()).rev() {
+            let actions: SmallVec<[CleanupAction; 8]> = SmallVec::from_slice(&self.func_state().scope_cleanup[i]);
+            for action in actions.into_iter().rev() {
                 self.emit_cleanup(action);
             }
         }
@@ -1373,7 +1376,7 @@ impl<'a> MirGen<'a> {
             Builtin(BuiltinType),
             Pointer(QualType),
             Array(TypeRef, ArraySizeType),
-            Function(TypeRef, Vec<FunctionParam>, bool),
+            Function(TypeRef, SmallVec<[FunctionParam; 8]>, bool),
             Complex(TypeRef),
             Default,
         }
@@ -1395,7 +1398,7 @@ impl<'a> MirGen<'a> {
                     parameters,
                     is_variadic,
                     ..
-                } => Task::Function(*return_type, parameters.to_vec(), *is_variadic),
+                } => Task::Function(*return_type, SmallVec::from_slice(parameters), *is_variadic),
                 TypeKind::Complex { base_type } => Task::Complex(*base_type),
                 _ => Task::Default,
             }
@@ -2345,8 +2348,8 @@ impl<'a> MirGen<'a> {
 
         if current_depth > target_depth {
             for i in (target_depth..current_depth).rev() {
-                let cleanup = self.func_state().scope_cleanup[i].clone();
-                for action in cleanup.into_iter().rev() {
+                let actions: SmallVec<[CleanupAction; 8]> = SmallVec::from_slice(&self.func_state().scope_cleanup[i]);
+                for action in actions.into_iter().rev() {
                     self.emit_cleanup(action);
                 }
             }
@@ -2354,12 +2357,10 @@ impl<'a> MirGen<'a> {
 
         if let Some(target_count) = label_info.cleanups_in_scope {
             let target_scope_idx = target_depth.saturating_sub(1);
-            if target_scope_idx < self.func_state().scope_cleanup.len() {
-                let cleanup = self.func_state().scope_cleanup[target_scope_idx].clone();
-                if cleanup.len() > target_count {
-                    for action in cleanup[target_count..].iter().rev() {
-                        self.emit_cleanup(*action);
-                    }
+            if let Some(cleanup) = self.func_state().scope_cleanup.get(target_scope_idx).filter(|c| c.len() > target_count) {
+                let actions: SmallVec<[CleanupAction; 8]> = SmallVec::from_slice(&cleanup[target_count..]);
+                for action in actions.into_iter().rev() {
+                    self.emit_cleanup(action);
                 }
             }
         }

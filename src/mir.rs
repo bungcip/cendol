@@ -1125,8 +1125,8 @@ impl MirBuilder {
         self.next_type_id += 1;
 
         self.type_interner.insert(mir_type.clone(), type_id);
-        self.types.push(mir_type.clone());
-        self.module.types.push(mir_type);
+        self.module.types.push(mir_type.clone());
+        self.types.push(mir_type);
 
         type_id
     }
@@ -1137,12 +1137,13 @@ impl MirBuilder {
         // ⚡ Bolt: Correctly update the interner map when replacing a recursive type placeholder.
         let old_type = &self.types[type_id.index()];
         self.type_interner.remove(old_type);
-        self.type_interner.insert(mir_type.clone(), type_id);
 
         let idx = type_id.index();
         if idx < self.module.types.len() {
             self.module.types[idx] = mir_type.clone();
         }
+
+        self.type_interner.insert(mir_type.clone(), type_id);
         self.types[idx] = mir_type;
     }
 

@@ -5,6 +5,7 @@ pub mod pp_conditionals;
 pub mod pp_directives;
 pub mod pp_dumper_coverage;
 pub mod pp_embed;
+pub mod pp_error_coverage;
 pub mod pp_features;
 pub mod pp_includes;
 pub mod pp_internal;

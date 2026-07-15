@@ -558,22 +558,27 @@ impl<'a> MirGen<'a> {
         let NodeKind::Literal(lit) = self.ast.get_kind(lit_node) else {
             unreachable!()
         };
-        let (val, prefix) = if let LitVal::String { value, prefix } = lit.get_val() {
-            (value, prefix)
-        } else {
-            unreachable!()
-        };
+
         let fixed_size = if let ArraySizeType::Constant(s) = size {
             Some(*s)
         } else {
             None
         };
-        Operand::Constant(self.create_array_const_from_string(
-            val,
-            prefix,
-            fixed_size,
-            Some(QualType::unqualified(element_type)),
-        ))
+
+        lit.with_val(|val| {
+            let (content, prefix) = if let LitVal::String { value, prefix } = val {
+                (value, *prefix)
+            } else {
+                unreachable!()
+            };
+
+            Operand::Constant(self.create_array_const_from_string(
+                content,
+                prefix,
+                fixed_size,
+                Some(QualType::unqualified(element_type)),
+            ))
+        })
     }
 
     fn visit_list_init(&mut self, list: &InitializerList, target_qt: QualType, destination: Option<Place>) -> Operand {
@@ -633,12 +638,12 @@ impl<'a> MirGen<'a> {
 
     fn create_array_const_from_string(
         &mut self,
-        content: String,
+        content: &str,
         prefix: StrPrefix,
         fixed_size: Option<usize>,
         elem_ty: Option<QualType>,
     ) -> crate::mir::ConstValueId {
-        let parsed = lower_string_literal(&content, prefix);
+        let parsed = lower_string_literal(content, prefix);
         let size = fixed_size.unwrap_or(parsed.size);
 
         let (mir_elem_ty, layout) = if let Some(qt) = elem_ty {
@@ -672,7 +677,7 @@ impl<'a> MirGen<'a> {
         self.create_constant(array_ty, ConstValueKind::ArrayLiteral(constants))
     }
 
-    pub(super) fn visit_literal_string(&mut self, content: String, prefix: StrPrefix, qt: QualType) -> Operand {
+    pub(super) fn visit_literal_string(&mut self, content: &str, prefix: StrPrefix, qt: QualType) -> Operand {
         let mir_ty = self.lower_qual_type(qt);
         let elem_ty = self
             .registry

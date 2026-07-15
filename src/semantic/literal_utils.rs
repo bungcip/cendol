@@ -20,22 +20,7 @@ pub(crate) fn get_string_builtin_type(prefix: StrPrefix) -> BuiltinType {
     }
 }
 
-/// Calculate the number of elements in the string literal, including the null terminator.
-/// Bolt ⚡: Optimized metadata-only calculation to avoid full literal lowering.
-/// Standard string literals (None/Utf8) provide O(1) size via content.len().
-pub(crate) fn get_string_literal_size(content: &str, prefix: StrPrefix) -> usize {
-    match prefix {
-        StrPrefix::None | StrPrefix::Utf8 => content.len() + 1,
-        StrPrefix::Wide | StrPrefix::Utf32 => content.chars().count() + 1,
-        StrPrefix::Utf16 => {
-            let mut len = 0;
-            for c in content.chars() {
-                len += c.len_utf16();
-            }
-            len + 1
-        }
-    }
-}
+pub use crate::ast::literal::get_string_literal_size;
 
 pub(crate) fn lower_string_literal(content: &str, prefix: StrPrefix) -> StringLiteralValue {
     let builtin_type = get_string_builtin_type(prefix);

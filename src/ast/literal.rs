@@ -388,11 +388,43 @@ impl LitRef {
                 let suffix = FloatSuffix::from_u8(((p >> FLOAT_SUFFIX_SHIFT) & 0xF) as u8);
                 LitVal::from_f64(f32::from_bits(bits) as f64, suffix)
             }
-            TAG_INTERNED => {
-                let id = (self.payload() & INTERN_INDEX_MASK) as u32;
-                global_literal_table().read().unwrap().get(id).clone()
-            }
+            TAG_INTERNED => self.with_val(|v| v.clone()),
             _ => unreachable!(),
+        }
+    }
+
+    /// Access the literal value without always cloning (for interned values).
+    /// Bolt ⚡: Optimization: providing direct access to the global literal table via a closure
+    /// avoids expensive clones of large string literals in the hot path.
+    pub(crate) fn with_val<R>(self, f: impl FnOnce(&LitVal) -> R) -> R {
+        if self.tag() == TAG_INTERNED {
+            let id = (self.payload() & INTERN_INDEX_MASK) as u32;
+            let table = global_literal_table().read().unwrap();
+            f(table.get(id))
+        } else {
+            f(&self.get_val())
+        }
+    }
+
+    /// Retrieve metadata about a string literal without full value retrieval.
+    /// Bolt ⚡: Optimization: metadata-only access avoids heap allocations and RwLock
+    /// overhead for small literals, and avoids String clones for interned ones.
+    pub(crate) fn get_string_metadata(self) -> Option<(usize, StrPrefix)> {
+        match self.tag() {
+            TAG_SMALL_STR => {
+                let p = self.payload();
+                let len = ((p >> STR_LEN_SHIFT) & STR_LEN_MASK) as usize;
+                let prefix = StrPrefix::from_u8(((p >> STR_PREFIX_SHIFT) & STR_PREFIX_MASK) as u8);
+                Some((len + 1, prefix))
+            }
+            TAG_INTERNED => self.with_val(|val| {
+                if let LitVal::String { value, prefix } = val {
+                    Some((get_string_literal_size(value, *prefix), *prefix))
+                } else {
+                    None
+                }
+            }),
+            _ => None,
         }
     }
 
@@ -422,6 +454,23 @@ impl LitRef {
             TAG_FLOAT32 => LitKind::Float,
             TAG_INTERNED => LitKind::from_u8(((self.payload() >> INTERN_KIND_SHIFT) & INTERN_KIND_MASK) as u8),
             _ => unreachable!(),
+        }
+    }
+}
+
+/// Calculate the number of elements in the string literal, including the null terminator.
+/// Bolt ⚡: Optimized metadata-only calculation to avoid full literal lowering.
+/// Standard string literals (None/Utf8) provide O(1) size via content.len().
+pub fn get_string_literal_size(content: &str, prefix: StrPrefix) -> usize {
+    match prefix {
+        StrPrefix::None | StrPrefix::Utf8 => content.len() + 1,
+        StrPrefix::Wide | StrPrefix::Utf32 => content.chars().count() + 1,
+        StrPrefix::Utf16 => {
+            let mut len = 0;
+            for c in content.chars() {
+                len += c.len_utf16();
+            }
+            len + 1
         }
     }
 }

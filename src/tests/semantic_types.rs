@@ -772,3 +772,32 @@ fn test_attr_mode() {
     let output = run_c_code_with_output(source);
     assert_eq!(output, "1\n");
 }
+
+#[test]
+fn test_display_array_types() {
+    use crate::semantic::type_registry::TypeRegistry;
+    use target_lexicon::Triple;
+    use crate::semantic::types::BuiltinType;
+    use crate::semantic::ArraySizeType;
+    use crate::ast::NodeRef;
+
+    let mut reg = TypeRegistry::new(Triple::host());
+    let int_ty = reg.get_builtin_type(BuiltinType::Int);
+
+    // Constant size array
+    let arr_const = reg.array_of(int_ty, ArraySizeType::Constant(5));
+    assert_eq!(reg.display_type(arr_const), "int[5]");
+
+    // Incomplete array
+    let arr_incomplete = reg.array_of(int_ty, ArraySizeType::Incomplete);
+    assert_eq!(reg.display_type(arr_incomplete), "int[]");
+
+    // Star array
+    let arr_star = reg.array_of(int_ty, ArraySizeType::Star);
+    assert_eq!(reg.display_type(arr_star), "int[*]");
+
+    // VLA
+    let node_ref = NodeRef::new(1).unwrap();
+    let arr_vla = reg.array_of(int_ty, ArraySizeType::Variable(node_ref));
+    assert_eq!(reg.display_type(arr_vla), "int[*]");
+}

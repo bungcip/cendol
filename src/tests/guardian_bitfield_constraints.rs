@@ -89,3 +89,14 @@ fn test_bitfield_valid_types() {
     run_pass("struct S { char x : 1; };", CompilePhase::SemanticLowering);
     run_pass("struct S { long x : 1; };", CompilePhase::SemanticLowering);
 }
+
+#[test]
+fn test_bitfield_non_constant_width() {
+    let code = r#"
+        int foo();
+        struct S {
+            int a : foo();
+        };
+    "#;
+    run_fail_with_message(code, "bit-field width is not a constant expression");
+}

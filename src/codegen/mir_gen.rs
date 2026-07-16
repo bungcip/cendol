@@ -2357,7 +2357,12 @@ impl<'a> MirGen<'a> {
 
         if let Some(target_count) = label_info.cleanups_in_scope {
             let target_scope_idx = target_depth.saturating_sub(1);
-            if let Some(cleanup) = self.func_state().scope_cleanup.get(target_scope_idx).filter(|c| c.len() > target_count) {
+            if let Some(cleanup) = self
+                .func_state()
+                .scope_cleanup
+                .get(target_scope_idx)
+                .filter(|c| c.len() > target_count)
+            {
                 let actions: SmallVec<[CleanupAction; 8]> = SmallVec::from_slice(&cleanup[target_count..]);
                 for action in actions.into_iter().rev() {
                     self.emit_cleanup(action);

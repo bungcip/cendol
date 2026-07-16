@@ -20,14 +20,32 @@ fn test_pperror_display() {
         (PPError::ElifWithoutIf, "#elif without #if"),
         (PPError::ElseWithoutIf, "#else without #if"),
         (PPError::ExpectedEod, "Expected end of directive"),
-        (PPError::UnknownPragma(crate::ast::StringId::new("bar")), "Unknown pragma: bar"),
-        (PPError::InvalidPragmaPackValue(crate::ast::StringId::new("baz")), "Invalid Pragma Pack Value: baz"),
+        (
+            PPError::UnknownPragma(crate::ast::StringId::new("bar")),
+            "Unknown pragma: bar",
+        ),
+        (
+            PPError::InvalidPragmaPackValue(crate::ast::StringId::new("baz")),
+            "Invalid Pragma Pack Value: baz",
+        ),
         (PPError::PragmaError("qux".to_string()), "Pragma error: qux"),
-        (PPError::UnclosedConditional, "Unclosed preprocessor conditional directive"),
-        (PPError::InvalidUniversalCharacterName, "Invalid universal character name"),
+        (
+            PPError::UnclosedConditional,
+            "Unclosed preprocessor conditional directive",
+        ),
+        (
+            PPError::InvalidUniversalCharacterName,
+            "Invalid universal character name",
+        ),
         (PPError::DollarInIdentifier, "'$' in identifier or number"),
-        (PPError::DirectiveInMacroArgs, "embedding a directive within macro arguments is not portable"),
-        (PPError::ExpectedCommaInMacroParameterList, "expected comma in macro parameter list"),
+        (
+            PPError::DirectiveInMacroArgs,
+            "embedding a directive within macro arguments is not portable",
+        ),
+        (
+            PPError::ExpectedCommaInMacroParameterList,
+            "expected comma in macro parameter list",
+        ),
         (PPError::ExpectedRightParenAfterEllipsis, "expected ')' after \"...\""),
     ];
 
@@ -36,7 +54,10 @@ fn test_pperror_display() {
     }
 
     assert_eq!(
-        PPError::FileNotFound { path: "test.h".to_string() }.to_string(),
+        PPError::FileNotFound {
+            path: "test.h".to_string()
+        }
+        .to_string(),
         "File not found: test.h"
     );
     assert_eq!(

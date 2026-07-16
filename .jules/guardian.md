@@ -305,3 +305,8 @@ Action: Add `guardian_break_not_in_loop_or_switch.rs` to validate this invariant
 2024-05-18 - [Bit-field width and type validation constraints]
 
 Learning: [The C standard sets specific rules regarding bit-fields. Validation points for bit-fields during the semantic lowering phase are extremely specific. For instance, C23 and earlier standards prohibit an `_Atomic` type in a bitfield entirely and explicitly prevent zero-width bit-fields from having an assigned name. Invalid types (like floats) and width declarations that are non-constant expressions or exceed the types underlying size will also error. To capture the full spectrum of restrictions, exhaustive combinations must be checked in the negative tests for these invariants.] Action: [Ensure that any validation for memory layouts heavily constrains its testing for corner cases—such as zero-width bit-fields versus named zero-width bit-fields. Semantic tests shouldn't just check 'does not compile'; they must explicitly verify the error spans and messages (e.g., 'zero-width bit-field shall not specify a declarator', 'bit-field shall not have an atomic type', and 'width of bit-field exceeds width of its type'). Tests added in `guardian_bitfield_constraints.rs` capture these diagnostic expectations safely.]
+
+2024-05-14 - [Invalid _Atomic Usage]
+
+Learning: The _Atomic qualifier and _Atomic(type-name) specifier have specific restrictions in C11. They cannot be used with array, function, or void types. Furthermore, _Atomic(type-name) cannot be applied to an already atomic or qualified type.
+Action: Protect compiler invariants by validating that semantic errors for invalid atomic type specifiers and qualifiers are correctly generated.

@@ -136,6 +136,7 @@ pub mod guardian_function_return_type_constraints;
 pub mod guardian_generic;
 pub mod guardian_increment_completeness;
 pub mod guardian_index_completeness;
+pub mod guardian_invalid_atomic_specifier;
 pub mod guardian_modifiable_lvalue;
 pub mod guardian_noreturn_switch;
 pub mod guardian_npc_propagation;

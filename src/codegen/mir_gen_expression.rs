@@ -505,27 +505,28 @@ impl<'a> MirGen<'a> {
             return None;
         };
 
-        let val = literal_id.get_val();
-        let const_kind = match val {
-            LitVal::Int { value, .. } => ConstValueKind::Int(value),
-            LitVal::Char(val, _) => ConstValueKind::Int(val as i64),
-            LitVal::Nullptr => ConstValueKind::Null,
-            LitVal::True => ConstValueKind::Bool(true),
-            LitVal::False => ConstValueKind::Bool(false),
-            lit @ LitVal::Float { suffix, .. } if suffix.is_imaginary() => {
-                let MirType::Record { field_types, .. } = self.mb.get_type(mir_ty) else {
-                    unreachable!("Complex float must lower to a record type");
-                };
-                let elem_ty = field_types[0];
-                let zero = self.create_constant(elem_ty, ConstValueKind::Float(0.0));
-                let imag = self.create_constant(elem_ty, ConstValueKind::Float(lit.as_f64()));
-                ConstValueKind::StructLiteral(vec![(0, zero), (1, imag)])
-            }
-            lit @ LitVal::Float { .. } => ConstValueKind::Float(lit.as_f64()),
-            LitVal::String { value, prefix } => return Some(self.visit_literal_string(value, prefix, ty)),
-        };
+        literal_id.with_val(|val| {
+            let const_kind = match val {
+                LitVal::Int { value, .. } => ConstValueKind::Int(*value),
+                LitVal::Char(val, _) => ConstValueKind::Int(*val as i64),
+                LitVal::Nullptr => ConstValueKind::Null,
+                LitVal::True => ConstValueKind::Bool(true),
+                LitVal::False => ConstValueKind::Bool(false),
+                lit @ LitVal::Float { suffix, .. } if suffix.is_imaginary() => {
+                    let MirType::Record { field_types, .. } = self.mb.get_type(mir_ty) else {
+                        unreachable!("Complex float must lower to a record type");
+                    };
+                    let elem_ty = field_types[0];
+                    let zero = self.create_constant(elem_ty, ConstValueKind::Float(0.0));
+                    let imag = self.create_constant(elem_ty, ConstValueKind::Float(lit.as_f64()));
+                    ConstValueKind::StructLiteral(vec![(0, zero), (1, imag)])
+                }
+                lit @ LitVal::Float { .. } => ConstValueKind::Float(lit.as_f64()),
+                LitVal::String { value, prefix } => return Some(self.visit_literal_string(value, *prefix, ty)),
+            };
 
-        Some(Operand::Constant(self.create_constant(mir_ty, const_kind)))
+            Some(Operand::Constant(self.create_constant(mir_ty, const_kind)))
+        })
     }
 
     fn visit_unary_op(&mut self, op: UnaryOp, expr: NodeRef, mir_ty: TypeId) -> Operand {

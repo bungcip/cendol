@@ -775,11 +775,11 @@ fn test_attr_mode() {
 
 #[test]
 fn test_display_array_types() {
-    use crate::semantic::type_registry::TypeRegistry;
-    use target_lexicon::Triple;
-    use crate::semantic::types::BuiltinType;
-    use crate::semantic::ArraySizeType;
     use crate::ast::NodeRef;
+    use crate::semantic::ArraySizeType;
+    use crate::semantic::type_registry::TypeRegistry;
+    use crate::semantic::types::BuiltinType;
+    use target_lexicon::Triple;
 
     let mut reg = TypeRegistry::new(Triple::host());
     let int_ty = reg.get_builtin_type(BuiltinType::Int);

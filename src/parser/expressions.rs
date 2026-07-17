@@ -106,7 +106,7 @@ impl PrattParser {
 }
 
 /// Main expression parsing using Pratt algorithm
-pub(crate) fn parse_expression(parser: &mut Parser, min_bp: BindingPower) -> Result<ParsedNodeRef, ParseDiag> {
+pub(crate) fn parse_expression(parser: &mut Parser, min_bp: BindingPower) -> Result<PNodeRef, ParseDiag> {
     let mut left = parse_prefix(parser)?;
 
     while let Some(token) = parser.try_current_token() {
@@ -126,11 +126,11 @@ pub(crate) fn parse_expression(parser: &mut Parser, min_bp: BindingPower) -> Res
         left = match token.kind {
             TokenKind::Increment => {
                 let span = parser.ast.get_node(left).span.merge(token.span);
-                parser.push_node(ParsedNodeKind::PostIncrement(left), span)
+                parser.push_node(PNodeKind::PostIncrement(left), span)
             }
             TokenKind::Decrement => {
                 let span = parser.ast.get_node(left).span.merge(token.span);
-                parser.push_node(ParsedNodeKind::PostDecrement(left), span)
+                parser.push_node(PNodeKind::PostDecrement(left), span)
             }
             TokenKind::LeftParen => parse_function_call(parser, left)?,
             TokenKind::LeftBracket => parse_index_access(parser, left)?,
@@ -145,7 +145,7 @@ pub(crate) fn parse_expression(parser: &mut Parser, min_bp: BindingPower) -> Res
                     .get_node(left)
                     .span
                     .merge(parser.ast.get_node(false_expr).span);
-                parser.push_node(ParsedNodeKind::TernaryOp(left, true_expr, false_expr), span)
+                parser.push_node(PNodeKind::TernaryOp(left, true_expr, false_expr), span)
             }
             _ => {
                 let next_bp = if assoc == Associativity::Left {
@@ -161,17 +161,17 @@ pub(crate) fn parse_expression(parser: &mut Parser, min_bp: BindingPower) -> Res
     Ok(left)
 }
 
-fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_prefix(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let token = parser.current_token()?;
 
     match token.kind {
         TokenKind::Identifier(symbol) => {
             parser.advance();
-            Ok(parser.push_node(ParsedNodeKind::Ident(symbol), token.span))
+            Ok(parser.push_node(PNodeKind::Ident(symbol), token.span))
         }
         TokenKind::Literal(lit) => {
             parser.advance();
-            Ok(parser.push_node(ParsedNodeKind::Literal(lit), token.span))
+            Ok(parser.push_node(PNodeKind::Literal(lit), token.span))
         }
         TokenKind::LeftParen => {
             parser.advance();
@@ -208,7 +208,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
             parser.advance();
             let (label, _) = parser.expect_name()?;
             let span = SourceSpan::new(token.span.start(), parser.previous_token_span().end());
-            Ok(parser.push_node(ParsedNodeKind::LabelAddr(label), span))
+            Ok(parser.push_node(PNodeKind::LabelAddr(label), span))
         }
 
         TokenKind::Generic => parse_generic_selection(parser),
@@ -233,7 +233,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     }
 }
 
-fn parse_unary_operator(parser: &mut Parser, mut token: Token) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_unary_operator(parser: &mut Parser, mut token: Token) -> Result<PNodeRef, ParseDiag> {
     let mut ops = smallvec::SmallVec::<[(UnaryOp, SourceSpan); 8]>::new();
 
     loop {
@@ -279,18 +279,13 @@ fn parse_unary_operator(parser: &mut Parser, mut token: Token) -> Result<ParsedN
 
     for (op, span) in ops.into_iter().rev() {
         let full_span = span.merge(parser.ast.get_node(current_node).span);
-        current_node = parser.push_node(ParsedNodeKind::UnaryOp(op, current_node), full_span);
+        current_node = parser.push_node(PNodeKind::UnaryOp(op, current_node), full_span);
     }
 
     Ok(current_node)
 }
 
-fn parse_infix(
-    parser: &mut Parser,
-    left: ParsedNodeRef,
-    token: Token,
-    min_bp: BindingPower,
-) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_infix(parser: &mut Parser, left: PNodeRef, token: Token, min_bp: BindingPower) -> Result<PNodeRef, ParseDiag> {
     let right = parser.parse_expression(min_bp)?;
 
     let op = match token.kind {
@@ -329,15 +324,15 @@ fn parse_infix(
 
     let span = parser.ast.get_node(left).span.merge(parser.ast.get_node(right).span);
     let kind = if op.is_assignment() {
-        ParsedNodeKind::Assignment(op, left, right)
+        PNodeKind::Assignment(op, left, right)
     } else {
-        ParsedNodeKind::BinaryOp(op, left, right)
+        PNodeKind::BinaryOp(op, left, right)
     };
     Ok(parser.push_node(kind, span))
 }
 
 /// Parse GNU statement expression: ({ compound-statement })
-fn parse_gnu_statement_expression(parser: &mut Parser, start_loc: SourceLoc) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_gnu_statement_expression(parser: &mut Parser, start_loc: SourceLoc) -> Result<PNodeRef, ParseDiag> {
     // Parse the compound statement (parse_compound_statement expects LeftBrace)
     let (compound_stmt, _) = super::statements::parse_compound_statement(parser)?;
 
@@ -351,55 +346,55 @@ fn parse_gnu_statement_expression(parser: &mut Parser, start_loc: SourceLoc) -> 
     let end_loc = right_paren_token.span.end();
     let span = SourceSpan::new(start_loc, end_loc);
 
-    let node = parser.push_node(ParsedNodeKind::GnuStatementExpr(compound_stmt, result_expr), span);
+    let node = parser.push_node(PNodeKind::GnuStatementExpr(compound_stmt, result_expr), span);
     Ok(node)
 }
 
 /// Extract the last expression from a compound statement for GNU statement expressions
-fn extract_last_expr_from_compound_stmt(parser: &mut Parser, compound_stmt: ParsedNodeRef) -> ParsedNodeRef {
+fn extract_last_expr_from_compound_stmt(parser: &mut Parser, compound_stmt: PNodeRef) -> PNodeRef {
     // Get the compound statement node
     let compound_stmt_node = parser.ast.get_node(compound_stmt);
 
-    if let ParsedNodeKind::CompoundStmt(statements, _) = &compound_stmt_node.kind {
+    if let PNodeKind::CompoundStmt(statements, _) = &compound_stmt_node.kind {
         // Find the last expression statement in the compound statement
         for &stmt in statements.iter().rev() {
             let stmt = parser.ast.get_node(stmt);
-            if let ParsedNodeKind::ExpressionStmt(Some(expr)) = &stmt.kind {
+            if let PNodeKind::ExpressionStmt(Some(expr)) = &stmt.kind {
                 return *expr;
             }
         }
 
         // If no expression statement found, create a dummy expression
         // This shouldn't happen in valid GNU statement expressions
-        let dummy_expr = parser.push_node(ParsedNodeKind::Dummy, compound_stmt_node.span);
+        let dummy_expr = parser.push_node(PNodeKind::Dummy, compound_stmt_node.span);
         return dummy_expr;
     }
 
     // Fallback: create a dummy expression
-    parser.push_node(ParsedNodeKind::Dummy, compound_stmt_node.span)
+    parser.push_node(PNodeKind::Dummy, compound_stmt_node.span)
 }
 
-fn parse_function_call(parser: &mut Parser, function: ParsedNodeRef) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_function_call(parser: &mut Parser, function: PNodeRef) -> Result<PNodeRef, ParseDiag> {
     let args = super::utils::parse_expr_list(parser, BindingPower::ASSIGNMENT)?;
     let right_paren = parser.expect(TokenKind::RightParen)?;
     let span = parser.ast.get_node(function).span.merge(right_paren.span);
-    Ok(parser.push_node(ParsedNodeKind::FunctionCall(function, args.into_boxed_slice()), span))
+    Ok(parser.push_node(PNodeKind::FunctionCall(function, args.into_boxed_slice()), span))
 }
 
-fn parse_index_access(parser: &mut Parser, array: ParsedNodeRef) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_index_access(parser: &mut Parser, array: PNodeRef) -> Result<PNodeRef, ParseDiag> {
     let index = parser.parse_expr_min()?;
     let right_bracket = parser.expect(TokenKind::RightBracket)?;
     let span = parser.ast.get_node(array).span.merge(right_bracket.span);
-    Ok(parser.push_node(ParsedNodeKind::IndexAccess(array, index), span))
+    Ok(parser.push_node(PNodeKind::IndexAccess(array, index), span))
 }
 
-fn parse_member_access(parser: &mut Parser, object: ParsedNodeRef, is_arrow: bool) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_member_access(parser: &mut Parser, object: PNodeRef, is_arrow: bool) -> Result<PNodeRef, ParseDiag> {
     let (symbol, span) = parser.expect_name()?;
     let span = parser.ast.get_node(object).span.merge(span);
-    Ok(parser.push_node(ParsedNodeKind::MemberAccess(object, symbol, is_arrow), span))
+    Ok(parser.push_node(PNodeKind::MemberAccess(object, symbol, is_arrow), span))
 }
 
-fn parse_generic_selection(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_generic_selection(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Generic)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
 
@@ -417,13 +412,13 @@ fn parse_generic_selection(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDi
 
         p.expect(TokenKind::Colon)?;
         let result_expr = p.parse_expression(BindingPower::COMMA)?;
-        Ok(ParsedGenericAssociation { type_name, result_expr })
+        Ok(PGenericAssociation { type_name, result_expr })
     })?;
 
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.replace_node(
         dummy,
-        ParsedNodeKind::GenericSelection(controlling_expr, associations.into_boxed_slice()),
+        PNodeKind::GenericSelection(controlling_expr, associations.into_boxed_slice()),
         SourceSpan::new(start, end),
     ))
 }
@@ -431,13 +426,13 @@ fn parse_generic_selection(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDi
 /// Parse compound literal given the type and start location
 pub(crate) fn parse_compound_literal(
     parser: &mut Parser,
-    parsed_type: ParsedType,
+    parsed_type: PType,
     start: SourceSpan,
-) -> Result<ParsedNodeRef, ParseDiag> {
+) -> Result<PNodeRef, ParseDiag> {
     let init = super::declarations::parse_initializer(parser)?;
     let end_loc = parser.current_token_span()?;
     let span = start.merge(end_loc);
-    let node = parser.push_node(ParsedNodeKind::CompoundLiteral(parsed_type, init), span);
+    let node = parser.push_node(PNodeKind::CompoundLiteral(parsed_type, init), span);
     Ok(node)
 }
 
@@ -475,57 +470,57 @@ fn is_type_name_in_parens(parser: &mut Parser) -> bool {
     }
 }
 
-fn parse_sizeof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_sizeof(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Sizeof)?.span;
 
     let (kind, end) = if is_type_name_in_parens(parser) {
         parser.expect(TokenKind::LeftParen)?;
         let ty = parse_type_name(parser)?;
         let right_paren_end = parser.expect(TokenKind::RightParen)?.span;
-        (ParsedNodeKind::SizeOfType(ty), right_paren_end)
+        (PNodeKind::SizeOfType(ty), right_paren_end)
     } else {
         let expr = parser.parse_expression(BindingPower::UNARY)?;
         let end = parser.ast.get_node(expr).span;
-        (ParsedNodeKind::SizeOfExpr(expr), end)
+        (PNodeKind::SizeOfExpr(expr), end)
     };
 
     Ok(parser.push_node(kind, start.merge(end)))
 }
 
-fn parse_alignof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_alignof(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Alignof)?.span.start();
 
     let (kind, end) = if is_type_name_in_parens(parser) {
         parser.expect(TokenKind::LeftParen)?;
         let ty = parse_type_name(parser)?;
         let end = parser.expect(TokenKind::RightParen)?.span.end();
-        (ParsedNodeKind::AlignOfType(ty), end)
+        (PNodeKind::AlignOfType(ty), end)
     } else {
         let expr = parser.parse_expression(BindingPower::UNARY)?;
         let end = parser.ast.get_node(expr).span.end();
-        (ParsedNodeKind::AlignOfExpr(expr), end)
+        (PNodeKind::AlignOfExpr(expr), end)
     };
 
     Ok(parser.push_node(kind, SourceSpan::new(start, end)))
 }
 
-pub(crate) fn parse_cast(parser: &mut Parser, ty: ParsedType, span: SourceSpan) -> Result<ParsedNodeRef, ParseDiag> {
+pub(crate) fn parse_cast(parser: &mut Parser, ty: PType, span: SourceSpan) -> Result<PNodeRef, ParseDiag> {
     let expr = parser.parse_expression(BindingPower::CAST)?;
     let span = span.merge(parser.ast.get_node(expr).span);
-    Ok(parser.push_node(ParsedNodeKind::Cast(ty, expr), span))
+    Ok(parser.push_node(PNodeKind::Cast(ty, expr), span))
 }
 
-fn parse_builtin_va_arg(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_builtin_va_arg(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::BuiltinVaArg)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let expr = parser.parse_expr_assignment()?;
     parser.expect(TokenKind::Comma)?;
     let ty = parse_type_name(parser)?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
-    Ok(parser.push_node(ParsedNodeKind::BuiltinVaArg(ty, expr), SourceSpan::new(start, end)))
+    Ok(parser.push_node(PNodeKind::BuiltinVaArg(ty, expr), SourceSpan::new(start, end)))
 }
 
-fn parse_builtin_choose_expr(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_builtin_choose_expr(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::BuiltinChooseExpr)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let cond = parser.parse_expr_assignment()?;
@@ -535,77 +530,74 @@ fn parse_builtin_choose_expr(parser: &mut Parser) -> Result<ParsedNodeRef, Parse
     let false_expr = parser.parse_expr_assignment()?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.push_node(
-        ParsedNodeKind::BuiltinChooseExpr(cond, true_expr, false_expr),
+        PNodeKind::BuiltinChooseExpr(cond, true_expr, false_expr),
         SourceSpan::new(start, end),
     ))
 }
 
-fn parse_builtin_complex(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_builtin_complex(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::BuiltinComplex)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let real = parser.parse_expr_assignment()?;
     parser.expect(TokenKind::Comma)?;
     let imag = parser.parse_expr_assignment()?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
-    Ok(parser.push_node(ParsedNodeKind::BuiltinComplex(real, imag), SourceSpan::new(start, end)))
+    Ok(parser.push_node(PNodeKind::BuiltinComplex(real, imag), SourceSpan::new(start, end)))
 }
 
-fn parse_builtin_bit_cast(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_builtin_bit_cast(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::BuiltinBitCast)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let ty = parse_type_name(parser)?;
     parser.expect(TokenKind::Comma)?;
     let expr = parser.parse_expr_assignment()?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
-    Ok(parser.push_node(ParsedNodeKind::BuiltinBitCast(ty, expr), SourceSpan::new(start, end)))
+    Ok(parser.push_node(PNodeKind::BuiltinBitCast(ty, expr), SourceSpan::new(start, end)))
 }
 
-fn parse_builtin_convertvector(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_builtin_convertvector(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::BuiltinConvertVector)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let expr = parser.parse_expr_assignment()?;
     parser.expect(TokenKind::Comma)?;
     let ty = parse_type_name(parser)?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
-    Ok(parser.push_node(
-        ParsedNodeKind::BuiltinConvertVector(expr, ty),
-        SourceSpan::new(start, end),
-    ))
+    Ok(parser.push_node(PNodeKind::BuiltinConvertVector(expr, ty), SourceSpan::new(start, end)))
 }
 
-fn parse_builtin_offsetof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_builtin_offsetof(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::BuiltinOffsetof)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let ty = parse_type_name(parser)?;
     parser.expect(TokenKind::Comma)?;
 
     let span = parser.previous_token_span();
-    let mut node = parser.push_node(ParsedNodeKind::Dummy, span);
+    let mut node = parser.push_node(PNodeKind::Dummy, span);
     let (name, span) = parser.expect_name()?;
-    node = parser.push_node(ParsedNodeKind::MemberAccess(node, name, false), span);
+    node = parser.push_node(PNodeKind::MemberAccess(node, name, false), span);
 
     loop {
         match parser.current_token_kind() {
             Some(TokenKind::Dot) => {
                 parser.advance();
                 let (name, span) = parser.expect_name()?;
-                node = parser.push_node(ParsedNodeKind::MemberAccess(node, name, false), span);
+                node = parser.push_node(PNodeKind::MemberAccess(node, name, false), span);
             }
             Some(TokenKind::LeftBracket) => {
                 parser.advance();
                 let index = parser.parse_expr_min()?;
                 let end = parser.expect(TokenKind::RightBracket)?.span;
-                node = parser.push_node(ParsedNodeKind::IndexAccess(node, index), end);
+                node = parser.push_node(PNodeKind::IndexAccess(node, index), end);
             }
             _ => break,
         }
     }
 
     let end = parser.expect(TokenKind::RightParen)?.span.end();
-    Ok(parser.push_node(ParsedNodeKind::BuiltinOffsetof(ty, node), SourceSpan::new(start, end)))
+    Ok(parser.push_node(PNodeKind::BuiltinOffsetof(ty, node), SourceSpan::new(start, end)))
 }
 
-fn parse_builtin_types_compatible_p(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_builtin_types_compatible_p(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::BuiltinTypesCompatibleP)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let ty1 = parse_type_name(parser)?;
@@ -613,7 +605,7 @@ fn parse_builtin_types_compatible_p(parser: &mut Parser) -> Result<ParsedNodeRef
     let ty2 = parse_type_name(parser)?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.push_node(
-        ParsedNodeKind::BuiltinTypesCompatibleP(Box::new((ty1, ty2))),
+        PNodeKind::BuiltinTypesCompatibleP(Box::new((ty1, ty2))),
         SourceSpan::new(start, end),
     ))
 }

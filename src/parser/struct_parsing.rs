@@ -34,14 +34,14 @@ pub(super) fn parse_record_spec(parser: &mut Parser, is_union: bool) -> Result<T
 }
 
 /// Parse struct declaration list
-fn parse_struct_decl_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, ParseDiag> {
+fn parse_struct_decl_list(parser: &mut Parser) -> Result<Vec<PNodeRef>, ParseDiag> {
     let mut declarations = Vec::new();
 
     while !parser.at_eof() && !parser.is_token(TokenKind::RightBrace) {
         if let Some(token) = parser.try_current_token()
             && let TokenKind::PragmaPack(kind) = token.kind
         {
-            let node = parser.push_node(ParsedNodeKind::PragmaPack(kind), token.span);
+            let node = parser.push_node(PNodeKind::PragmaPack(kind), token.span);
             declarations.push(node);
             parser.advance();
             continue;
@@ -50,7 +50,7 @@ fn parse_struct_decl_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, Par
         if let Some(token) = parser.try_current_token()
             && let TokenKind::PragmaVisibility(kind) = token.kind
         {
-            let node = parser.push_node(ParsedNodeKind::PragmaVisibility(kind), token.span);
+            let node = parser.push_node(PNodeKind::PragmaVisibility(kind), token.span);
             declarations.push(node);
             parser.advance();
             continue;
@@ -64,7 +64,7 @@ fn parse_struct_decl_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, Par
 }
 
 /// Parse struct declaration
-fn parse_struct_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_struct_decl(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     // Check for _Static_assert (C11)
     if let Some(token) = parser.accept(TokenKind::StaticAssert) {
         return super::declarations::parse_static_assert(parser, token);
@@ -86,22 +86,22 @@ fn parse_struct_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
         (decls, end.span)
     };
 
-    let decl = ParsedDecl {
+    let decl = PDecl {
         specifiers,
         init_declarators,
     };
 
     let span = start.merge(end);
-    Ok(parser.push_node(ParsedNodeKind::Declaration(decl), span))
+    Ok(parser.push_node(PNodeKind::Declaration(decl), span))
 }
 
-fn parse_init_declarators(parser: &mut Parser) -> Result<ThinVec<ParsedInitDeclarator>, ParseDiag> {
+fn parse_init_declarators(parser: &mut Parser) -> Result<ThinVec<PInitDeclarator>, ParseDiag> {
     let mut decls = ThinVec::new();
     loop {
         let start = parser.current_token_span_or_empty();
         let declarator = super::declarator::parse_declarator(parser, true)?;
         let span = start.merge(parser.last_token_span().unwrap_or(start));
-        decls.push(ParsedInitDeclarator {
+        decls.push(PInitDeclarator {
             declarator,
             initializer: None,
             span,

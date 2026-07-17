@@ -9,7 +9,7 @@ use super::{ParseDiag, Parser, ParserState, TokenKind};
 use crate::ast::*;
 
 /// Parse a parenthesized expression: (expression)
-pub(crate) fn parse_parenthesized_expr(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+pub(crate) fn parse_parenthesized_expr(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     parser.expect(TokenKind::LeftParen)?;
     let expr = parser.parse_expr_min()?;
     parser.expect(TokenKind::RightParen)?;
@@ -17,10 +17,7 @@ pub(crate) fn parse_parenthesized_expr(parser: &mut Parser) -> Result<ParsedNode
 }
 
 /// Parse a comma-separated list of expressions with specified binding power
-pub(crate) fn parse_expr_list(
-    parser: &mut Parser,
-    binding_power: BindingPower,
-) -> Result<Vec<ParsedNodeRef>, ParseDiag> {
+pub(crate) fn parse_expr_list(parser: &mut Parser, binding_power: BindingPower) -> Result<Vec<PNodeRef>, ParseDiag> {
     let mut args = Vec::new();
     if parser.is_token(TokenKind::RightParen) {
         return Ok(args);

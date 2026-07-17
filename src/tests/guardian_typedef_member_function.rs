@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::run_fail_with_diagnostic;
+use crate::tests::test_utils::{run_fail_with_diagnostic, run_pass};
 
 #[test]
 fn test_typedef_member_function_prohibited() {
@@ -25,7 +25,7 @@ struct S {
 #[test]
 fn test_typedef_member_function_pointer_allowed() {
     // A pointer to a function IS allowed.
-    crate::tests::test_utils::run_pass(
+    run_pass(
         r#"
 typedef void func_t(void);
 struct S {

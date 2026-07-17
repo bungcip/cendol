@@ -11,13 +11,11 @@ pub mod pp_includes;
 pub mod pp_internal;
 pub mod pp_lexical;
 pub mod pp_macros;
-pub mod pp_pedantic_directives;
-pub mod pp_pedantic_dollar;
+pub mod pp_pedantic;
 pub mod pp_pragma_once_dedup;
 
 // Parser
-pub mod parser_alignof_gnu;
-pub mod parser_builtin_convertvector;
+
 pub mod parser_c23_attributes;
 pub mod parser_decl;
 pub mod parser_declarator_coverage;

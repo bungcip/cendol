@@ -8,7 +8,7 @@ use crate::ast::literal::{FloatSuffix, LitVal};
 use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, StringId, UnaryOp};
 use crate::semantic::conversions::{integer_promotion, usual_arithmetic_conversions};
 use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
-use crate::semantic::types::ArraySizeType;
+use crate::semantic::types::ArraySize;
 use crate::semantic::{BuiltinType, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeKind, TypeRef, TypeRegistry};
 
 fn has_unresolved_typeof(registry: &TypeRegistry, ty: TypeRef) -> bool {
@@ -238,7 +238,7 @@ impl<'a> ConstEvalCtx<'a> {
                     _ => self.registry.type_char,
                 };
                 self.registry
-                    .find_array_type(builtin_base, ArraySizeType::Constant(size))
+                    .find_array_type(builtin_base, ArraySize::Constant(size))
                     .unwrap_or(self.registry.type_error)
             }
             LitVal::Nullptr => self.registry.type_nullptr_t,

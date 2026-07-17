@@ -14,7 +14,7 @@ use hashbrown::HashMap;
 use smallvec::{SmallVec, smallvec};
 
 use crate::ast::literal::{LitKind, LitRef, LitVal, StrPrefix};
-use crate::ast::parsed::{ParsedDecl, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, TypeSpec};
+use crate::ast::parsed::{PDecl, PFunctionDef, PNodeKind, PNodeRef, TypeSpec};
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, DiagnosticLevel};
 use crate::lang_options::{CStandard, LangOptions, PedanticMode, Visibility};
@@ -23,8 +23,8 @@ use crate::semantic::errors::{SemanticDiag, SemanticError};
 use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
 use crate::semantic::symbol_table::{DefinitionState, SymbolClass, SymbolTableError};
 use crate::semantic::{
-    ArraySizeType, BuiltinFunctionKind, BuiltinType, EnumConstant, Namespace, RecordMember, ScopeId, SymbolKind,
-    SymbolRef, SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry, Variable,
+    ArraySize, BuiltinFunctionKind, BuiltinType, EnumConstant, Namespace, RecordMember, ScopeId, SymbolKind, SymbolRef,
+    SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry, Variable,
 };
 use crate::semantic::{FunctionParam, QualType};
 use crate::source_manager::SourceSpan;
@@ -32,7 +32,7 @@ use std::sync::Arc;
 
 /// Context for the semantic lowering phase
 pub(crate) struct LowerCtx<'a, 'src> {
-    pub(crate) parsed_ast: &'a ParsedAst,
+    pub(crate) parsed_ast: &'a PAst,
     pub(crate) ast: &'a mut Ast,
     pub(crate) diag: &'src mut DiagnosticEngine,
     pub(crate) symbol_table: &'a mut SymbolTable,
@@ -76,7 +76,7 @@ struct DeclaratorContext {
 impl<'a, 'src> LowerCtx<'a, 'src> {
     /// Create a new lowering context
     fn new(
-        parsed_ast: &'a ParsedAst,
+        parsed_ast: &'a PAst,
         ast: &'a mut Ast,
         diag: &'src mut DiagnosticEngine,
         symbol_table: &'a mut SymbolTable,
@@ -161,7 +161,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         base.merge_qualifiers(add)
     }
 
-    fn check_static_assert(&mut self, cond: ParsedNodeRef, msg: Option<ParsedNodeRef>, span: SourceSpan) {
+    fn check_static_assert(&mut self, cond: PNodeRef, msg: Option<PNodeRef>, span: SourceSpan) {
         let cond_node = self.visit_expression(cond);
         let msg_node = msg.map(|m| self.visit_expression(m));
 
@@ -241,9 +241,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn resolve_alignment(&mut self, align: &ParsedAlignmentSpec, span: SourceSpan) -> Option<u16> {
+    fn resolve_alignment(&mut self, align: &PAlignmentSpec, span: SourceSpan) -> Option<u16> {
         match align {
-            ParsedAlignmentSpec::Type(parsed_ty) => {
+            PAlignmentSpec::Type(parsed_ty) => {
                 let qt = self.visit_type(*parsed_ty, span);
                 let base_align = match self.registry.ensure_layout(qt.ty()) {
                     Ok(layout) => Some(layout.alignment),
@@ -265,7 +265,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 base_align.max(info.alignment)
             }
-            ParsedAlignmentSpec::Expr(expr) => {
+            PAlignmentSpec::Expr(expr) => {
                 let lowered_expr = self.visit_expression(*expr);
                 let Some(val) = self.const_ctx().eval_int(lowered_expr) else {
                     self.report_error(span, SemanticError::NonConstantAlignment);
@@ -286,7 +286,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn lower_array_declarator(
         &mut self,
         base: DeclaratorRef,
-        size: &ParsedArraySize,
+        size: &PArraySize,
         element_qt: QualType,
         span: SourceSpan,
         decl_ctx: DeclaratorContext,
@@ -315,10 +315,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.report_error(span, SemanticError::ArrayQualifierOutsideParameter);
             }
         } else if (has_static || !quals.is_empty())
-            && !matches!(
-                self.parsed_ast.parsed_types.get_decl(base),
-                ParsedDeclarator::Identifier(..)
-            )
+            && !matches!(self.parsed_ast.parsed_types.get_decl(base), PDeclarator::Identifier(..))
         {
             if has_static {
                 self.report_error(span, SemanticError::ArrayStaticNotOutermost);
@@ -333,7 +330,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         QualType::new(ty, element_qt.qualifiers())
     }
 
-    fn resolve_atomic_specifier(&mut self, pty: ParsedType, span: SourceSpan) -> Result<QualType, SemanticDiag> {
+    fn resolve_atomic_specifier(&mut self, pty: PType, span: SourceSpan) -> Result<QualType, SemanticDiag> {
         let qt = self.lower_type(pty, span, false)?;
 
         let reason = if qt.is_array() {
@@ -361,7 +358,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         &mut self,
         is_union: bool,
         tag: Option<NameId>,
-        definition: &Option<Vec<ParsedNodeRef>>,
+        definition: &Option<Vec<PNodeRef>>,
         attributes: &[DeclSpec],
         span: SourceSpan,
     ) -> Result<QualType, SemanticDiag> {
@@ -397,8 +394,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn resolve_enum_specifier(
         &mut self,
         tag: Option<NameId>,
-        enumerators: &Option<Vec<ParsedNodeRef>>,
-        underlying_type: Option<ParsedType>,
+        enumerators: &Option<Vec<PNodeRef>>,
+        underlying_type: Option<PType>,
         span: SourceSpan,
     ) -> Result<QualType, SemanticDiag> {
         let underlying_qt = underlying_type
@@ -421,7 +418,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             for &enum_node in enums {
                 let node = self.parsed_ast.get_node(enum_node);
-                let ParsedNodeKind::EnumConstant(name, value_expr) = &node.kind else {
+                let PNodeKind::EnumConstant(name, value_expr) = &node.kind else {
                     unreachable!()
                 };
 
@@ -559,12 +556,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn count_semantic_nodes(&self, node: ParsedNodeRef) -> usize {
+    fn count_semantic_nodes(&self, node: PNodeRef) -> usize {
         let node = self.parsed_ast.get_node(node);
         match &node.kind {
-            ParsedNodeKind::Declaration(decl) => decl.init_declarators.len().max(1),
-            ParsedNodeKind::TranslationUnit(decls) => decls.len(),
-            ParsedNodeKind::GnuLocalLabel(_) => 0,
+            PNodeKind::Declaration(decl) => decl.init_declarators.len().max(1),
+            PNodeKind::TranslationUnit(decls) => decls.len(),
+            PNodeKind::GnuLocalLabel(_) => 0,
             _ => 1,
         }
     }
@@ -595,7 +592,7 @@ pub(crate) struct DeclSpecInfo {
     pub(crate) has_c11_alignment: bool,
     pub(crate) has_auto: bool,
     pub(crate) is_packed: bool,
-    pub(crate) cleanup_func: Option<ParsedNodeRef>,
+    pub(crate) cleanup_func: Option<PNodeRef>,
     pub(crate) is_transparent_union: bool,
     pub(crate) visibility: Option<crate::lang_options::Visibility>,
     pub(crate) alias: Option<NameId>,
@@ -619,7 +616,7 @@ fn finalize_tentative_definitions(
             if matches!(
                 registry.get(entry.type_info.ty()).kind,
                 TypeKind::Array {
-                    size: ArraySizeType::Incomplete,
+                    size: ArraySize::Incomplete,
                     ..
                 }
             ) {
@@ -641,7 +638,7 @@ fn finalize_tentative_definitions(
 
 /// Main entry point for semantic lowering on ParsedAst
 pub(crate) fn visit_ast(
-    parsed_ast: &ParsedAst,
+    parsed_ast: &PAst,
     ast: &mut Ast,
     diag: &mut DiagnosticEngine,
     symbol_table: &mut SymbolTable,
@@ -662,11 +659,11 @@ pub(crate) fn visit_ast(
 }
 
 impl<'a, 'src> LowerCtx<'a, 'src> {
-    fn visit_node(&mut self, node: ParsedNodeRef) -> SmallVec<[NodeRef; 1]> {
+    fn visit_node(&mut self, node: PNodeRef) -> SmallVec<[NodeRef; 1]> {
         self.visit_node_entry(node, None)
     }
 
-    fn visit_node_entry(&mut self, node: ParsedNodeRef, target_slots: Option<&[NodeRef]>) -> SmallVec<[NodeRef; 1]> {
+    fn visit_node_entry(&mut self, node: PNodeRef, target_slots: Option<&[NodeRef]>) -> SmallVec<[NodeRef; 1]> {
         let parsed_node = self.parsed_ast.get_node(node);
         let span = parsed_node.span;
 
@@ -680,27 +677,27 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         match &parsed_node.kind {
-            ParsedNodeKind::TranslationUnit(children) => {
+            PNodeKind::TranslationUnit(children) => {
                 smallvec![self.visit_translation_unit(children, span)]
             }
-            ParsedNodeKind::CompoundStmt(stmts, scope_id) => {
+            PNodeKind::CompoundStmt(stmts, scope_id) => {
                 smallvec![self.visit_compound_statement(stmts, target_slots, span, *scope_id)]
             }
-            ParsedNodeKind::Declaration(decl) => self.visit_declaration(decl, span, target_slots),
-            ParsedNodeKind::FunctionDef(func_def) => {
+            PNodeKind::Declaration(decl) => self.visit_declaration(decl, span, target_slots),
+            PNodeKind::FunctionDef(func_def) => {
                 let res_node = self.get_or_push_slot(target_slots, span);
                 self.visit_function_definition(func_def, res_node, span);
                 smallvec![res_node]
             }
-            ParsedNodeKind::PragmaPack(kind) => {
+            PNodeKind::PragmaPack(kind) => {
                 self.handle_pragma_pack(*kind);
                 smallvec![]
             }
-            ParsedNodeKind::PragmaVisibility(kind) => {
+            PNodeKind::PragmaVisibility(kind) => {
                 self.handle_pragma_visibility(*kind);
                 smallvec![]
             }
-            ParsedNodeKind::GnuLocalLabel(names) => {
+            PNodeKind::GnuLocalLabel(names) => {
                 for &name in names.iter() {
                     if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
                         self.symbol_table.define_label(name, self.registry.type_void, span)
@@ -718,18 +715,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             // ... other top level kinds ...
             // Simple leaves
-            ParsedNodeKind::Literal(l) => {
+            PNodeKind::Literal(l) => {
                 lower_simple!(NodeKind::Literal(*l))
             }
-            ParsedNodeKind::Ident(name) => {
+            PNodeKind::Ident(name) => {
                 lower_simple!(NodeKind::Ident(*name, self.resolve_ident(*name, span)))
             }
-            ParsedNodeKind::Break => lower_simple!(NodeKind::Break),
-            ParsedNodeKind::Continue => lower_simple!(NodeKind::Continue),
-            ParsedNodeKind::EmptyStmt => smallvec![],
+            PNodeKind::Break => lower_simple!(NodeKind::Break),
+            PNodeKind::Continue => lower_simple!(NodeKind::Continue),
+            PNodeKind::EmptyStmt => smallvec![],
 
             // Unary expressions
-            ParsedNodeKind::UnaryOp(op, e) => {
+            PNodeKind::UnaryOp(op, e) => {
                 let mut e = *e;
                 let res_node = self.get_or_push_slot(target_slots, span);
                 let mut ops = Vec::new();
@@ -737,7 +734,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 loop {
                     let child = self.parsed_ast.get_node(e);
-                    if let ParsedNodeKind::UnaryOp(child_op, child_e) = &child.kind {
+                    if let PNodeKind::UnaryOp(child_op, child_e) = &child.kind {
                         let inner_node = self.push_dummy(child.span);
                         ops.push((*child_op, child.span, inner_node));
                         e = *child_e;
@@ -756,65 +753,65 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 smallvec![res_node]
             }
-            ParsedNodeKind::PostIncrement(e) => {
+            PNodeKind::PostIncrement(e) => {
                 lower_simple!(NodeKind::PostIncrement(self.visit_expression(*e)))
             }
-            ParsedNodeKind::PostDecrement(e) => {
+            PNodeKind::PostDecrement(e) => {
                 lower_simple!(NodeKind::PostDecrement(self.visit_expression(*e)))
             }
-            ParsedNodeKind::SizeOfExpr(e) => {
+            PNodeKind::SizeOfExpr(e) => {
                 lower_simple!(NodeKind::SizeOfExpr(self.visit_expression(*e)))
             }
-            ParsedNodeKind::Default(s) => {
+            PNodeKind::Default(s) => {
                 lower_simple!(NodeKind::Default(self.visit_single_statement(*s)))
             }
 
             // Binary expressions
-            ParsedNodeKind::BinaryOp(op, l, r) => lower_simple!(NodeKind::BinaryOp(
+            PNodeKind::BinaryOp(op, l, r) => lower_simple!(NodeKind::BinaryOp(
                 *op,
                 self.visit_expression(*l),
                 self.visit_expression(*r)
             )),
-            ParsedNodeKind::Assignment(op, l, r) => lower_simple!(NodeKind::Assignment(
+            PNodeKind::Assignment(op, l, r) => lower_simple!(NodeKind::Assignment(
                 *op,
                 self.visit_expression(*l),
                 self.visit_expression(*r)
             )),
-            ParsedNodeKind::IndexAccess(l, r) => lower_simple!(NodeKind::IndexAccess(
+            PNodeKind::IndexAccess(l, r) => lower_simple!(NodeKind::IndexAccess(
                 self.visit_expression(*l),
                 self.visit_expression(*r)
             )),
-            ParsedNodeKind::MemberAccess(b, m, a) => {
+            PNodeKind::MemberAccess(b, m, a) => {
                 lower_simple!(NodeKind::MemberAccess(self.visit_expression(*b), *m, *a))
             }
-            ParsedNodeKind::BuiltinComplex(real, imag) => lower_simple!(NodeKind::BuiltinComplex(
+            PNodeKind::BuiltinComplex(real, imag) => lower_simple!(NodeKind::BuiltinComplex(
                 self.visit_expression(*real),
                 self.visit_expression(*imag)
             )),
-            ParsedNodeKind::DoWhile(b, c) => lower_simple!(NodeKind::DoWhile(
+            PNodeKind::DoWhile(b, c) => lower_simple!(NodeKind::DoWhile(
                 self.visit_single_statement(*b),
                 self.visit_expression(*c)
             )),
-            ParsedNodeKind::Switch(c, b) => lower_simple!(NodeKind::Switch(
+            PNodeKind::Switch(c, b) => lower_simple!(NodeKind::Switch(
                 self.visit_expression(*c),
                 self.visit_single_statement(*b)
             )),
-            ParsedNodeKind::Case(e, s) => lower_simple!(NodeKind::Case(
+            PNodeKind::Case(e, s) => lower_simple!(NodeKind::Case(
                 self.visit_expression(*e),
                 self.visit_single_statement(*s)
             )),
-            ParsedNodeKind::StaticAssert(c, m) => lower_simple!(NodeKind::StaticAssert(
+            PNodeKind::StaticAssert(c, m) => lower_simple!(NodeKind::StaticAssert(
                 self.visit_expression(*c),
                 m.map(|msg| self.visit_expression(msg))
             )),
 
             // Ternary expressions
-            ParsedNodeKind::TernaryOp(c, t, e) => lower_simple!(NodeKind::TernaryOp(
+            PNodeKind::TernaryOp(c, t, e) => lower_simple!(NodeKind::TernaryOp(
                 self.visit_expression(*c),
                 self.visit_expression(*t),
                 self.visit_expression(*e)
             )),
-            ParsedNodeKind::CaseRange(s, e, stmt) => {
+            PNodeKind::CaseRange(s, e, stmt) => {
                 self.report_warning(span, SemanticError::GnuCaseRange);
                 lower_simple!(NodeKind::CaseRange(
                     self.visit_expression(*s),
@@ -822,7 +819,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     self.visit_single_statement(*stmt)
                 ))
             }
-            ParsedNodeKind::BuiltinChooseExpr(c, t, e) => {
+            PNodeKind::BuiltinChooseExpr(c, t, e) => {
                 let res_node = self.get_or_push_slot(target_slots, span);
 
                 let lowered_cond = self.visit_expression(*c);
@@ -853,16 +850,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
 
             // Control flow with scopes
-            ParsedNodeKind::If(stmt) => lower_simple!(NodeKind::If(IfStmt {
+            PNodeKind::If(stmt) => lower_simple!(NodeKind::If(IfStmt {
                 condition: self.visit_expression(stmt.condition),
                 then_branch: self.visit_single_statement(stmt.then_branch),
                 else_branch: stmt.else_branch.map(|b| self.visit_single_statement(b)),
             })),
-            ParsedNodeKind::While(stmt) => lower_simple!(NodeKind::While(WhileStmt {
+            PNodeKind::While(stmt) => lower_simple!(NodeKind::While(WhileStmt {
                 condition: self.visit_expression(stmt.condition),
                 body: self.visit_single_statement(stmt.body),
             })),
-            ParsedNodeKind::For(stmt) => {
+            PNodeKind::For(stmt) => {
                 let res_node = self.get_or_push_slot(target_slots, span);
                 let scope_id = stmt.scope_id;
                 let old_scope = self.symbol_table.current_scope();
@@ -875,7 +872,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     let parsed_init = self.parsed_ast.get_node(init);
                     let mut init_decl_count = 0;
 
-                    if let ParsedNodeKind::Declaration(decl) = &parsed_init.kind {
+                    if let PNodeKind::Declaration(decl) = &parsed_init.kind {
                         init_decl_count = decl.init_declarators.len();
                         for spec in &decl.specifiers {
                             if let DeclSpec::StorageClass(sc) = spec
@@ -922,29 +919,29 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
 
             // Type-related expressions
-            ParsedNodeKind::Cast(t, e) => {
+            PNodeKind::Cast(t, e) => {
                 lower_simple!(NodeKind::Cast(self.visit_type(*t, span), self.visit_expression(*e)))
             }
-            ParsedNodeKind::BuiltinVaArg(t, e) => lower_simple!(NodeKind::BuiltinVaArg(
+            PNodeKind::BuiltinVaArg(t, e) => lower_simple!(NodeKind::BuiltinVaArg(
                 self.visit_type(*t, span),
                 self.visit_expression(*e)
             )),
-            ParsedNodeKind::BuiltinOffsetof(t, e) => lower_simple!(NodeKind::BuiltinOffsetof(
+            PNodeKind::BuiltinOffsetof(t, e) => lower_simple!(NodeKind::BuiltinOffsetof(
                 self.visit_type(*t, span),
                 self.visit_expression(*e)
             )),
-            ParsedNodeKind::BuiltinBitCast(t, e) => lower_simple!(NodeKind::BuiltinBitCast(
+            PNodeKind::BuiltinBitCast(t, e) => lower_simple!(NodeKind::BuiltinBitCast(
                 self.visit_type(*t, span),
                 self.visit_expression(*e)
             )),
-            ParsedNodeKind::BuiltinConvertVector(e, t) => lower_simple!(NodeKind::BuiltinConvertVector(
+            PNodeKind::BuiltinConvertVector(e, t) => lower_simple!(NodeKind::BuiltinConvertVector(
                 self.visit_expression(*e),
                 self.visit_type(*t, span)
             )),
-            ParsedNodeKind::SizeOfType(t) => lower_simple!(NodeKind::SizeOfType(self.visit_type(*t, span))),
-            ParsedNodeKind::AlignOfType(t) => lower_simple!(NodeKind::AlignOfType(self.visit_type(*t, span))),
-            ParsedNodeKind::AlignOfExpr(e) => lower_simple!(NodeKind::AlignOfExpr(self.visit_expression(*e))),
-            ParsedNodeKind::BuiltinTypesCompatibleP(boxed) => {
+            PNodeKind::SizeOfType(t) => lower_simple!(NodeKind::SizeOfType(self.visit_type(*t, span))),
+            PNodeKind::AlignOfType(t) => lower_simple!(NodeKind::AlignOfType(self.visit_type(*t, span))),
+            PNodeKind::AlignOfExpr(e) => lower_simple!(NodeKind::AlignOfExpr(self.visit_expression(*e))),
+            PNodeKind::BuiltinTypesCompatibleP(boxed) => {
                 let (t1, t2) = &**boxed;
                 lower_simple!(NodeKind::BuiltinTypesCompatibleP(
                     self.visit_type(*t1, span),
@@ -953,13 +950,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
 
             // Statement wrappers
-            ParsedNodeKind::Return(e) => {
+            PNodeKind::Return(e) => {
                 lower_simple!(NodeKind::Return(e.map(|x| self.visit_expression(x))))
             }
-            ParsedNodeKind::ExpressionStmt(e) => {
+            PNodeKind::ExpressionStmt(e) => {
                 lower_simple!(NodeKind::ExpressionStmt(e.map(|x| self.visit_expression(x))))
             }
-            ParsedNodeKind::AsmStmt(e) => {
+            PNodeKind::AsmStmt(e) => {
                 let child_start = self.ast.next_node_ref();
                 let output_len = e.outputs.len() as u16;
                 let input_len = e.inputs.len() as u16;
@@ -993,37 +990,37 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     is_volatile: e.is_volatile,
                 }))
             }
-            ParsedNodeKind::Goto(n) => {
+            PNodeKind::Goto(n) => {
                 lower_simple!(NodeKind::Goto(*n, self.resolve_label(*n, span)))
             }
-            ParsedNodeKind::ComputedGoto(e) => {
+            PNodeKind::ComputedGoto(e) => {
                 lower_simple!(NodeKind::ComputedGoto(self.visit_expression(*e)))
             }
-            ParsedNodeKind::LabelAddr(n) => {
+            PNodeKind::LabelAddr(n) => {
                 lower_simple!(NodeKind::LabelAddr(*n, self.resolve_label(*n, span)))
             }
-            ParsedNodeKind::Label(n, i) => {
+            PNodeKind::Label(n, i) => {
                 let sym = self.define_label(*n, span);
                 lower_simple!(NodeKind::Label(*n, self.visit_single_statement(*i), sym))
             }
 
             // Complex variants extracted to helpers
-            ParsedNodeKind::GnuStatementExpr(stmt, _) => {
+            PNodeKind::GnuStatementExpr(stmt, _) => {
                 if self.lang_opts.is_pedantic() {
                     self.report_warning(span, SemanticError::GnuStatementExpression);
                 }
                 lower_simple!(self.visit_gnu_statement_expr(*stmt, span))
             }
-            ParsedNodeKind::FunctionCall(func, args) => {
+            PNodeKind::FunctionCall(func, args) => {
                 lower_simple!(self.visit_function_call(*func, args.as_ref(), span))
             }
-            ParsedNodeKind::CompoundLiteral(ty, init) => {
+            PNodeKind::CompoundLiteral(ty, init) => {
                 lower_simple!(self.visit_compound_literal(*ty, *init, span))
             }
-            ParsedNodeKind::GenericSelection(ctrl, assocs) => {
+            PNodeKind::GenericSelection(ctrl, assocs) => {
                 lower_simple!(self.visit_generic_selection(*ctrl, assocs.as_ref(), span))
             }
-            ParsedNodeKind::InitializerList(inits) => {
+            PNodeKind::InitializerList(inits) => {
                 lower_simple!(self.visit_initializer_list(inits.as_ref(), span))
             }
 
@@ -1061,7 +1058,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn visit_translation_unit(&mut self, children: &[ParsedNodeRef], span: SourceSpan) -> NodeRef {
+    fn visit_translation_unit(&mut self, children: &[PNodeRef], span: SourceSpan) -> NodeRef {
         self.symbol_table.set_current_scope(ScopeId::GLOBAL);
         let tu_node = self.push_dummy(span);
 
@@ -1071,9 +1068,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         for &child in children {
             let child = self.parsed_ast.get_node(child);
             let count = match &child.kind {
-                ParsedNodeKind::PragmaPack(..) | ParsedNodeKind::PragmaVisibility(..) => 0,
-                ParsedNodeKind::FunctionDef(..) | ParsedNodeKind::StaticAssert(..) => 1,
-                ParsedNodeKind::Declaration(decl) => {
+                PNodeKind::PragmaPack(..) | PNodeKind::PragmaVisibility(..) => 0,
+                PNodeKind::FunctionDef(..) | PNodeKind::StaticAssert(..) => 1,
+                PNodeKind::Declaration(decl) => {
                     if !decl.init_declarators.is_empty() {
                         decl.init_declarators.len()
                     } else if let Some(DeclSpec::TypeSpec(ts)) =
@@ -1130,7 +1127,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn visit_compound_statement(
         &mut self,
-        stmts: &[ParsedNodeRef],
+        stmts: &[PNodeRef],
         target_slots: Option<&[NodeRef]>,
         span: SourceSpan,
         scope_id: ScopeId,
@@ -1178,21 +1175,21 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         node
     }
 
-    fn visit_top_level_node(&mut self, node: ParsedNodeRef, target_slots: &[NodeRef]) {
+    fn visit_top_level_node(&mut self, node: PNodeRef, target_slots: &[NodeRef]) {
         let node = self.parsed_ast.get_node(node);
         let span = node.span;
 
         match &node.kind {
-            ParsedNodeKind::Declaration(decl) => {
+            PNodeKind::Declaration(decl) => {
                 self.visit_declaration(decl, span, Some(target_slots));
             }
-            ParsedNodeKind::FunctionDef(func_def) => {
+            PNodeKind::FunctionDef(func_def) => {
                 if let Some(target) = target_slots.first() {
                     self.visit_function_definition(func_def, *target, span);
                 }
             }
             _ => {
-                if let ParsedNodeKind::StaticAssert(expr, msg) = &node.kind
+                if let PNodeKind::StaticAssert(expr, msg) = &node.kind
                     && let Some(target) = target_slots.first()
                 {
                     let lowered_expr = self.visit_expression(*expr);
@@ -1332,7 +1329,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         // Create type: const char[N]
         let char_type = self.registry.type_char;
-        let array_size = ArraySizeType::Constant(name_len + 1);
+        let array_size = ArraySize::Constant(name_len + 1);
         let array_type = self.registry.array_of(char_type, array_size);
 
         let qt = QualType::new(array_type, TypeQualifiers::CONST);
@@ -1419,7 +1416,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         func_sym
     }
 
-    fn visit_function_definition(&mut self, func_def: &ParsedFunctionDef, node: NodeRef, span: SourceSpan) {
+    fn visit_function_definition(&mut self, func_def: &PFunctionDef, node: NodeRef, span: SourceSpan) {
         let mut spec_info = self.visit_decl_specs(&func_def.specifiers, span);
         let mut base_qt = spec_info
             .base_type
@@ -1543,7 +1540,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn visit_declaration(
         &mut self,
-        decl: &ParsedDecl,
+        decl: &PDecl,
         span: SourceSpan,
         target_slots: Option<&[NodeRef]>,
     ) -> SmallVec<[NodeRef; 1]> {
@@ -1708,7 +1705,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn visit_single_declarator(
         &mut self,
-        init: &ParsedInitDeclarator,
+        init: &PInitDeclarator,
         base_qt: QualType,
         spec_info: &mut DeclSpecInfo,
         span: SourceSpan,
@@ -1722,7 +1719,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if self.registry.get(base_qt.ty()).kind == TypeKind::AutoType
             && !matches!(
                 self.parsed_ast.parsed_types.get_decl(init.declarator),
-                ParsedDeclarator::Identifier(..)
+                PDeclarator::Identifier(..)
             )
         {
             self.report_error(
@@ -1872,7 +1869,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         name: NameId,
         mut qt: QualType,
         spec_info: &DeclSpecInfo,
-        init: Option<ParsedNodeRef>,
+        init: Option<PNodeRef>,
         span: SourceSpan,
     ) {
         let is_global = self.symbol_table.current_scope() == ScopeId::GLOBAL;
@@ -1971,7 +1968,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let mut cleanup_sym = None;
         if let Some(cleanup_node) = spec_info.cleanup_func {
             let cleanup_span = self.parsed_ast.get_node(cleanup_node).span;
-            let ParsedNodeKind::Ident(cleanup_name) = self.parsed_ast.get_node(cleanup_node).kind else {
+            let PNodeKind::Ident(cleanup_name) = self.parsed_ast.get_node(cleanup_node).kind else {
                 unreachable!();
             };
 
@@ -2039,7 +2036,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let element_type = if let TypeKind::Array {
             element_type,
-            size: ArraySizeType::Incomplete,
+            size: ArraySize::Incomplete,
         } = self.registry.get(qt.ty()).kind
         {
             Some(element_type)
@@ -2054,10 +2051,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             if len == 0 && self.lang_opts.c_standard >= CStandard::C23 {
                 self.report_error(span, SemanticError::ZeroOrNegativeSizeArray { name });
             }
-            qt = QualType::new(
-                self.registry.array_of(et, ArraySizeType::Constant(len)),
-                qt.qualifiers(),
-            );
+            qt = QualType::new(self.registry.array_of(et, ArraySize::Constant(len)), qt.qualifiers());
             if is_new_or_redecl {
                 self.symbol_table.get_symbol_mut(sym).type_info = qt;
             }
@@ -2093,34 +2087,34 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn visit_expression(&mut self, node: ParsedNodeRef) -> NodeRef {
+    fn visit_expression(&mut self, node: PNodeRef) -> NodeRef {
         self.visit_node(node)
             .first()
             .copied()
             .unwrap_or_else(|| self.push_dummy(SourceSpan::default()))
     }
 
-    fn visit_expression_into(&mut self, node: ParsedNodeRef, target: NodeRef) -> NodeRef {
+    fn visit_expression_into(&mut self, node: PNodeRef, target: NodeRef) -> NodeRef {
         self.visit_node_entry(node, Some(&[target]))
             .first()
             .copied()
             .unwrap_or(target)
     }
 
-    fn visit_single_statement(&mut self, node: ParsedNodeRef) -> NodeRef {
+    fn visit_single_statement(&mut self, node: PNodeRef) -> NodeRef {
         self.visit_expression(node)
     }
 
-    fn visit_single_statement_into(&mut self, node: ParsedNodeRef, target: NodeRef) -> NodeRef {
+    fn visit_single_statement_into(&mut self, node: PNodeRef, target: NodeRef) -> NodeRef {
         self.visit_expression_into(node, target)
     }
 
-    fn visit_type(&mut self, ty: ParsedType, span: SourceSpan) -> QualType {
+    fn visit_type(&mut self, ty: PType, span: SourceSpan) -> QualType {
         self.lower_type(ty, span, false)
             .unwrap_or_else(|_| QualType::unqualified(self.registry.type_error))
     }
 
-    fn lower_type(&mut self, pty: ParsedType, span: SourceSpan, in_param: bool) -> Result<QualType, SemanticDiag> {
+    fn lower_type(&mut self, pty: PType, span: SourceSpan, in_param: bool) -> Result<QualType, SemanticDiag> {
         let was_tag_decl = self.in_tag_decl;
         self.in_tag_decl = false;
         let res = self.lower_type_inner(pty, span, in_param);
@@ -2128,12 +2122,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         res
     }
 
-    fn lower_type_inner(
-        &mut self,
-        pty: ParsedType,
-        span: SourceSpan,
-        in_param: bool,
-    ) -> Result<QualType, SemanticDiag> {
+    fn lower_type_inner(&mut self, pty: PType, span: SourceSpan, in_param: bool) -> Result<QualType, SemanticDiag> {
         let base_type_node = self.parsed_ast.parsed_types.get_base_type(pty.base);
         let qbase = self.convert_to_qual_type(base_type_node, span)?;
         let qbase = self.merge_qualifiers_with_check(qbase, pty.qualifiers, span);
@@ -2161,34 +2150,34 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn extract_array_param_qualifiers(&self, declarator: DeclaratorRef) -> TypeQualifiers {
         let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
         match declarator {
-            ParsedDeclarator::Identifier(..) => TypeQualifiers::empty(),
-            ParsedDeclarator::Pointer { .. } => TypeQualifiers::empty(),
-            ParsedDeclarator::Function { .. } => TypeQualifiers::empty(),
-            ParsedDeclarator::Array { inner, size } => {
+            PDeclarator::Identifier(..) => TypeQualifiers::empty(),
+            PDeclarator::Pointer { .. } => TypeQualifiers::empty(),
+            PDeclarator::Function { .. } => TypeQualifiers::empty(),
+            PDeclarator::Array { inner, size } => {
                 let inner_quals = self.extract_array_param_qualifiers(*inner);
                 if !inner_quals.is_empty() {
                     return inner_quals;
                 }
                 size.qualifiers()
             }
-            ParsedDeclarator::BitField { inner, .. } => self.extract_array_param_qualifiers(*inner),
-            ParsedDeclarator::Attribute { inner, .. } => self.extract_array_param_qualifiers(*inner),
+            PDeclarator::BitField { inner, .. } => self.extract_array_param_qualifiers(*inner),
+            PDeclarator::Attribute { inner, .. } => self.extract_array_param_qualifiers(*inner),
         }
     }
 
     fn extract_name(&self, declarator: DeclaratorRef) -> Option<NameId> {
         let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
         match declarator {
-            ParsedDeclarator::Identifier(name) => *name,
-            ParsedDeclarator::Pointer { inner, .. } => self.extract_name(*inner),
-            ParsedDeclarator::Array { inner, .. } => self.extract_name(*inner),
-            ParsedDeclarator::Function { inner, .. } => self.extract_name(*inner),
-            ParsedDeclarator::BitField { inner, .. } => self.extract_name(*inner),
-            ParsedDeclarator::Attribute { inner, .. } => self.extract_name(*inner),
+            PDeclarator::Identifier(name) => *name,
+            PDeclarator::Pointer { inner, .. } => self.extract_name(*inner),
+            PDeclarator::Array { inner, .. } => self.extract_name(*inner),
+            PDeclarator::Function { inner, .. } => self.extract_name(*inner),
+            PDeclarator::BitField { inner, .. } => self.extract_name(*inner),
+            PDeclarator::Attribute { inner, .. } => self.extract_name(*inner),
         }
     }
 
-    fn visit_gnu_statement_expr(&mut self, stmt: ParsedNodeRef, span: SourceSpan) -> NodeKind {
+    fn visit_gnu_statement_expr(&mut self, stmt: PNodeRef, span: SourceSpan) -> NodeKind {
         let s = self.visit_single_statement(stmt);
         let result_expr = if let NodeKind::CompoundStmt(data) = self.ast.get_kind(s) {
             data.stmt_start
@@ -2209,7 +2198,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         NodeKind::StatementExpr(s, result_expr)
     }
 
-    fn visit_function_call(&mut self, func: ParsedNodeRef, args: &[ParsedNodeRef], span: SourceSpan) -> NodeKind {
+    fn visit_function_call(&mut self, func: PNodeRef, args: &[PNodeRef], span: SourceSpan) -> NodeKind {
         let f = self.visit_expression(func);
         let mut arg_dummies = Vec::with_capacity(args.len());
         for _ in 0..args.len() {
@@ -2227,20 +2216,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         })
     }
 
-    fn visit_compound_literal(&mut self, ty_name: ParsedType, init: ParsedNodeRef, span: SourceSpan) -> NodeKind {
+    fn visit_compound_literal(&mut self, ty_name: PType, init: PNodeRef, span: SourceSpan) -> NodeKind {
         let mut qt = self.visit_type(ty_name, span);
         let i = self.visit_expression(init);
 
         if let TypeKind::Array {
             element_type,
-            size: ArraySizeType::Incomplete,
+            size: ArraySize::Incomplete,
         } = &self.registry.get(qt.ty()).kind
         {
             let element_type = *element_type;
             if let Some(deduced_size) = self.deduce_array_size_full(i, element_type) {
-                let new_ty = self
-                    .registry
-                    .array_of(element_type, ArraySizeType::Constant(deduced_size));
+                let new_ty = self.registry.array_of(element_type, ArraySize::Constant(deduced_size));
                 qt = QualType::new(new_ty, qt.qualifiers());
             }
         }
@@ -2249,8 +2236,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn visit_generic_selection(
         &mut self,
-        control: ParsedNodeRef,
-        associations: &[ParsedGenericAssociation],
+        control: PNodeRef,
+        associations: &[PGenericAssociation],
         span: SourceSpan,
     ) -> NodeKind {
         let c = self.visit_expression(control);
@@ -2277,7 +2264,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         })
     }
 
-    fn visit_initializer_list(&mut self, inits: &[ParsedDesignatedInitializer], span: SourceSpan) -> NodeKind {
+    fn visit_initializer_list(&mut self, inits: &[PDesignatedInitializer], span: SourceSpan) -> NodeKind {
         let mut init_dummies = Vec::with_capacity(inits.len());
         for _ in 0..inits.len() {
             init_dummies.push(self.push_dummy(span));
@@ -2294,9 +2281,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             for (j, d) in init.designation.iter().enumerate() {
                 let node_kind = match d {
-                    ParsedDesignator::FieldName(name) => Designator::FieldName(*name),
-                    ParsedDesignator::ArrayIndex(idx) => Designator::ArrayIndex(self.visit_expression(*idx)),
-                    ParsedDesignator::ArrayRange(start, end) => {
+                    PDesignator::FieldName(name) => Designator::FieldName(*name),
+                    PDesignator::ArrayIndex(idx) => Designator::ArrayIndex(self.visit_expression(*idx)),
+                    PDesignator::ArrayRange(start, end) => {
                         self.report_warning(
                             self.parsed_ast.nodes[start.get() as usize].span,
                             SemanticError::GnuDesignatedInitializerRange,
@@ -2324,19 +2311,19 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         })
     }
 
-    /// Convert ParsedArraySize to ArraySizeType
-    fn convert_parsed_array_size(&mut self, size: &ParsedArraySize) -> ArraySizeType {
+    /// Convert ParsedArraySize to ArraySize
+    fn convert_parsed_array_size(&mut self, size: &PArraySize) -> ArraySize {
         if size.is_star() {
-            ArraySizeType::Star
+            ArraySize::Star
         } else {
             self.resolve_array_size(size.size_expr())
         }
     }
 
     /// Helper function to resolve array size logic
-    fn resolve_array_size(&mut self, size: Option<ParsedNodeRef>) -> ArraySizeType {
+    fn resolve_array_size(&mut self, size: Option<PNodeRef>) -> ArraySize {
         let Some(node) = size else {
-            return ArraySizeType::Incomplete;
+            return ArraySize::Incomplete;
         };
 
         let expr = self.visit_expression(node);
@@ -2346,7 +2333,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             && literal_id.kind() == LitKind::Float
         {
             self.report_error(self.ast.get_span(expr), SemanticError::ArraySizeNotInteger);
-            return ArraySizeType::Incomplete;
+            return ArraySize::Incomplete;
         }
 
         match self.const_ctx().eval_int(expr) {
@@ -2355,13 +2342,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 // Extension: allow zero-sized arrays unless pedantic-errors is set
                 if val < 0 {
                     self.report_error(self.ast.get_span(expr), SemanticError::InvalidArraySize);
-                    return ArraySizeType::Incomplete;
+                    return ArraySize::Incomplete;
                 } else if val == 0 {
                     self.report_warning(self.ast.get_span(expr), SemanticError::GnuZeroLengthArray);
                 }
-                ArraySizeType::Constant(val as usize)
+                ArraySize::Constant(val as usize)
             }
-            None => ArraySizeType::Variable(expr),
+            None => ArraySize::Variable(expr),
         }
     }
 
@@ -2421,13 +2408,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn collect_labels_inner(&mut self, node: ParsedNodeRef, shadowed: &mut rustc_hash::FxHashSet<NameId>) {
+    fn collect_labels_inner(&mut self, node: PNodeRef, shadowed: &mut rustc_hash::FxHashSet<NameId>) {
         let parsed_node = self.parsed_ast.get_node(node);
 
         let mut local_shadowed = Vec::new();
-        if let ParsedNodeKind::CompoundStmt(items, _) = &parsed_node.kind {
+        if let PNodeKind::CompoundStmt(items, _) = &parsed_node.kind {
             for &item in items.iter() {
-                if let ParsedNodeKind::GnuLocalLabel(names) = &self.parsed_ast.get_node(item).kind {
+                if let PNodeKind::GnuLocalLabel(names) = &self.parsed_ast.get_node(item).kind {
                     for &name in names.iter() {
                         if shadowed.insert(name) {
                             local_shadowed.push(name);
@@ -2437,7 +2424,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
         }
 
-        if let ParsedNodeKind::Label(name, _) = &parsed_node.kind
+        if let PNodeKind::Label(name, _) = &parsed_node.kind
             && !shadowed.contains(name)
             && let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
                 self.symbol_table
@@ -2455,7 +2442,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn collect_labels(&mut self, node: ParsedNodeRef) {
+    fn collect_labels(&mut self, node: PNodeRef) {
         let mut shadowed = rustc_hash::FxHashSet::default();
         self.collect_labels_inner(node, &mut shadowed);
     }
@@ -2739,7 +2726,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let builtin_type = get_string_builtin_type(prefix);
                 let size = get_string_literal_size(&s, prefix);
                 let elem = self.registry.get_builtin_type(builtin_type);
-                self.registry.array_of(elem, ArraySizeType::Constant(size))
+                self.registry.array_of(elem, ArraySize::Constant(size))
             }
             LitVal::Nullptr => self.registry.type_nullptr_t,
             LitVal::True | LitVal::False => self.registry.type_bool,
@@ -2928,7 +2915,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 TypeKind::Record { members, .. } => AggTask::Record(Arc::clone(members)),
                 TypeKind::Array {
                     element_type,
-                    size: ArraySizeType::Constant(len),
+                    size: ArraySize::Constant(len),
                 } => AggTask::Array(*element_type, *len),
                 _ => AggTask::Scalar,
             }
@@ -2977,7 +2964,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn extract_bit_field_width(&mut self, declarator: DeclaratorRef) -> Option<u16> {
         let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
         match declarator {
-            ParsedDeclarator::BitField { inner: _, width } => {
+            PDeclarator::BitField { inner: _, width } => {
                 let width_expr = self.visit_expression(*width);
                 let span = self.ast.get_span(width_expr);
 
@@ -2993,10 +2980,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     }
                 }
             }
-            ParsedDeclarator::Pointer { inner, .. } => self.extract_bit_field_width(*inner),
-            ParsedDeclarator::Array { inner, .. } => self.extract_bit_field_width(*inner),
-            ParsedDeclarator::Function { inner, .. } => self.extract_bit_field_width(*inner),
-            ParsedDeclarator::Attribute { inner, .. } => self.extract_bit_field_width(*inner),
+            PDeclarator::Pointer { inner, .. } => self.extract_bit_field_width(*inner),
+            PDeclarator::Array { inner, .. } => self.extract_bit_field_width(*inner),
+            PDeclarator::Function { inner, .. } => self.extract_bit_field_width(*inner),
+            PDeclarator::Attribute { inner, .. } => self.extract_bit_field_width(*inner),
             _ => None,
         }
     }
@@ -3012,21 +2999,21 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     ) -> QualType {
         let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
         match declarator {
-            ParsedDeclarator::Identifier(..) => current_type,
-            ParsedDeclarator::Pointer { qualifiers, inner } => {
+            PDeclarator::Identifier(..) => current_type,
+            PDeclarator::Pointer { qualifiers, inner } => {
                 let pointer_type = self.registry.pointer_to(current_type);
                 let modified_current =
                     self.merge_qualifiers_with_check(QualType::unqualified(pointer_type), *qualifiers, span);
                 self.apply_declarator(modified_current, *inner, span, spec_info, ctx)
             }
-            ParsedDeclarator::Array { inner, size } => {
+            PDeclarator::Array { inner, size } => {
                 if current_type.is_function() {
                     self.report_error(span, SemanticError::FunctionReturningFunction);
                 }
                 let array_qt = self.lower_array_declarator(*inner, size, current_type, span, ctx);
                 self.apply_declarator(array_qt, *inner, span, spec_info, ctx)
             }
-            ParsedDeclarator::Function {
+            PDeclarator::Function {
                 params,
                 flags,
                 inner,
@@ -3060,11 +3047,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 );
                 self.apply_declarator(QualType::unqualified(function_type), *inner, span, spec_info, ctx)
             }
-            ParsedDeclarator::BitField { inner, .. } => {
+            PDeclarator::BitField { inner, .. } => {
                 // Bit-fields don't affect the base type in the same way, we just recurse
                 self.apply_declarator(current_type, *inner, span, spec_info, ctx)
             }
-            ParsedDeclarator::Attribute { inner, spec } => {
+            PDeclarator::Attribute { inner, spec } => {
                 if let Some(info) = spec_info.as_mut() {
                     match spec {
                         DeclSpec::AttributeCleanup(expr) => info.cleanup_func = Some(*expr),
@@ -3557,7 +3544,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn get_definition_params(&mut self, declarator: DeclaratorRef) -> Option<Vec<FunctionParam>> {
         let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
         match declarator {
-            ParsedDeclarator::Function {
+            PDeclarator::Function {
                 inner,
                 params,
                 scope_id,
@@ -3570,9 +3557,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     Some(self.visit_function_params(params_list, true, *scope_id))
                 }
             }
-            ParsedDeclarator::Pointer { inner, .. } => self.get_definition_params(*inner),
-            ParsedDeclarator::Array { inner, .. } => self.get_definition_params(*inner),
-            ParsedDeclarator::BitField { inner, .. } => self.get_definition_params(*inner),
+            PDeclarator::Pointer { inner, .. } => self.get_definition_params(*inner),
+            PDeclarator::Array { inner, .. } => self.get_definition_params(*inner),
+            PDeclarator::BitField { inner, .. } => self.get_definition_params(*inner),
             _ => None,
         }
     }
@@ -3676,7 +3663,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn visit_function_params(
         &mut self,
-        params: &[ParsedParam],
+        params: &[PParam],
         is_definition: bool,
         scope_id: ScopeId,
     ) -> Vec<FunctionParam> {
@@ -3692,9 +3679,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         for param in params {
             let span = param.span;
 
-            if let ParsedBaseType::Builtin(TypeSpec::AutoType) =
-                self.parsed_ast.parsed_types.get_base_type(param.ty.base)
-            {
+            if let PBaseType::Builtin(TypeSpec::AutoType) = self.parsed_ast.parsed_types.get_base_type(param.ty.base) {
                 self.report_error(
                     span,
                     SemanticError::AutoTypeNotAllowed {
@@ -3783,12 +3768,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         processed_params
     }
 
-    fn visit_record_members(
-        &mut self,
-        members: &[ParsedNodeRef],
-        span: SourceSpan,
-        is_union: bool,
-    ) -> Vec<RecordMember> {
+    fn visit_record_members(&mut self, members: &[PNodeRef], span: SourceSpan, is_union: bool) -> Vec<RecordMember> {
         let was_tag_decl = self.in_tag_decl;
         self.in_tag_decl = false;
         let mut struct_members = Vec::new();
@@ -3796,16 +3776,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         for &node in members {
             let node = self.parsed_ast.get_node(node);
             match &node.kind {
-                ParsedNodeKind::StaticAssert(cond, msg) => {
+                PNodeKind::StaticAssert(cond, msg) => {
                     self.check_static_assert(*cond, *msg, node.span);
                 }
-                ParsedNodeKind::Declaration(decl) => {
+                PNodeKind::Declaration(decl) => {
                     self.visit_record_member_decl(decl, node.span, span, is_union, &mut struct_members);
                 }
-                ParsedNodeKind::PragmaPack(kind) => {
+                PNodeKind::PragmaPack(kind) => {
                     self.handle_pragma_pack(*kind);
                 }
-                ParsedNodeKind::PragmaVisibility(kind) => {
+                PNodeKind::PragmaVisibility(kind) => {
                     self.handle_pragma_visibility(*kind);
                 }
                 _ => unreachable!(),
@@ -3817,7 +3797,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn visit_record_member_decl(
         &mut self,
-        decl: &ParsedDecl,
+        decl: &PDecl,
         node_span: SourceSpan,
         span: SourceSpan,
         is_union: bool,
@@ -3866,7 +3846,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn lower_single_record_member(
         &mut self,
-        id: &ParsedInitDeclarator,
+        id: &PInitDeclarator,
         spec_info: &mut DeclSpecInfo,
         is_union: bool,
     ) -> Option<RecordMember> {
@@ -3920,7 +3900,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn lower_record(
         &mut self,
         tag: Option<NameId>,
-        members: Option<ParsedStructMemberRange>,
+        members: Option<PStructMemberRange>,
         is_union: bool,
         span: SourceSpan,
     ) -> Result<QualType, SemanticDiag> {
@@ -3954,8 +3934,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn lower_enum(
         &mut self,
         tag: Option<NameId>,
-        enumerators: Option<ParsedEnumRange>,
-        underlying_type: Option<ParsedType>,
+        enumerators: Option<PEnumRange>,
+        underlying_type: Option<PType>,
         span: SourceSpan,
     ) -> Result<QualType, SemanticDiag> {
         let underlying_qt = underlying_type.map(|ut| self.lower_type(ut, span, false)).transpose()?;
@@ -4016,24 +3996,24 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         Ok(QualType::unqualified(ty))
     }
 
-    fn lower_typeof(&mut self, ty: ParsedType, span: SourceSpan) -> Result<QualType, SemanticDiag> {
+    fn lower_typeof(&mut self, ty: PType, span: SourceSpan) -> Result<QualType, SemanticDiag> {
         self.report_warning(span, SemanticError::GnuTypeof);
         self.lower_type(ty, span, false)
     }
 
-    fn lower_typeof_expr(&mut self, expr: ParsedNodeRef, span: SourceSpan) -> QualType {
+    fn lower_typeof_expr(&mut self, expr: PNodeRef, span: SourceSpan) -> QualType {
         self.report_warning(span, SemanticError::GnuTypeof);
         let expr_node = self.visit_expression(expr);
         self.try_infer_type(expr_node)
             .unwrap_or_else(|| QualType::unqualified(self.registry.typeof_expr(expr_node)))
     }
 
-    fn lower_typeof_unqual(&mut self, ty: ParsedType, span: SourceSpan) -> Result<QualType, SemanticDiag> {
+    fn lower_typeof_unqual(&mut self, ty: PType, span: SourceSpan) -> Result<QualType, SemanticDiag> {
         let qt = self.lower_type(ty, span, false)?;
         Ok(QualType::unqualified(qt.ty()))
     }
 
-    fn lower_typeof_unqual_expr(&mut self, expr: ParsedNodeRef) -> QualType {
+    fn lower_typeof_unqual_expr(&mut self, expr: PNodeRef) -> QualType {
         let expr_node = self.visit_expression(expr);
         let ty = self
             .try_infer_type(expr_node)
@@ -4043,20 +4023,20 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     /// Convert a ParsedBaseTypeNode to a QualType
-    fn convert_to_qual_type(&mut self, base_ty: &ParsedBaseType, span: SourceSpan) -> Result<QualType, SemanticDiag> {
+    fn convert_to_qual_type(&mut self, base_ty: &PBaseType, span: SourceSpan) -> Result<QualType, SemanticDiag> {
         match base_ty {
-            ParsedBaseType::Builtin(ts) => self.resolve_type_spec(ts, span),
-            ParsedBaseType::Record { tag, members, is_union } => self.lower_record(*tag, *members, *is_union, span),
-            ParsedBaseType::Enum {
+            PBaseType::Builtin(ts) => self.resolve_type_spec(ts, span),
+            PBaseType::Record { tag, members, is_union } => self.lower_record(*tag, *members, *is_union, span),
+            PBaseType::Enum {
                 tag,
                 enumerators,
                 underlying_type,
             } => self.lower_enum(*tag, *enumerators, *underlying_type, span),
-            ParsedBaseType::Typedef(name) => self.resolve_typedef_name(*name, span),
-            ParsedBaseType::Typeof(ty) => self.lower_typeof(*ty, span),
-            ParsedBaseType::TypeofExpr(expr) => Ok(self.lower_typeof_expr(*expr, span)),
-            ParsedBaseType::TypeofUnqual(ty) => self.lower_typeof_unqual(*ty, span),
-            ParsedBaseType::TypeofUnqualExpr(expr) => Ok(self.lower_typeof_unqual_expr(*expr)),
+            PBaseType::Typedef(name) => self.resolve_typedef_name(*name, span),
+            PBaseType::Typeof(ty) => self.lower_typeof(*ty, span),
+            PBaseType::TypeofExpr(expr) => Ok(self.lower_typeof_expr(*expr, span)),
+            PBaseType::TypeofUnqual(ty) => self.lower_typeof_unqual(*ty, span),
+            PBaseType::TypeofUnqualExpr(expr) => Ok(self.lower_typeof_unqual_expr(*expr)),
         }
     }
 }

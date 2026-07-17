@@ -68,7 +68,7 @@ fn peek_past_attribute(parser: &mut Parser, mut start_offset: u32) -> Option<Tok
 
 /// Validate declarator combinations
 fn validate_declarator(
-    arena: &ParsedTypeArena,
+    arena: &PTypeArena,
     base: DeclaratorRef,
     new_kind: DeclaratorKind,
     span: SourceSpan,
@@ -77,9 +77,9 @@ fn validate_declarator(
     if matches!(
         (&base, new_kind),
         (
-            ParsedDeclarator::Function { .. },
+            PDeclarator::Function { .. },
             DeclaratorKind::Array | DeclaratorKind::Function
-        ) | (ParsedDeclarator::Array { .. }, DeclaratorKind::Function)
+        ) | (PDeclarator::Array { .. }, DeclaratorKind::Function)
     ) {
         return Err(ParseDiag {
             span,
@@ -106,10 +106,10 @@ pub(crate) fn parse_declarator(parser: &mut Parser, allow_bitfield: bool) -> Res
         match token.map(|t| t.kind) {
             Some(TokenKind::Identifier(symbol)) => {
                 parser.advance();
-                parser.alloc_decl(ParsedDeclarator::Identifier(Some(symbol)))
+                parser.alloc_decl(PDeclarator::Identifier(Some(symbol)))
             }
             Some(_) if is_abstract_declarator_start(parser) => parse_abstract_declarator(parser, allow_bitfield)?,
-            _ => parser.alloc_decl(ParsedDeclarator::Identifier(None)),
+            _ => parser.alloc_decl(PDeclarator::Identifier(None)),
         }
     };
 
@@ -117,7 +117,7 @@ pub(crate) fn parse_declarator(parser: &mut Parser, allow_bitfield: bool) -> Res
     while parser.is_token(TokenKind::Attribute) {
         let attrs = super::declarations::parse_attribute(parser)?;
         for attr in attrs {
-            base = parser.alloc_decl(ParsedDeclarator::Attribute {
+            base = parser.alloc_decl(PDeclarator::Attribute {
                 inner: base,
                 spec: attr,
             });
@@ -128,7 +128,7 @@ pub(crate) fn parse_declarator(parser: &mut Parser, allow_bitfield: bool) -> Res
 
     // Wrap with leading attributes
     for attr in attrs_before {
-        trailing = parser.alloc_decl(ParsedDeclarator::Attribute {
+        trailing = parser.alloc_decl(PDeclarator::Attribute {
             inner: trailing,
             spec: attr,
         });
@@ -150,24 +150,24 @@ fn parse_type_qualifiers(parser: &mut Parser) -> Result<TypeQualifiers, ParseDia
     Ok(qualifiers)
 }
 
-fn parse_array_size(parser: &mut Parser) -> Result<ParsedArraySize, ParseDiag> {
+fn parse_array_size(parser: &mut Parser) -> Result<PArraySize, ParseDiag> {
     let is_static = parser.accept(TokenKind::Static).is_some();
     let qualifiers = parse_type_qualifiers(parser)?;
 
     if parser.accept(TokenKind::Star).is_some() {
-        Ok(ParsedArraySize::Star { qualifiers })
+        Ok(PArraySize::Star { qualifiers })
     } else if parser.is_token(TokenKind::RightBracket) {
-        Ok(ParsedArraySize::Incomplete)
+        Ok(PArraySize::Incomplete)
     } else {
         let expr = parser.parse_expr_min()?;
         if is_static || !qualifiers.is_empty() {
-            Ok(ParsedArraySize::VlaSpec {
+            Ok(PArraySize::VlaSpec {
                 is_static,
                 qualifiers,
                 size: Some(expr),
             })
         } else {
-            Ok(ParsedArraySize::Expression { expr, qualifiers })
+            Ok(PArraySize::Expression { expr, qualifiers })
         }
     }
 }
@@ -198,14 +198,14 @@ fn parse_trailing_declarators(
                 validate_declarator(&parser.ast.parsed_types, base, DeclaratorKind::Array, token.span)?;
                 let size = parse_array_size(parser)?;
                 parser.expect(TokenKind::RightBracket)?;
-                base = parser.alloc_decl(ParsedDeclarator::Array { inner: base, size });
+                base = parser.alloc_decl(PDeclarator::Array { inner: base, size });
             }
             TokenKind::LeftParen => {
                 parser.advance();
                 validate_declarator(&parser.ast.parsed_types, base, DeclaratorKind::Function, token.span)?;
                 let (param_range, flags, scope_id) = parse_function_parameters(parser)?;
                 parser.expect(TokenKind::RightParen)?;
-                base = parser.alloc_decl(ParsedDeclarator::Function {
+                base = parser.alloc_decl(PDeclarator::Function {
                     inner: base,
                     params: param_range,
                     flags,
@@ -215,12 +215,12 @@ fn parse_trailing_declarators(
             TokenKind::Colon if allow_bitfield => {
                 parser.advance();
                 let width = parser.parse_expr_assignment()?;
-                base = parser.alloc_decl(ParsedDeclarator::BitField { inner: base, width });
+                base = parser.alloc_decl(PDeclarator::BitField { inner: base, width });
             }
             TokenKind::Attribute => {
                 let attrs = super::declarations::parse_attribute(parser)?;
                 for attr in attrs {
-                    base = parser.alloc_decl(ParsedDeclarator::Attribute {
+                    base = parser.alloc_decl(PDeclarator::Attribute {
                         inner: base,
                         spec: attr,
                     });
@@ -228,7 +228,7 @@ fn parse_trailing_declarators(
             }
             TokenKind::Asm => {
                 if let Some(lit) = super::declarations::parse_asm(parser)? {
-                    base = parser.alloc_decl(ParsedDeclarator::Attribute {
+                    base = parser.alloc_decl(PDeclarator::Attribute {
                         inner: base,
                         spec: DeclSpec::AttributeAsm(lit),
                     });
@@ -246,12 +246,12 @@ fn reconstruct_declarator_chain(
     mut base: DeclaratorRef,
 ) -> DeclaratorRef {
     for (qualifiers, attrs) in chain.into_iter().rev() {
-        base = parser.alloc_decl(ParsedDeclarator::Pointer {
+        base = parser.alloc_decl(PDeclarator::Pointer {
             qualifiers,
             inner: base,
         });
         for attr in attrs {
-            base = parser.alloc_decl(ParsedDeclarator::Attribute {
+            base = parser.alloc_decl(PDeclarator::Attribute {
                 inner: base,
                 spec: attr,
             });
@@ -262,7 +262,7 @@ fn reconstruct_declarator_chain(
 
 fn parse_function_parameters(
     parser: &mut Parser,
-) -> Result<(ParsedParamRange, FunctionFlags, crate::semantic::ScopeId), ParseDiag> {
+) -> Result<(PParamRange, FunctionFlags, crate::semantic::ScopeId), ParseDiag> {
     let scope_id = parser.symbol_table.push_scope();
     let mut params = Vec::new();
     let mut is_variadic = false;
@@ -346,7 +346,7 @@ fn parse_function_parameters(
             parser.symbol_table.define_parser_non_typedef(name_id, span);
         }
 
-        params.push(ParsedParam {
+        params.push(PParam {
             name,
             ty: param_parsed_type,
             storage,
@@ -383,15 +383,15 @@ pub(crate) fn is_abstract_declarator_start(parser: &mut Parser) -> bool {
 }
 
 /// Extract the declared name from a declarator, if any
-pub(crate) fn get_declarator_name(arena: &ParsedTypeArena, declarator: DeclaratorRef) -> Option<NameId> {
+pub(crate) fn get_declarator_name(arena: &PTypeArena, declarator: DeclaratorRef) -> Option<NameId> {
     let declarator = arena.get_decl(declarator);
     match declarator {
-        ParsedDeclarator::Identifier(name) => *name,
-        ParsedDeclarator::Pointer { inner, .. } => get_declarator_name(arena, *inner),
-        ParsedDeclarator::Array { inner, .. } => get_declarator_name(arena, *inner),
-        ParsedDeclarator::Function { inner, .. } => get_declarator_name(arena, *inner),
-        ParsedDeclarator::BitField { inner, .. } => get_declarator_name(arena, *inner),
-        ParsedDeclarator::Attribute { inner, .. } => get_declarator_name(arena, *inner),
+        PDeclarator::Identifier(name) => *name,
+        PDeclarator::Pointer { inner, .. } => get_declarator_name(arena, *inner),
+        PDeclarator::Array { inner, .. } => get_declarator_name(arena, *inner),
+        PDeclarator::Function { inner, .. } => get_declarator_name(arena, *inner),
+        PDeclarator::BitField { inner, .. } => get_declarator_name(arena, *inner),
+        PDeclarator::Attribute { inner, .. } => get_declarator_name(arena, *inner),
     }
 }
 
@@ -413,7 +413,7 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser, allow_bitfield: boo
             });
 
             if is_param {
-                parser.alloc_decl(ParsedDeclarator::Identifier(None))
+                parser.alloc_decl(PDeclarator::Identifier(None))
             } else {
                 parser.advance(); // consume '('
                 let inner = parse_abstract_declarator(parser, allow_bitfield)?;
@@ -425,10 +425,10 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser, allow_bitfield: boo
             parser.advance();
             let size = parse_array_size(parser)?;
             parser.expect(TokenKind::RightBracket)?;
-            let inner = parser.alloc_decl(ParsedDeclarator::Identifier(None));
-            parser.alloc_decl(ParsedDeclarator::Array { inner, size })
+            let inner = parser.alloc_decl(PDeclarator::Identifier(None));
+            parser.alloc_decl(PDeclarator::Array { inner, size })
         }
-        _ => parser.alloc_decl(ParsedDeclarator::Identifier(None)),
+        _ => parser.alloc_decl(PDeclarator::Identifier(None)),
     };
 
     let trailing = parse_trailing_declarators(parser, base, allow_bitfield)?;

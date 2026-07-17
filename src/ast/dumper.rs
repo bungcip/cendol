@@ -7,17 +7,17 @@ use std::fmt;
 use std::fmt::Formatter;
 
 use crate::ast::literal::LitVal;
-use crate::ast::parsed::{ParsedAst, ParsedNodeKind, ParsedNodeRef};
+use crate::ast::parsed::{PAst, PNodeKind, PNodeRef};
 use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind, NodeRef};
 use crate::semantic::{SymbolKind, SymbolRef, SymbolTable, TypeRef, TypeRegistry};
 
-pub(crate) struct ParsedAstDisplay<'a>(pub(crate) &'a ParsedAst);
+pub(crate) struct PAstDisplay<'a>(pub(crate) &'a PAst);
 
-impl<'a> fmt::Display for ParsedAstDisplay<'a> {
+impl<'a> fmt::Display for PAstDisplay<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let ast = self.0;
         for (i, node) in ast.nodes.iter().enumerate() {
-            if matches!(node.kind, ParsedNodeKind::Dummy) {
+            if matches!(node.kind, PNodeKind::Dummy) {
                 continue;
             }
             write!(f, "{}: ", i + 1)?;
@@ -85,8 +85,8 @@ pub(crate) struct AstDumper;
 
 impl AstDumper {
     /// Dump parsed AST to stdout
-    pub(crate) fn dump_parsed_ast(ast: &ParsedAst) -> ParsedAstDisplay<'_> {
-        ParsedAstDisplay(ast)
+    pub(crate) fn dump_parsed_ast(ast: &PAst) -> PAstDisplay<'_> {
+        PAstDisplay(ast)
     }
 
     /// Dump AST to stdout
@@ -194,7 +194,7 @@ impl AstDumper {
         }
     }
 
-    fn write_list(f: &mut Formatter<'_>, nodes: &[ParsedNodeRef]) -> fmt::Result {
+    fn write_list(f: &mut Formatter<'_>, nodes: &[PNodeRef]) -> fmt::Result {
         for (i, n) in nodes.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
@@ -204,21 +204,21 @@ impl AstDumper {
         Ok(())
     }
 
-    fn write_parsed_list(f: &mut Formatter<'_>, label: &str, nodes: &[ParsedNodeRef]) -> fmt::Result {
+    fn write_parsed_list(f: &mut Formatter<'_>, label: &str, nodes: &[PNodeRef]) -> fmt::Result {
         write!(f, "{}=[", label)?;
         Self::write_list(f, nodes)?;
         write!(f, "]")
     }
 
     /// Dump a single parsed parsed node kind
-    fn dump_parsed_node(f: &mut Formatter<'_>, kind: &ParsedNodeKind, ast: &ParsedAst) -> fmt::Result {
-        let optional = |f: &mut Formatter<'_>, node: Option<ParsedNodeRef>, text: &'static str| -> fmt::Result {
+    fn dump_parsed_node(f: &mut Formatter<'_>, kind: &PNodeKind, ast: &PAst) -> fmt::Result {
+        let optional = |f: &mut Formatter<'_>, node: Option<PNodeRef>, text: &'static str| -> fmt::Result {
             match node {
                 Some(n) => write!(f, "{}", n.get()),
                 None => write!(f, "{}", text),
             }
         };
-        use crate::ast::ParsedNodeKind as PNK;
+        use crate::ast::PNodeKind as PNK;
 
         if let PNK::Literal(literal) = kind {
             Self::format_literal(f, &literal.get_val())?;

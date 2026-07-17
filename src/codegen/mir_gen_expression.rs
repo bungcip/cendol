@@ -10,7 +10,7 @@ use crate::mir::{
 
 use crate::ast;
 use crate::semantic::{
-    ArraySizeType, BuiltinFunctionKind, Conversion, QualType, SymbolKind, SymbolRef, TypeKind, TypeQualifiers, TypeRef,
+    ArraySize, BuiltinFunctionKind, Conversion, QualType, SymbolKind, SymbolRef, TypeKind, TypeQualifiers, TypeRef,
     ValueCategory,
 };
 
@@ -448,7 +448,7 @@ impl<'a> MirGen<'a> {
         let type_info = self.registry.get(ty);
         if let TypeKind::Array {
             element_type,
-            size: ArraySizeType::Variable(size_expr),
+            size: ArraySize::Variable(size_expr),
         } = &type_info.kind
         {
             let size_expr = *size_expr;

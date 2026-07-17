@@ -499,3 +499,22 @@ fn test_builtin_trap() {
       - []
     ");
 }
+
+#[test]
+fn test_enum_with_non_literal_value() {
+    let resolved = setup_expr("sizeof(enum { A = 1 + 1 })");
+    insta::assert_yaml_snapshot!(&resolved, @"
+    SizeOfType: type_1
+    ");
+}
+
+#[test]
+fn test_builtin_convertvector() {
+    let resolved = setup_expr("__builtin_convertvector(expr, int)");
+    insta::assert_yaml_snapshot!(&resolved, @"
+    FunctionCall:
+      - Ident: __builtin_convertvector
+      - - Ident: expr
+        - Ident: type_1
+    ");
+}

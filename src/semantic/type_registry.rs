@@ -17,7 +17,7 @@ use target_lexicon::{PointerWidth, Triple};
 use super::types::TypeClass;
 use super::types::{FieldLayout, LayoutKind};
 use super::{
-    ArraySizeType, BuiltinType, EnumConstant, FunctionParam, RecordMember, Type, TypeKind, TypeLayout, TypeQualifiers,
+    ArraySize, BuiltinType, EnumConstant, FunctionParam, RecordMember, Type, TypeKind, TypeLayout, TypeQualifiers,
     TypeRef,
 };
 use crate::semantic::BuiltinFunctionKind;
@@ -91,7 +91,7 @@ pub struct TypeRegistry {
 
     // --- Canonicalization caches ---
     pointer_cache: FxHashMap<QualType, TypeRef>,
-    array_cache: FxHashMap<(TypeRef, ArraySizeType), TypeRef>,
+    array_cache: FxHashMap<(TypeRef, ArraySize), TypeRef>,
     function_cache: FxHashMap<FnSigKey, TypeRef>,
     complex_cache: FxHashMap<TypeRef, TypeRef>,
 
@@ -269,7 +269,7 @@ impl TypeRegistry {
 
         // 18: VaList - on x86_64 SysV this is an array of 1 struct
         let valist_struct = self.alloc_builtin(BuiltinType::VaList);
-        self.type_valist = self.array_of(valist_struct, ArraySizeType::Constant(1));
+        self.type_valist = self.array_of(valist_struct, ArraySize::Constant(1));
 
         // 19: Complex (marker)
         self.type_complex_marker = self.alloc_builtin(BuiltinType::Complex);
@@ -442,7 +442,7 @@ impl TypeRegistry {
                     return Cow::Owned(Type {
                         kind: TypeKind::Array {
                             element_type: element,
-                            size: ArraySizeType::Constant(len as usize),
+                            size: ArraySize::Constant(len as usize),
                         },
                         layout: None,
                     });
@@ -510,7 +510,7 @@ impl TypeRegistry {
                     // OR if any member recursively has a FAM (making the whole struct VM/illegal as member).
                     if let Some(last) = members.last()
                         && let TypeKind::Array {
-                            size: ArraySizeType::Incomplete,
+                            size: ArraySize::Incomplete,
                             ..
                         } = &self.get(last.member_type.ty()).kind
                     {
@@ -708,7 +708,7 @@ impl TypeRegistry {
         if let (Some(ea), Some(eb)) = (self.get_array_element(ty_a), self.get_array_element(ty_b)) {
             let composite_elem = self.find_composite_type(QualType::unqualified(ea), QualType::unqualified(eb))?;
             let sa = if ty_a.is_inline_array() {
-                ArraySizeType::Constant(ty_a.array_len().unwrap() as usize)
+                ArraySize::Constant(ty_a.array_len().unwrap() as usize)
             } else {
                 match &self.types[ty_a.index()].kind {
                     TypeKind::Array { size, .. } => *size,
@@ -716,7 +716,7 @@ impl TypeRegistry {
                 }
             };
             let sb = if ty_b.is_inline_array() {
-                ArraySizeType::Constant(ty_b.array_len().unwrap() as usize)
+                ArraySize::Constant(ty_b.array_len().unwrap() as usize)
             } else {
                 match &self.types[ty_b.index()].kind {
                     TypeKind::Array { size, .. } => *size,
@@ -725,11 +725,11 @@ impl TypeRegistry {
             };
 
             let composite_size = match (sa, sb) {
-                (ArraySizeType::Incomplete, s) => s,
-                (s, ArraySizeType::Incomplete) => s,
-                (ArraySizeType::Constant(sa), ArraySizeType::Constant(sb)) if sa == sb => ArraySizeType::Constant(sa),
-                (ArraySizeType::Star, s) => s,
-                (s, ArraySizeType::Star) => s,
+                (ArraySize::Incomplete, s) => s,
+                (s, ArraySize::Incomplete) => s,
+                (ArraySize::Constant(sa), ArraySize::Constant(sb)) if sa == sb => ArraySize::Constant(sa),
+                (ArraySize::Star, s) => s,
+                (s, ArraySize::Star) => s,
                 _ => return None,
             };
 
@@ -832,7 +832,7 @@ impl TypeRegistry {
         ptr
     }
 
-    pub(crate) fn array_of(&mut self, elem: TypeRef, size: ArraySizeType) -> TypeRef {
+    pub(crate) fn array_of(&mut self, elem: TypeRef, size: ArraySize) -> TypeRef {
         if let Some(arr) = self.find_array_type(elem, size) {
             return arr;
         }
@@ -845,9 +845,9 @@ impl TypeRegistry {
         self.array_cache.insert(key, arr);
         arr
     }
-    pub(crate) fn find_array_type(&self, elem: TypeRef, size: ArraySizeType) -> Option<TypeRef> {
+    pub(crate) fn find_array_type(&self, elem: TypeRef, size: ArraySize) -> Option<TypeRef> {
         // Try inline (only for length 1..31, 0 is used for registry-backed arrays)
-        if let ArraySizeType::Constant(len) = size
+        if let ArraySize::Constant(len) = size
             && (1..=31).contains(&len)
             && elem.pointer_depth() == 0
             && elem.array_len().is_none()
@@ -1327,7 +1327,7 @@ impl TypeRegistry {
                     })),
                     TypeKind::Array {
                         element_type,
-                        size: ArraySizeType::Constant(len),
+                        size: ArraySize::Constant(len),
                     } => {
                         let elem_layout = self.try_get_layout(*element_type)?;
                         Some(Cow::Owned(TypeLayout {
@@ -1417,7 +1417,7 @@ impl TypeRegistry {
                 TypeKind::Pointer { .. } => LayoutTask::Pointer,
                 TypeKind::Complex { base_type } => LayoutTask::Complex(*base_type),
                 TypeKind::Array { element_type, size } => match size {
-                    ArraySizeType::Constant(len) => LayoutTask::Array(*element_type, *len),
+                    ArraySize::Constant(len) => LayoutTask::Array(*element_type, *len),
                     _ => LayoutTask::Unsupported("incomplete/VLA array layout"),
                 },
                 TypeKind::Function { .. } => LayoutTask::Function,
@@ -1633,10 +1633,10 @@ impl TypeRegistry {
             // Special handling for flexible array member (FAM)
             // Need to check if it is incomplete array
             // We can't use is_complete because that recurses. We check TypeKind directly.
-            // Bolt ⚡: Optimized to match on reference to avoid cloning ArraySizeType.
+            // Bolt ⚡: Optimized to match on reference to avoid cloning ArraySize.
             let type_info = self.get(member_ty);
             if let TypeKind::Array { element_type, size } = &type_info.kind
-                && matches!(size, ArraySizeType::Incomplete)
+                && matches!(size, ArraySize::Incomplete)
             {
                 let elem_ty = *element_type;
                 drop(type_info);
@@ -1985,7 +1985,7 @@ impl TypeRegistry {
                 // For array compatibility, we need to compare their sizes.
                 // Inline arrays are always constant size; registry arrays can be complex.
                 let sa = if ty_a.is_inline_array() {
-                    ArraySizeType::Constant(ty_a.array_len().unwrap() as usize)
+                    ArraySize::Constant(ty_a.array_len().unwrap() as usize)
                 } else {
                     match &self.types[ty_a.index()].kind {
                         TypeKind::Array { size, .. } => *size,
@@ -1994,7 +1994,7 @@ impl TypeRegistry {
                 };
 
                 let sb = if ty_b.is_inline_array() {
-                    ArraySizeType::Constant(ty_b.array_len().unwrap() as usize)
+                    ArraySize::Constant(ty_b.array_len().unwrap() as usize)
                 } else {
                     match &self.types[ty_b.index()].kind {
                         TypeKind::Array { size, .. } => *size,
@@ -2003,13 +2003,13 @@ impl TypeRegistry {
                 };
 
                 match (sa, sb) {
-                    (ArraySizeType::Incomplete, _) => true,
-                    (_, ArraySizeType::Incomplete) => true,
-                    (ArraySizeType::Constant(sa_val), ArraySizeType::Constant(sb_val)) => sa_val == sb_val,
-                    (ArraySizeType::Star, _) => true,
-                    (_, ArraySizeType::Star) => true,
-                    (ArraySizeType::Variable(_), _) => true,
-                    (_, ArraySizeType::Variable(_)) => true,
+                    (ArraySize::Incomplete, _) => true,
+                    (_, ArraySize::Incomplete) => true,
+                    (ArraySize::Constant(sa_val), ArraySize::Constant(sb_val)) => sa_val == sb_val,
+                    (ArraySize::Star, _) => true,
+                    (_, ArraySize::Star) => true,
+                    (ArraySize::Variable(_), _) => true,
+                    (_, ArraySize::Variable(_)) => true,
                 }
             }
             (TypeClass::Enum, TypeClass::Enum) => false, // Different enums are never compatible
@@ -2122,7 +2122,7 @@ impl TypeRegistry {
         let composite_elem = self.composite_type(QualType::unqualified(ea), QualType::unqualified(eb))?;
 
         let sa = if ty_a.is_inline_array() {
-            ArraySizeType::Constant(ty_a.array_len().unwrap() as usize)
+            ArraySize::Constant(ty_a.array_len().unwrap() as usize)
         } else {
             match &self.types[ty_a.index()].kind {
                 TypeKind::Array { size, .. } => *size,
@@ -2131,7 +2131,7 @@ impl TypeRegistry {
         };
 
         let sb = if ty_b.is_inline_array() {
-            ArraySizeType::Constant(ty_b.array_len().unwrap() as usize)
+            ArraySize::Constant(ty_b.array_len().unwrap() as usize)
         } else {
             match &self.types[ty_b.index()].kind {
                 TypeKind::Array { size, .. } => *size,
@@ -2140,11 +2140,11 @@ impl TypeRegistry {
         };
 
         let composite_size = match (sa, sb) {
-            (ArraySizeType::Incomplete, s) => s,
-            (s, ArraySizeType::Incomplete) => s,
-            (ArraySizeType::Constant(sa), ArraySizeType::Constant(sb)) if sa == sb => ArraySizeType::Constant(sa),
-            (ArraySizeType::Star, s) => s,
-            (s, ArraySizeType::Star) => s,
+            (ArraySize::Incomplete, s) => s,
+            (s, ArraySize::Incomplete) => s,
+            (ArraySize::Constant(sa), ArraySize::Constant(sb)) if sa == sb => ArraySize::Constant(sa),
+            (ArraySize::Star, s) => s,
+            (s, ArraySize::Star) => s,
             _ => return None,
         };
 
@@ -2223,7 +2223,7 @@ impl TypeRegistry {
                         return true;
                     }
                     if let TypeKind::Array { element_type, size } = &self.types[ty.index()].kind {
-                        if matches!(size, ArraySizeType::Incomplete) {
+                        if matches!(size, ArraySize::Incomplete) {
                             return false;
                         }
                         ty = *element_type;
@@ -2317,7 +2317,7 @@ impl TypeRegistry {
                     if ty.is_inline_array() {
                         ty = self.reconstruct_element(ty);
                     } else if let TypeKind::Array { element_type, size } = &self.types[ty.index()].kind {
-                        if matches!(size, ArraySizeType::Variable(_)) {
+                        if matches!(size, ArraySize::Variable(_)) {
                             return true;
                         }
                         ty = *element_type;
@@ -2373,7 +2373,7 @@ impl TypeRegistry {
             match &self.types[ty.index()].kind {
                 TypeKind::Alias(inner) => ty = *inner,
                 TypeKind::Array { element_type, size } => {
-                    if matches!(size, ArraySizeType::Variable(_)) {
+                    if matches!(size, ArraySize::Variable(_)) {
                         return true;
                     }
                     ty = *element_type;
@@ -2412,10 +2412,10 @@ impl TypeRegistry {
             TypeKind::Array { element_type, size } => {
                 let elem_str = self.display_type(*element_type);
                 match size {
-                    ArraySizeType::Constant(len) => format!("{}[{}]", elem_str, len),
-                    ArraySizeType::Variable(_) => format!("{}[*]", elem_str), // Using * for VLA for now or expr?
-                    ArraySizeType::Incomplete => format!("{}[]", elem_str),
-                    ArraySizeType::Star => format!("{}[*]", elem_str),
+                    ArraySize::Constant(len) => format!("{}[{}]", elem_str, len),
+                    ArraySize::Variable(_) => format!("{}[*]", elem_str), // Using * for VLA for now or expr?
+                    ArraySize::Incomplete => format!("{}[]", elem_str),
+                    ArraySize::Star => format!("{}[*]", elem_str),
                 }
             }
             TypeKind::Function {

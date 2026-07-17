@@ -10,7 +10,7 @@ use crate::parser::{ParseDiag, TokenKind};
 use crate::semantic::ScopeId;
 use crate::source_manager::SourceLoc;
 
-pub(crate) fn parse_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+pub(crate) fn parse_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     parser.skip_attributes()?;
 
     let token = parser.current_token()?;
@@ -39,17 +39,17 @@ pub(crate) fn parse_statement(parser: &mut Parser) -> Result<ParsedNodeRef, Pars
         TokenKind::Asm => parse_asm_statement(parser),
         TokenKind::PragmaPack(kind) => {
             parser.advance();
-            Ok(parser.push_node(ParsedNodeKind::PragmaPack(kind), token.span))
+            Ok(parser.push_node(PNodeKind::PragmaPack(kind), token.span))
         }
         TokenKind::PragmaVisibility(kind) => {
             parser.advance();
-            Ok(parser.push_node(ParsedNodeKind::PragmaVisibility(kind), token.span))
+            Ok(parser.push_node(PNodeKind::PragmaVisibility(kind), token.span))
         }
         _ => parse_expression_statement(parser),
     }
 }
 
-pub(crate) fn parse_compound_statement(parser: &mut Parser) -> Result<(ParsedNodeRef, SourceLoc), ParseDiag> {
+pub(crate) fn parse_compound_statement(parser: &mut Parser) -> Result<(PNodeRef, SourceLoc), ParseDiag> {
     let (scope_id, pushed) = if let Some(sid) = parser.next_compound_uses_scope.take() {
         (sid, false)
     } else {
@@ -69,10 +69,7 @@ pub(crate) fn parse_compound_statement(parser: &mut Parser) -> Result<(ParsedNod
     res
 }
 
-fn parse_compound_statement_inner(
-    parser: &mut Parser,
-    scope_id: ScopeId,
-) -> Result<(ParsedNodeRef, SourceLoc), ParseDiag> {
+fn parse_compound_statement_inner(parser: &mut Parser, scope_id: ScopeId) -> Result<(PNodeRef, SourceLoc), ParseDiag> {
     let start = parser.expect(TokenKind::LeftBrace)?.span;
     let dummy = parser.push_dummy();
     let mut items = Vec::new();
@@ -100,7 +97,7 @@ fn parse_compound_statement_inner(
             }
             let end_token = parser.expect(TokenKind::Semicolon)?;
             let span = token.span.merge(end_token.span);
-            let node = parser.push_node(ParsedNodeKind::GnuLocalLabel(labels.into_boxed_slice()), span);
+            let node = parser.push_node(PNodeKind::GnuLocalLabel(labels.into_boxed_slice()), span);
             items.push(node);
             continue;
         }
@@ -108,7 +105,7 @@ fn parse_compound_statement_inner(
         if let Some(token) = parser.try_current_token()
             && let TokenKind::PragmaPack(kind) = token.kind
         {
-            let node = parser.push_node(ParsedNodeKind::PragmaPack(kind), token.span);
+            let node = parser.push_node(PNodeKind::PragmaPack(kind), token.span);
             items.push(node);
             parser.advance();
             continue;
@@ -117,7 +114,7 @@ fn parse_compound_statement_inner(
         if let Some(token) = parser.try_current_token()
             && let TokenKind::PragmaVisibility(kind) = token.kind
         {
-            let node = parser.push_node(ParsedNodeKind::PragmaVisibility(kind), token.span);
+            let node = parser.push_node(PNodeKind::PragmaVisibility(kind), token.span);
             items.push(node);
             parser.advance();
             continue;
@@ -134,15 +131,11 @@ fn parse_compound_statement_inner(
 
     let end = parser.expect(TokenKind::RightBrace)?.span;
     let span = start.merge(end);
-    let node = parser.replace_node(
-        dummy,
-        ParsedNodeKind::CompoundStmt(items.into_boxed_slice(), scope_id),
-        span,
-    );
+    let node = parser.replace_node(dummy, PNodeKind::CompoundStmt(items.into_boxed_slice(), scope_id), span);
     Ok((node, end.end()))
 }
 
-fn parse_if_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_if_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::If)?.span;
     let condition = parse_parenthesized_expr(parser)?;
     let then_branch = parse_statement(parser)?;
@@ -157,7 +150,7 @@ fn parse_if_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
         .unwrap_or_else(|| parser.ast.get_node(then_branch).span);
 
     Ok(parser.push_node(
-        ParsedNodeKind::If(ParsedIfStmt {
+        PNodeKind::If(PIfStmt {
             condition,
             then_branch,
             else_branch,
@@ -166,32 +159,32 @@ fn parse_if_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     ))
 }
 
-fn parse_switch_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_switch_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Switch)?.span;
     let condition = parse_parenthesized_expr(parser)?;
     let body = parse_statement(parser)?;
     let span = start.merge(parser.ast.get_node(body).span);
-    Ok(parser.push_node(ParsedNodeKind::Switch(condition, body), span))
+    Ok(parser.push_node(PNodeKind::Switch(condition, body), span))
 }
 
-fn parse_while_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_while_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::While)?.span;
     let condition = parse_parenthesized_expr(parser)?;
     let body = parse_statement(parser)?;
     let span = start.merge(parser.ast.get_node(body).span);
-    Ok(parser.push_node(ParsedNodeKind::While(ParsedWhileStmt { condition, body }), span))
+    Ok(parser.push_node(PNodeKind::While(PWhileStmt { condition, body }), span))
 }
 
-fn parse_do_while_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_do_while_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Do)?.span;
     let body = parse_statement(parser)?;
     parser.expect(TokenKind::While)?;
     let condition = parse_parenthesized_expr(parser)?;
     let end = parser.expect(TokenKind::Semicolon)?.span;
-    Ok(parser.push_node(ParsedNodeKind::DoWhile(body, condition), start.merge(end)))
+    Ok(parser.push_node(PNodeKind::DoWhile(body, condition), start.merge(end)))
 }
 
-fn parse_for_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_for_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::For)?.span;
     let dummy = parser.push_dummy();
 
@@ -215,7 +208,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> 
     let span = start.merge(parser.ast.get_node(body).span);
     Ok(parser.replace_node(
         dummy,
-        ParsedNodeKind::For(ParsedForStmt {
+        PNodeKind::For(PForStmt {
             init,
             condition,
             increment,
@@ -226,52 +219,52 @@ fn parse_for_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> 
     ))
 }
 
-fn parse_goto_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_goto_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Goto)?.span;
     let node_kind = if parser.accept(TokenKind::Star).is_some() {
-        ParsedNodeKind::ComputedGoto(parser.parse_expr_min()?)
+        PNodeKind::ComputedGoto(parser.parse_expr_min()?)
     } else {
-        ParsedNodeKind::Goto(parser.expect_name()?.0)
+        PNodeKind::Goto(parser.expect_name()?.0)
     };
     let end = parser.expect(TokenKind::Semicolon)?.span;
     Ok(parser.push_node(node_kind, start.merge(end)))
 }
 
-fn parse_continue_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_continue_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Continue)?.span;
     let end = parser.expect(TokenKind::Semicolon)?.span;
-    Ok(parser.push_node(ParsedNodeKind::Continue, start.merge(end)))
+    Ok(parser.push_node(PNodeKind::Continue, start.merge(end)))
 }
 
-fn parse_break_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_break_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Break)?.span;
     let end = parser.expect(TokenKind::Semicolon)?.span;
-    Ok(parser.push_node(ParsedNodeKind::Break, start.merge(end)))
+    Ok(parser.push_node(PNodeKind::Break, start.merge(end)))
 }
 
-fn parse_return_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_return_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Return)?.span;
     let value = parser.parse_optional_expr_before(TokenKind::Semicolon)?;
     Ok(parser.push_node(
-        ParsedNodeKind::Return(value),
+        PNodeKind::Return(value),
         start.merge(parser.last_token_span().unwrap_or(start)),
     ))
 }
 
-fn parse_empty_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_empty_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let span = parser.expect(TokenKind::Semicolon)?.span;
-    Ok(parser.push_node(ParsedNodeKind::EmptyStmt, span))
+    Ok(parser.push_node(PNodeKind::EmptyStmt, span))
 }
 
-fn parse_statement_after_label(parser: &mut Parser, colon_span: SourceSpan) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_statement_after_label(parser: &mut Parser, colon_span: SourceSpan) -> Result<PNodeRef, ParseDiag> {
     if parser.is_token(TokenKind::RightBrace) || parser.starts_declaration() {
-        Ok(parser.push_node(ParsedNodeKind::EmptyStmt, colon_span))
+        Ok(parser.push_node(PNodeKind::EmptyStmt, colon_span))
     } else {
         parse_statement(parser)
     }
 }
 
-fn parse_case_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_case_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Case)?.span;
     let start_expr = parser.parse_expr_min()?;
     let end_expr = parser
@@ -282,38 +275,38 @@ fn parse_case_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag>
     let stmt = parse_statement_after_label(parser, colon_span)?;
     let span = start.merge(parser.ast.get_node(stmt).span);
     let kind = match end_expr {
-        Some(end) => ParsedNodeKind::CaseRange(start_expr, end, stmt),
-        None => ParsedNodeKind::Case(start_expr, stmt),
+        Some(end) => PNodeKind::CaseRange(start_expr, end, stmt),
+        None => PNodeKind::Case(start_expr, stmt),
     };
     Ok(parser.push_node(kind, span))
 }
 
-fn parse_default_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_default_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Default)?.span;
     let colon_span = parser.expect(TokenKind::Colon)?.span;
     let stmt = parse_statement_after_label(parser, colon_span)?;
     let span = start.merge(parser.ast.get_node(stmt).span);
-    Ok(parser.push_node(ParsedNodeKind::Default(stmt), span))
+    Ok(parser.push_node(PNodeKind::Default(stmt), span))
 }
 
-fn parse_label_statement(parser: &mut Parser, name: NameId) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_label_statement(parser: &mut Parser, name: NameId) -> Result<PNodeRef, ParseDiag> {
     let start = parser.advance().unwrap().span;
     let colon_span = parser.expect(TokenKind::Colon)?.span;
     let stmt = parse_statement_after_label(parser, colon_span)?;
     let span = start.merge(parser.ast.get_node(stmt).span);
-    Ok(parser.push_node(ParsedNodeKind::Label(name, stmt), span))
+    Ok(parser.push_node(PNodeKind::Label(name, stmt), span))
 }
 
-fn parse_expression_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_expression_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let dummy = parser.push_dummy();
     let start = parser.current_token_span()?;
     let expr = parser.parse_expr_min()?;
     let end = parser.expect(TokenKind::Semicolon)?.span;
     let span = start.merge(end);
-    Ok(parser.replace_node(dummy, ParsedNodeKind::ExpressionStmt(Some(expr)), span))
+    Ok(parser.replace_node(dummy, PNodeKind::ExpressionStmt(Some(expr)), span))
 }
 
-fn parse_asm_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_asm_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Asm)?.span;
 
     let mut is_volatile = false;
@@ -333,7 +326,7 @@ fn parse_asm_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> 
     let mut inputs = Vec::new();
     let mut clobbers = Vec::new();
 
-    let parse_operands = |parser: &mut Parser| -> Result<Vec<ParsedAsmOperand>, ParseDiag> {
+    let parse_operands = |parser: &mut Parser| -> Result<Vec<PAsmOperand>, ParseDiag> {
         let mut ops = Vec::new();
         while !parser.matches(&[TokenKind::RightParen, TokenKind::Colon]) {
             // Optional [ name ]
@@ -347,7 +340,7 @@ fn parse_asm_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> 
             let expr = parser.parse_expr_min()?;
             parser.expect(TokenKind::RightParen)?;
 
-            ops.push(ParsedAsmOperand { constraint, expr });
+            ops.push(PAsmOperand { constraint, expr });
 
             if parser.accept(TokenKind::Comma).is_none() {
                 break;
@@ -385,12 +378,12 @@ fn parse_asm_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> 
     parser.expect(TokenKind::RightParen)?;
     let end = parser.expect(TokenKind::Semicolon)?.span;
 
-    let asm_stmt = Box::new(ParsedAsmStmt {
+    let asm_stmt = Box::new(PAsmStmt {
         template,
         outputs,
         inputs,
         clobbers,
         is_volatile,
     });
-    Ok(parser.push_node(ParsedNodeKind::AsmStmt(asm_stmt), start.merge(end)))
+    Ok(parser.push_node(PNodeKind::AsmStmt(asm_stmt), start.merge(end)))
 }

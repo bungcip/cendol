@@ -1,7 +1,5 @@
 use crate::{
-    ast::{
-        BinaryOp, FunctionSpec, NameId, ParsedType, SourceSpan, StorageClass, TypeQualifier, UnaryOp, literal::LitRef,
-    },
+    ast::{BinaryOp, FunctionSpec, NameId, PType, SourceSpan, StorageClass, TypeQualifier, UnaryOp, literal::LitRef},
     semantic::{ScopeId, TypeQualifiers},
 };
 use std::num::NonZeroU32;
@@ -23,129 +21,129 @@ pub enum PragmaVisibilityKind {
     Pop,
 }
 
-use super::ParsedTypeArena;
+use super::PTypeArena;
 
 /// Node reference type for referencing child nodes in ParsedAst.
-pub type ParsedNodeRef = NonZeroU32;
+pub type PNodeRef = NonZeroU32;
 
 /// The parsed AST storage.
 /// Produced by the Parser. Purely syntactic.
 #[derive(Clone, Default)]
-pub struct ParsedAst {
-    pub nodes: Vec<ParsedNode>,
-    pub parsed_types: ParsedTypeArena,
+pub struct PAst {
+    pub nodes: Vec<PNode>,
+    pub parsed_types: PTypeArena,
 }
 
-impl ParsedAst {
+impl PAst {
     pub(crate) fn new() -> Self {
-        ParsedAst::default()
+        PAst::default()
     }
 
-    pub(crate) fn push_node(&mut self, node: ParsedNode) -> ParsedNodeRef {
+    pub(crate) fn push_node(&mut self, node: PNode) -> PNodeRef {
         let index = self.nodes.len() as u32 + 1;
         self.nodes.push(node);
-        ParsedNodeRef::new(index).expect("ParsedNodeRef overflow")
+        PNodeRef::new(index).expect("PNodeRef overflow")
     }
 
-    pub(crate) fn get_node(&self, index: ParsedNodeRef) -> &ParsedNode {
+    pub(crate) fn get_node(&self, index: PNodeRef) -> &PNode {
         &self.nodes[(index.get() - 1) as usize]
     }
 
-    pub(crate) fn replace_node(&mut self, old_node: ParsedNodeRef, new_node: ParsedNode) -> ParsedNodeRef {
+    pub(crate) fn replace_node(&mut self, old_node: PNodeRef, new_node: PNode) -> PNodeRef {
         let old_index = (old_node.get() - 1) as usize;
         self.nodes[old_index] = new_node;
         old_node
     }
 
-    pub(crate) fn get_root(&self) -> ParsedNodeRef {
-        ParsedNodeRef::new(1).expect("Parsed AST empty")
+    pub(crate) fn get_root(&self) -> PNodeRef {
+        PNodeRef::new(1).expect("Parsed AST empty")
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedNode {
-    pub kind: ParsedNodeKind,
+pub struct PNode {
+    pub kind: PNodeKind,
     pub span: SourceSpan,
 }
 
-impl ParsedNode {
-    pub(crate) fn new(kind: ParsedNodeKind, span: SourceSpan) -> Self {
-        ParsedNode { kind, span }
+impl PNode {
+    pub(crate) fn new(kind: PNodeKind, span: SourceSpan) -> Self {
+        PNode { kind, span }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum ParsedNodeKind {
+pub enum PNodeKind {
     // --- Literals ---
     Literal(LitRef),
 
     // --- Expressions ---
     Ident(NameId), // No symbol ref yet
-    UnaryOp(UnaryOp, ParsedNodeRef),
-    BinaryOp(BinaryOp, ParsedNodeRef, ParsedNodeRef),
-    TernaryOp(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
-    GnuStatementExpr(ParsedNodeRef, ParsedNodeRef),
+    UnaryOp(UnaryOp, PNodeRef),
+    BinaryOp(BinaryOp, PNodeRef, PNodeRef),
+    TernaryOp(PNodeRef, PNodeRef, PNodeRef),
+    GnuStatementExpr(PNodeRef, PNodeRef),
 
-    PostIncrement(ParsedNodeRef),
-    PostDecrement(ParsedNodeRef),
+    PostIncrement(PNodeRef),
+    PostDecrement(PNodeRef),
 
-    Assignment(BinaryOp, ParsedNodeRef, ParsedNodeRef),
-    FunctionCall(ParsedNodeRef, Box<[ParsedNodeRef]>),
-    MemberAccess(ParsedNodeRef, NameId, bool),
-    IndexAccess(ParsedNodeRef, ParsedNodeRef),
+    Assignment(BinaryOp, PNodeRef, PNodeRef),
+    FunctionCall(PNodeRef, Box<[PNodeRef]>),
+    MemberAccess(PNodeRef, NameId, bool),
+    IndexAccess(PNodeRef, PNodeRef),
 
-    Cast(ParsedType, ParsedNodeRef),
-    BuiltinVaArg(ParsedType, ParsedNodeRef),
-    BuiltinOffsetof(ParsedType, ParsedNodeRef),
-    BuiltinTypesCompatibleP(Box<(ParsedType, ParsedType)>),
-    SizeOfExpr(ParsedNodeRef),
-    SizeOfType(ParsedType),
-    AlignOfExpr(ParsedNodeRef),
-    AlignOfType(ParsedType),
+    Cast(PType, PNodeRef),
+    BuiltinVaArg(PType, PNodeRef),
+    BuiltinOffsetof(PType, PNodeRef),
+    BuiltinTypesCompatibleP(Box<(PType, PType)>),
+    SizeOfExpr(PNodeRef),
+    SizeOfType(PType),
+    AlignOfExpr(PNodeRef),
+    AlignOfType(PType),
 
-    CompoundLiteral(ParsedType, ParsedNodeRef),
-    GenericSelection(ParsedNodeRef, Box<[ParsedGenericAssociation]>),
-    BuiltinChooseExpr(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
-    BuiltinComplex(ParsedNodeRef, ParsedNodeRef),
-    BuiltinBitCast(ParsedType, ParsedNodeRef),
-    BuiltinConvertVector(ParsedNodeRef, ParsedType),
+    CompoundLiteral(PType, PNodeRef),
+    GenericSelection(PNodeRef, Box<[PGenericAssociation]>),
+    BuiltinChooseExpr(PNodeRef, PNodeRef, PNodeRef),
+    BuiltinComplex(PNodeRef, PNodeRef),
+    BuiltinBitCast(PType, PNodeRef),
+    BuiltinConvertVector(PNodeRef, PType),
 
     // --- Statements ---
-    CompoundStmt(Box<[ParsedNodeRef]>, ScopeId),
+    CompoundStmt(Box<[PNodeRef]>, ScopeId),
     GnuLocalLabel(Box<[NameId]>),
-    If(ParsedIfStmt),
-    While(ParsedWhileStmt),
-    DoWhile(ParsedNodeRef, ParsedNodeRef),
-    For(ParsedForStmt),
+    If(PIfStmt),
+    While(PWhileStmt),
+    DoWhile(PNodeRef, PNodeRef),
+    For(PForStmt),
 
-    Return(Option<ParsedNodeRef>),
+    Return(Option<PNodeRef>),
     Break,
     Continue,
     Goto(NameId),
-    ComputedGoto(ParsedNodeRef),
+    ComputedGoto(PNodeRef),
     LabelAddr(NameId),
-    Label(NameId, ParsedNodeRef),
+    Label(NameId, PNodeRef),
 
-    Switch(ParsedNodeRef, ParsedNodeRef),
-    Case(ParsedNodeRef, ParsedNodeRef),
-    CaseRange(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
-    Default(ParsedNodeRef),
+    Switch(PNodeRef, PNodeRef),
+    Case(PNodeRef, PNodeRef),
+    CaseRange(PNodeRef, PNodeRef, PNodeRef),
+    Default(PNodeRef),
 
-    ExpressionStmt(Option<ParsedNodeRef>),
+    ExpressionStmt(Option<PNodeRef>),
     EmptyStmt,
-    AsmStmt(Box<ParsedAsmStmt>),
+    AsmStmt(Box<PAsmStmt>),
 
     // --- Declarations & Definitions ---
-    Declaration(ParsedDecl),
-    FunctionDef(ParsedFunctionDef),
-    EnumConstant(NameId, Option<ParsedNodeRef>),
-    StaticAssert(ParsedNodeRef, Option<ParsedNodeRef>),
+    Declaration(PDecl),
+    FunctionDef(PFunctionDef),
+    EnumConstant(NameId, Option<PNodeRef>),
+    StaticAssert(PNodeRef, Option<PNodeRef>),
 
     // --- Top Level ---
-    TranslationUnit(Box<[ParsedNodeRef]>),
+    TranslationUnit(Box<[PNodeRef]>),
 
     // --- InitializerList ---
-    InitializerList(Box<[ParsedDesignatedInitializer]>),
+    InitializerList(Box<[PDesignatedInitializer]>),
 
     // --- Pragma Pack ---
     PragmaPack(PragmaPackKind),
@@ -158,60 +156,60 @@ pub enum ParsedNodeKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedIfStmt {
-    pub condition: ParsedNodeRef,
-    pub then_branch: ParsedNodeRef,
-    pub else_branch: Option<ParsedNodeRef>,
+pub struct PIfStmt {
+    pub condition: PNodeRef,
+    pub then_branch: PNodeRef,
+    pub else_branch: Option<PNodeRef>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedWhileStmt {
-    pub condition: ParsedNodeRef,
-    pub body: ParsedNodeRef,
+pub struct PWhileStmt {
+    pub condition: PNodeRef,
+    pub body: PNodeRef,
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedForStmt {
-    pub init: Option<ParsedNodeRef>,
-    pub condition: Option<ParsedNodeRef>,
-    pub increment: Option<ParsedNodeRef>,
-    pub body: ParsedNodeRef,
+pub struct PForStmt {
+    pub init: Option<PNodeRef>,
+    pub condition: Option<PNodeRef>,
+    pub increment: Option<PNodeRef>,
+    pub body: PNodeRef,
     pub scope_id: ScopeId,
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedInitDeclarator {
+pub struct PInitDeclarator {
     pub declarator: super::DeclaratorRef,
-    pub initializer: Option<ParsedNodeRef>,
+    pub initializer: Option<PNodeRef>,
     pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedAsmOperand {
+pub struct PAsmOperand {
     pub constraint: LitRef,
-    pub expr: ParsedNodeRef,
+    pub expr: PNodeRef,
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedAsmStmt {
+pub struct PAsmStmt {
     pub template: LitRef,
-    pub outputs: Vec<ParsedAsmOperand>,
-    pub inputs: Vec<ParsedAsmOperand>,
+    pub outputs: Vec<PAsmOperand>,
+    pub inputs: Vec<PAsmOperand>,
     pub clobbers: Vec<LitRef>,
     pub is_volatile: bool,
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedDecl {
+pub struct PDecl {
     pub specifiers: ThinVec<DeclSpec>,
-    pub init_declarators: ThinVec<ParsedInitDeclarator>,
+    pub init_declarators: ThinVec<PInitDeclarator>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedFunctionDef {
+pub struct PFunctionDef {
     pub specifiers: ThinVec<DeclSpec>,
     pub declarator: super::DeclaratorRef,
-    pub body: ParsedNodeRef,
+    pub body: PNodeRef,
 }
 
 // Declaration specifiers and related types
@@ -220,11 +218,11 @@ pub enum DeclSpec {
     StorageClass(StorageClass),
     TypeQualifier(TypeQualifier),
     FunctionSpec(FunctionSpec),
-    AlignmentSpec(ParsedAlignmentSpec, bool /* is_gnu */),
+    AlignmentSpec(PAlignmentSpec, bool /* is_gnu */),
     TypeSpec(TypeSpec),
     Attribute,
     AttributePacked,
-    AttributeCleanup(ParsedNodeRef),
+    AttributeCleanup(PNodeRef),
     AttributeTransparentUnion,
     AttributeVisibility(crate::lang_options::Visibility),
     AttributeAlias(LitRef),
@@ -261,50 +259,50 @@ pub enum TypeSpec {
     Unsigned,
     Bool,
     Complex,
-    Atomic(ParsedType), // _Bool, _Complex, _Atomic
+    Atomic(PType), // _Bool, _Complex, _Atomic
     Record(
-        bool,                       /* is_union */
-        Option<NameId>,             /* tag */
-        Option<Vec<ParsedNodeRef>>, /* field members */
-        Vec<DeclSpec>,              /* attributes */
+        bool,                  /* is_union */
+        Option<NameId>,        /* tag */
+        Option<Vec<PNodeRef>>, /* field members */
+        Vec<DeclSpec>,         /* attributes */
     ),
     Enum(
-        Option<NameId>,             /* tag */
-        Option<Vec<ParsedNodeRef>>, /* enumerators */
-        Option<ParsedType>,         /* underlying type */
+        Option<NameId>,        /* tag */
+        Option<Vec<PNodeRef>>, /* enumerators */
+        Option<PType>,         /* underlying type */
     ),
     TypedefName(NameId),
     VaList,
     AutoType,
-    Typeof(ParsedType),
-    TypeofExpr(ParsedNodeRef),
-    TypeofUnqual(ParsedType),
-    TypeofUnqualExpr(ParsedNodeRef),
+    Typeof(PType),
+    TypeofExpr(PNodeRef),
+    TypeofUnqual(PType),
+    TypeofUnqualExpr(PNodeRef),
 }
 
 // Alignment specifiers
 #[derive(Debug, Clone)]
-pub enum ParsedAlignmentSpec {
-    Type(ParsedType),    // _Alignas(type-name)
-    Expr(ParsedNodeRef), // _Alignas(constant-expression)
+pub enum PAlignmentSpec {
+    Type(PType),    // _Alignas(type-name)
+    Expr(PNodeRef), // _Alignas(constant-expression)
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedParam {
+pub struct PParam {
     pub name: Option<NameId>,
-    pub ty: ParsedType,
+    pub ty: PType,
     pub storage: Option<StorageClass>,
     pub is_inline: bool,
     pub is_noreturn: bool,
-    pub alignment: Option<ParsedAlignmentSpec>,
+    pub alignment: Option<PAlignmentSpec>,
     pub span: SourceSpan,
 }
 
 // Array sizes
 #[derive(Debug, Clone)]
-pub enum ParsedArraySize {
+pub enum PArraySize {
     Expression {
-        expr: ParsedNodeRef,
+        expr: PNodeRef,
         qualifiers: TypeQualifiers,
     },
     Star {
@@ -314,35 +312,35 @@ pub enum ParsedArraySize {
     VlaSpec {
         is_static: bool,
         qualifiers: TypeQualifiers,
-        size: Option<ParsedNodeRef>,
+        size: Option<PNodeRef>,
     }, // for VLA
 }
 
-impl ParsedArraySize {
+impl PArraySize {
     pub(crate) fn qualifiers(&self) -> TypeQualifiers {
         match self {
-            ParsedArraySize::Expression { qualifiers, .. } => *qualifiers,
-            ParsedArraySize::Star { qualifiers } => *qualifiers,
-            ParsedArraySize::VlaSpec { qualifiers, .. } => *qualifiers,
-            ParsedArraySize::Incomplete => TypeQualifiers::empty(),
+            PArraySize::Expression { qualifiers, .. } => *qualifiers,
+            PArraySize::Star { qualifiers } => *qualifiers,
+            PArraySize::VlaSpec { qualifiers, .. } => *qualifiers,
+            PArraySize::Incomplete => TypeQualifiers::empty(),
         }
     }
 
     pub(crate) fn is_static(&self) -> bool {
         match self {
-            ParsedArraySize::VlaSpec { is_static, .. } => *is_static,
+            PArraySize::VlaSpec { is_static, .. } => *is_static,
             _ => false,
         }
     }
 
     pub(crate) fn is_star(&self) -> bool {
-        matches!(self, ParsedArraySize::Star { .. })
+        matches!(self, PArraySize::Star { .. })
     }
 
-    pub(crate) fn size_expr(&self) -> Option<ParsedNodeRef> {
+    pub(crate) fn size_expr(&self) -> Option<PNodeRef> {
         match self {
-            ParsedArraySize::Expression { expr, .. } => Some(*expr),
-            ParsedArraySize::VlaSpec { size, .. } => *size,
+            PArraySize::Expression { expr, .. } => Some(*expr),
+            PArraySize::VlaSpec { size, .. } => *size,
             _ => None,
         }
     }
@@ -350,25 +348,25 @@ impl ParsedArraySize {
 
 // Record definitions
 #[derive(Debug, Clone)]
-pub struct ParsedGenericAssociation {
-    pub type_name: Option<ParsedType>, // None for 'default:'
-    pub result_expr: ParsedNodeRef,
+pub struct PGenericAssociation {
+    pub type_name: Option<PType>, // None for 'default:'
+    pub result_expr: PNodeRef,
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedDesignatedInitializer {
-    pub designation: Box<[ParsedDesignator]>,
-    pub initializer: ParsedNodeRef,
+pub struct PDesignatedInitializer {
+    pub designation: Box<[PDesignator]>,
+    pub initializer: PNodeRef,
 }
 
 #[derive(Debug, Clone)]
-pub enum ParsedDesignator {
+pub enum PDesignator {
     FieldName(NameId),
-    ArrayIndex(ParsedNodeRef),
-    ArrayRange(ParsedNodeRef, ParsedNodeRef),
+    ArrayIndex(PNodeRef),
+    ArrayRange(PNodeRef, PNodeRef),
 }
 impl DeclSpec {
-    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(PNodeRef)) {
         match self {
             DeclSpec::AlignmentSpec(aspec, _) => aspec.for_each_child(f),
             DeclSpec::TypeSpec(ts) => ts.for_each_child(f),
@@ -379,7 +377,7 @@ impl DeclSpec {
 }
 
 impl TypeSpec {
-    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(PNodeRef)) {
         match self {
             TypeSpec::Enum(_, Some(enumerators), _) => {
                 for &e in enumerators {
@@ -409,24 +407,24 @@ impl TypeSpec {
     }
 }
 
-impl ParsedAlignmentSpec {
-    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
-        if let ParsedAlignmentSpec::Expr(e) = self {
+impl PAlignmentSpec {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(PNodeRef)) {
+        if let PAlignmentSpec::Expr(e) = self {
             f(*e)
         }
     }
 }
 
-impl ParsedInitDeclarator {
-    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+impl PInitDeclarator {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(PNodeRef)) {
         if let Some(init) = self.initializer {
             f(init);
         }
     }
 }
 
-impl ParsedDecl {
-    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+impl PDecl {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(PNodeRef)) {
         for spec in &self.specifiers {
             spec.for_each_child(f);
         }
@@ -436,8 +434,8 @@ impl ParsedDecl {
     }
 }
 
-impl ParsedFunctionDef {
-    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+impl PFunctionDef {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(PNodeRef)) {
         for spec in &self.specifiers {
             spec.for_each_child(f);
         }
@@ -445,154 +443,154 @@ impl ParsedFunctionDef {
     }
 }
 
-impl ParsedNodeKind {
+impl PNodeKind {
     pub(super) fn tagname(&self) -> &'static str {
         match self {
-            ParsedNodeKind::Literal(_) => "Literal",
-            ParsedNodeKind::Ident(_) => "Ident",
-            ParsedNodeKind::UnaryOp(..) => "UnaryOp",
-            ParsedNodeKind::BinaryOp(..) => "BinaryOp",
-            ParsedNodeKind::TernaryOp(..) => "TernaryOp",
-            ParsedNodeKind::GnuStatementExpr(..) => "GnuStatementExpr",
-            ParsedNodeKind::PostIncrement(..) => "PostIncrement",
-            ParsedNodeKind::PostDecrement(..) => "PostDecrement",
-            ParsedNodeKind::Assignment(..) => "Assignment",
-            ParsedNodeKind::FunctionCall(..) => "FunctionCall",
-            ParsedNodeKind::MemberAccess(..) => "MemberAccess",
-            ParsedNodeKind::IndexAccess(..) => "IndexAccess",
-            ParsedNodeKind::Cast(..) => "Cast",
-            ParsedNodeKind::BuiltinVaArg(..) => "BuiltinVaArg",
-            ParsedNodeKind::BuiltinOffsetof(..) => "BuiltinOffsetof",
-            ParsedNodeKind::SizeOfExpr(..) => "SizeOfExpr",
-            ParsedNodeKind::SizeOfType(..) => "SizeOfType",
-            ParsedNodeKind::AlignOfExpr(..) => "AlignOfExpr",
-            ParsedNodeKind::AlignOfType(..) => "AlignOfType",
-            ParsedNodeKind::CompoundLiteral(..) => "CompoundLiteral",
-            ParsedNodeKind::GenericSelection(..) => "GenericSelection",
-            ParsedNodeKind::BuiltinChooseExpr(..) => "BuiltinChooseExpr",
-            ParsedNodeKind::CompoundStmt(..) => "CompoundStmt",
-            ParsedNodeKind::GnuLocalLabel(..) => "GnuLocalLabel",
-            ParsedNodeKind::If(..) => "If",
-            ParsedNodeKind::While(..) => "While",
-            ParsedNodeKind::DoWhile(..) => "DoWhile",
-            ParsedNodeKind::For(..) => "For",
-            ParsedNodeKind::Return(..) => "Return",
-            ParsedNodeKind::Break => "Break",
-            ParsedNodeKind::Continue => "Continue",
-            ParsedNodeKind::Goto(..) => "Goto",
-            ParsedNodeKind::ComputedGoto(..) => "ComputedGoto",
-            ParsedNodeKind::LabelAddr(..) => "LabelAddr",
-            ParsedNodeKind::Label(..) => "Label",
-            ParsedNodeKind::Switch(..) => "Switch",
-            ParsedNodeKind::Case(..) => "Case",
-            ParsedNodeKind::CaseRange(..) => "CaseRange",
-            ParsedNodeKind::Default(..) => "Default",
-            ParsedNodeKind::ExpressionStmt(..) => "ExpressionStmt",
-            ParsedNodeKind::EmptyStmt => "EmptyStmt",
-            ParsedNodeKind::AsmStmt(..) => "AsmStmt",
-            ParsedNodeKind::Declaration(..) => "Declaration",
-            ParsedNodeKind::FunctionDef(..) => "FunctionDef",
-            ParsedNodeKind::EnumConstant(..) => "EnumConstant",
-            ParsedNodeKind::StaticAssert(..) => "StaticAssert",
-            ParsedNodeKind::TranslationUnit(..) => "TranslationUnit",
-            ParsedNodeKind::InitializerList(..) => "InitializerList",
-            ParsedNodeKind::PragmaPack(..) => "PragmaPack",
-            ParsedNodeKind::PragmaVisibility(..) => "PragmaVisibility",
-            ParsedNodeKind::BuiltinComplex(..) => "BuiltinComplex",
-            ParsedNodeKind::BuiltinBitCast(..) => "BuiltinBitCast",
-            ParsedNodeKind::BuiltinConvertVector(..) => "BuiltinConvertVector",
-            ParsedNodeKind::BuiltinTypesCompatibleP(..) => "BuiltinTypesCompatibleP",
-            ParsedNodeKind::Dummy => "Dummy",
+            PNodeKind::Literal(_) => "Literal",
+            PNodeKind::Ident(_) => "Ident",
+            PNodeKind::UnaryOp(..) => "UnaryOp",
+            PNodeKind::BinaryOp(..) => "BinaryOp",
+            PNodeKind::TernaryOp(..) => "TernaryOp",
+            PNodeKind::GnuStatementExpr(..) => "GnuStatementExpr",
+            PNodeKind::PostIncrement(..) => "PostIncrement",
+            PNodeKind::PostDecrement(..) => "PostDecrement",
+            PNodeKind::Assignment(..) => "Assignment",
+            PNodeKind::FunctionCall(..) => "FunctionCall",
+            PNodeKind::MemberAccess(..) => "MemberAccess",
+            PNodeKind::IndexAccess(..) => "IndexAccess",
+            PNodeKind::Cast(..) => "Cast",
+            PNodeKind::BuiltinVaArg(..) => "BuiltinVaArg",
+            PNodeKind::BuiltinOffsetof(..) => "BuiltinOffsetof",
+            PNodeKind::SizeOfExpr(..) => "SizeOfExpr",
+            PNodeKind::SizeOfType(..) => "SizeOfType",
+            PNodeKind::AlignOfExpr(..) => "AlignOfExpr",
+            PNodeKind::AlignOfType(..) => "AlignOfType",
+            PNodeKind::CompoundLiteral(..) => "CompoundLiteral",
+            PNodeKind::GenericSelection(..) => "GenericSelection",
+            PNodeKind::BuiltinChooseExpr(..) => "BuiltinChooseExpr",
+            PNodeKind::CompoundStmt(..) => "CompoundStmt",
+            PNodeKind::GnuLocalLabel(..) => "GnuLocalLabel",
+            PNodeKind::If(..) => "If",
+            PNodeKind::While(..) => "While",
+            PNodeKind::DoWhile(..) => "DoWhile",
+            PNodeKind::For(..) => "For",
+            PNodeKind::Return(..) => "Return",
+            PNodeKind::Break => "Break",
+            PNodeKind::Continue => "Continue",
+            PNodeKind::Goto(..) => "Goto",
+            PNodeKind::ComputedGoto(..) => "ComputedGoto",
+            PNodeKind::LabelAddr(..) => "LabelAddr",
+            PNodeKind::Label(..) => "Label",
+            PNodeKind::Switch(..) => "Switch",
+            PNodeKind::Case(..) => "Case",
+            PNodeKind::CaseRange(..) => "CaseRange",
+            PNodeKind::Default(..) => "Default",
+            PNodeKind::ExpressionStmt(..) => "ExpressionStmt",
+            PNodeKind::EmptyStmt => "EmptyStmt",
+            PNodeKind::AsmStmt(..) => "AsmStmt",
+            PNodeKind::Declaration(..) => "Declaration",
+            PNodeKind::FunctionDef(..) => "FunctionDef",
+            PNodeKind::EnumConstant(..) => "EnumConstant",
+            PNodeKind::StaticAssert(..) => "StaticAssert",
+            PNodeKind::TranslationUnit(..) => "TranslationUnit",
+            PNodeKind::InitializerList(..) => "InitializerList",
+            PNodeKind::PragmaPack(..) => "PragmaPack",
+            PNodeKind::PragmaVisibility(..) => "PragmaVisibility",
+            PNodeKind::BuiltinComplex(..) => "BuiltinComplex",
+            PNodeKind::BuiltinBitCast(..) => "BuiltinBitCast",
+            PNodeKind::BuiltinConvertVector(..) => "BuiltinConvertVector",
+            PNodeKind::BuiltinTypesCompatibleP(..) => "BuiltinTypesCompatibleP",
+            PNodeKind::Dummy => "Dummy",
         }
     }
 
-    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(PNodeRef)) {
         match self {
-            ParsedNodeKind::Literal(_)
-            | ParsedNodeKind::Ident(_)
-            | ParsedNodeKind::BuiltinTypesCompatibleP(_)
-            | ParsedNodeKind::SizeOfType(_)
-            | ParsedNodeKind::AlignOfType(_)
-            | ParsedNodeKind::Break
-            | ParsedNodeKind::Continue
-            | ParsedNodeKind::Goto(_)
-            | ParsedNodeKind::LabelAddr(_)
-            | ParsedNodeKind::EmptyStmt
-            | ParsedNodeKind::PragmaPack(_)
-            | ParsedNodeKind::PragmaVisibility(_)
-            | ParsedNodeKind::Dummy => {}
-            ParsedNodeKind::UnaryOp(_, e)
-            | ParsedNodeKind::PostIncrement(e)
-            | ParsedNodeKind::PostDecrement(e)
-            | ParsedNodeKind::MemberAccess(e, _, _)
-            | ParsedNodeKind::Cast(_, e)
-            | ParsedNodeKind::BuiltinVaArg(_, e)
-            | ParsedNodeKind::BuiltinBitCast(_, e)
-            | ParsedNodeKind::BuiltinOffsetof(_, e)
-            | ParsedNodeKind::SizeOfExpr(e)
-            | ParsedNodeKind::AlignOfExpr(e)
-            | ParsedNodeKind::CompoundLiteral(_, e)
-            | ParsedNodeKind::Label(_, e)
-            | ParsedNodeKind::ComputedGoto(e)
-            | ParsedNodeKind::Default(e)
-            | ParsedNodeKind::BuiltinConvertVector(e, _)
-            | ParsedNodeKind::GnuStatementExpr(e, _) => f(*e),
-            ParsedNodeKind::BinaryOp(_, l, r)
-            | ParsedNodeKind::Assignment(_, l, r)
-            | ParsedNodeKind::IndexAccess(l, r)
-            | ParsedNodeKind::BuiltinComplex(l, r)
-            | ParsedNodeKind::DoWhile(l, r)
-            | ParsedNodeKind::Switch(l, r)
-            | ParsedNodeKind::Case(l, r) => {
+            PNodeKind::Literal(_)
+            | PNodeKind::Ident(_)
+            | PNodeKind::BuiltinTypesCompatibleP(_)
+            | PNodeKind::SizeOfType(_)
+            | PNodeKind::AlignOfType(_)
+            | PNodeKind::Break
+            | PNodeKind::Continue
+            | PNodeKind::Goto(_)
+            | PNodeKind::LabelAddr(_)
+            | PNodeKind::EmptyStmt
+            | PNodeKind::PragmaPack(_)
+            | PNodeKind::PragmaVisibility(_)
+            | PNodeKind::Dummy => {}
+            PNodeKind::UnaryOp(_, e)
+            | PNodeKind::PostIncrement(e)
+            | PNodeKind::PostDecrement(e)
+            | PNodeKind::MemberAccess(e, _, _)
+            | PNodeKind::Cast(_, e)
+            | PNodeKind::BuiltinVaArg(_, e)
+            | PNodeKind::BuiltinBitCast(_, e)
+            | PNodeKind::BuiltinOffsetof(_, e)
+            | PNodeKind::SizeOfExpr(e)
+            | PNodeKind::AlignOfExpr(e)
+            | PNodeKind::CompoundLiteral(_, e)
+            | PNodeKind::Label(_, e)
+            | PNodeKind::ComputedGoto(e)
+            | PNodeKind::Default(e)
+            | PNodeKind::BuiltinConvertVector(e, _)
+            | PNodeKind::GnuStatementExpr(e, _) => f(*e),
+            PNodeKind::BinaryOp(_, l, r)
+            | PNodeKind::Assignment(_, l, r)
+            | PNodeKind::IndexAccess(l, r)
+            | PNodeKind::BuiltinComplex(l, r)
+            | PNodeKind::DoWhile(l, r)
+            | PNodeKind::Switch(l, r)
+            | PNodeKind::Case(l, r) => {
                 f(*l);
                 f(*r);
             }
-            ParsedNodeKind::StaticAssert(l, r) => {
+            PNodeKind::StaticAssert(l, r) => {
                 f(*l);
                 if let Some(msg) = r {
                     f(*msg);
                 }
             }
-            ParsedNodeKind::TernaryOp(c, t, e) | ParsedNodeKind::CaseRange(c, t, e) => {
+            PNodeKind::TernaryOp(c, t, e) | PNodeKind::CaseRange(c, t, e) => {
                 f(*c);
                 f(*t);
                 f(*e);
             }
 
-            ParsedNodeKind::FunctionCall(c, args) => {
+            PNodeKind::FunctionCall(c, args) => {
                 f(*c);
                 for a in args.as_ref() {
                     f(*a);
                 }
             }
-            ParsedNodeKind::GenericSelection(c, assocs) => {
+            PNodeKind::GenericSelection(c, assocs) => {
                 f(*c);
                 for a in assocs.as_ref() {
                     f(a.result_expr);
                 }
             }
-            ParsedNodeKind::BuiltinChooseExpr(c, t, e) => {
+            PNodeKind::BuiltinChooseExpr(c, t, e) => {
                 f(*c);
                 f(*t);
                 f(*e);
             }
-            ParsedNodeKind::CompoundStmt(stmts, _) | ParsedNodeKind::TranslationUnit(stmts) => {
+            PNodeKind::CompoundStmt(stmts, _) | PNodeKind::TranslationUnit(stmts) => {
                 for s in stmts.as_ref() {
                     f(*s);
                 }
             }
-            ParsedNodeKind::If(stmt) => {
+            PNodeKind::If(stmt) => {
                 f(stmt.condition);
                 f(stmt.then_branch);
                 if let Some(e) = stmt.else_branch {
                     f(e);
                 }
             }
-            ParsedNodeKind::While(stmt) => {
+            PNodeKind::While(stmt) => {
                 f(stmt.condition);
                 f(stmt.body);
             }
-            ParsedNodeKind::For(stmt) => {
+            PNodeKind::For(stmt) => {
                 if let Some(i) = stmt.init {
                     f(i);
                 }
@@ -604,12 +602,12 @@ impl ParsedNodeKind {
                 }
                 f(stmt.body);
             }
-            ParsedNodeKind::Return(e) | ParsedNodeKind::ExpressionStmt(e) => {
+            PNodeKind::Return(e) | PNodeKind::ExpressionStmt(e) => {
                 if let Some(e) = e {
                     f(*e);
                 }
             }
-            ParsedNodeKind::AsmStmt(e) => {
+            PNodeKind::AsmStmt(e) => {
                 for op in &e.outputs {
                     f(op.expr);
                 }
@@ -617,33 +615,33 @@ impl ParsedNodeKind {
                     f(op.expr);
                 }
             }
-            ParsedNodeKind::EnumConstant(_, e) => {
+            PNodeKind::EnumConstant(_, e) => {
                 if let Some(e) = e {
                     f(*e);
                 }
             }
-            ParsedNodeKind::Declaration(decl) => {
+            PNodeKind::Declaration(decl) => {
                 decl.for_each_child(f);
             }
-            ParsedNodeKind::FunctionDef(data) => {
+            PNodeKind::FunctionDef(data) => {
                 data.for_each_child(f);
             }
-            ParsedNodeKind::InitializerList(inits) => {
+            PNodeKind::InitializerList(inits) => {
                 for init in inits.as_ref() {
                     f(init.initializer);
                     for d in init.designation.as_ref() {
                         match d {
-                            ParsedDesignator::ArrayIndex(idx) => f(*idx),
-                            ParsedDesignator::ArrayRange(s, e) => {
+                            PDesignator::ArrayIndex(idx) => f(*idx),
+                            PDesignator::ArrayRange(s, e) => {
                                 f(*s);
                                 f(*e);
                             }
-                            ParsedDesignator::FieldName(_) => {}
+                            PDesignator::FieldName(_) => {}
                         }
                     }
                 }
             }
-            ParsedNodeKind::GnuLocalLabel(_) => {}
+            PNodeKind::GnuLocalLabel(_) => {}
         }
     }
 }

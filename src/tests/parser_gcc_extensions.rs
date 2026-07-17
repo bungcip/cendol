@@ -168,5 +168,11 @@ fn test_struct_anonymous_member_attributes() {
         };
         "#,
     );
-    insta::assert_yaml_snapshot!(&resolved);
+    insta::assert_yaml_snapshot!(&resolved, @r#"
+    TranslationUnit:
+      - Declaration:
+          specifiers:
+            - "struct Outer { ... }"
+          init_declarators: []
+    "#);
 }

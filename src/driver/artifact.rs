@@ -1,5 +1,5 @@
 use crate::ast::SourceId;
-use crate::ast::{Ast, ParsedAst};
+use crate::ast::{Ast, PAst};
 use crate::mir::MirProgram;
 use crate::parser::Token;
 use crate::pp::PPToken;
@@ -28,7 +28,7 @@ pub enum CompilePhase {
 pub struct CompileArtifact {
     pub(crate) preprocessed: Option<Vec<PPToken>>,
     pub(crate) lexed: Option<Vec<Token>>,
-    pub(crate) parsed_ast: Option<ParsedAst>,
+    pub(crate) parsed_ast: Option<PAst>,
     pub(crate) ast: Option<Ast>,
     pub(crate) mir_program: Option<MirProgram>,
     pub(crate) clif_dump: Option<String>,

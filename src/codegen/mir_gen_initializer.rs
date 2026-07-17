@@ -7,7 +7,7 @@ use crate::ast::{Designator, NodeKind, NodeRef};
 use crate::codegen::mir_gen::MirGen;
 use crate::mir::{ConstValueId, ConstValueKind, MirArrayLayout, MirType, Operand, Place, Rvalue, TypeId};
 use crate::semantic::literal_utils::lower_string_literal;
-use crate::semantic::{ArraySizeType, FieldLayout, QualType, RecordMember, TypeKind, TypeRef};
+use crate::semantic::{ArraySize, FieldLayout, QualType, RecordMember, TypeKind, TypeRef};
 
 struct ArrayInitArgs {
     element_qt: QualType,
@@ -186,7 +186,7 @@ impl<'a> MirGen<'a> {
                     }
                 }
                 TypeKind::Array { element_type, size } => {
-                    let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
+                    let array_size = if let ArraySize::Constant(s) = size { *s } else { 0 };
                     let op = self.visit_array_init_from_iter(
                         iter,
                         next_pending,
@@ -415,7 +415,7 @@ impl<'a> MirGen<'a> {
                     self.finalize_struct_init(fields, element_qt, None)
                 }
                 TypeKind::Array { element_type, size } => {
-                    let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
+                    let array_size = if let ArraySize::Constant(s) = size { *s } else { 0 };
                     self.visit_array_init_from_iter(
                         iter,
                         Some(pending),
@@ -554,12 +554,12 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn visit_string_array_init(&mut self, lit_node: NodeRef, element_type: TypeRef, size: &ArraySizeType) -> Operand {
+    fn visit_string_array_init(&mut self, lit_node: NodeRef, element_type: TypeRef, size: &ArraySize) -> Operand {
         let NodeKind::Literal(lit) = self.ast.get_kind(lit_node) else {
             unreachable!()
         };
 
-        let fixed_size = if let ArraySizeType::Constant(s) = size {
+        let fixed_size = if let ArraySize::Constant(s) = size {
             Some(*s)
         } else {
             None
@@ -614,7 +614,7 @@ impl<'a> MirGen<'a> {
                 }
             }
 
-            let array_size = if let ArraySizeType::Constant(s) = size { s } else { 0 };
+            let array_size = if let ArraySize::Constant(s) = size { s } else { 0 };
             return self.visit_array_init(
                 list,
                 QualType::unqualified(element_type),
@@ -728,7 +728,7 @@ impl<'a> MirGen<'a> {
                 let elem_ty = QualType::unqualified(*element_type);
                 let final_op = self.visit_brace_elision(operand, init, elem_ty, None);
                 let mir_elem_ty = self.lower_qual_type(elem_ty);
-                let len = if let ArraySizeType::Constant(l) = size { *l } else { 1 };
+                let len = if let ArraySize::Constant(l) = size { *l } else { 1 };
                 let mut elements = vec![final_op];
                 while elements.len() < len {
                     elements.push(Operand::Constant(

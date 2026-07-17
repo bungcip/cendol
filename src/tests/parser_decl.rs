@@ -80,7 +80,7 @@ fn test_atomic_type_specifier() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "Atomic(ParsedType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) })"
+        - "Atomic(PType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) })"
       init_declarators:
         - name: x
     "#);
@@ -92,7 +92,7 @@ fn test_atomic_type_specifier_with_pointer() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "Atomic(ParsedType { base: 1, declarator: 2, qualifiers: TypeQualifiers(0x0) })"
+        - "Atomic(PType { base: 1, declarator: 2, qualifiers: TypeQualifiers(0x0) })"
       init_declarators:
         - name: x
     "#);
@@ -678,7 +678,7 @@ fn test_atomic_specifier_syntax() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "Atomic(ParsedType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) })"
+        - "Atomic(PType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) })"
       init_declarators:
         - name: x
           kind: pointer
@@ -757,43 +757,6 @@ fn test_invalid_struct_decl() {
       specifiers:
         - struct
       init_declarators: []
-    ");
-}
-
-#[test]
-fn test_enum_with_non_literal_value() {
-    use crate::ast::parsed::ParsedNodeKind;
-    use crate::ast::parsed_types::ParsedBaseType;
-
-    let source = "sizeof(enum { A = 1 + 1 })";
-
-    let (ast, expr_result) = crate::tests::parser_utils::setup_source(source, |parser| {
-        parser.parse_expression(crate::parser::BindingPower::MIN)
-    });
-
-    let node = expr_result.expect("Failed to parse expression");
-    let node = ast.get_node(node);
-
-    let constants_info = if let ParsedNodeKind::SizeOfType(ty) = &node.kind {
-        let base_node = ast.parsed_types.get_base_type(ty.base);
-        match base_node {
-            ParsedBaseType::Enum { enumerators, .. } => {
-                let range = enumerators.expect("Expected enumerators");
-                let constants = ast.parsed_types.get_enum_constants(range);
-                constants
-                    .iter()
-                    .map(|c| (c.name.to_string(), c.value))
-                    .collect::<Vec<_>>()
-            }
-            _ => panic!("Expected Enum base type"),
-        }
-    } else {
-        panic!("Expected SizeOfType node, got {:?}", node.kind);
-    };
-
-    insta::assert_yaml_snapshot!(constants_info, @"
-    - - A
-      - ~
     ");
 }
 

@@ -917,7 +917,7 @@ pub enum TypeKind {
     },
     Array {
         element_type: TypeRef,
-        size: ArraySizeType,
+        size: ArraySize,
     },
     Function {
         return_type: TypeRef,
@@ -942,8 +942,8 @@ pub enum TypeKind {
         is_complete: bool,
         has_fixed_underlying_type: bool,
     },
-    TypeofExpr(crate::ast::NodeRef),
-    TypeofUnqualExpr(crate::ast::NodeRef),
+    TypeofExpr(NodeRef),
+    TypeofUnqualExpr(NodeRef),
     Alias(TypeRef),
     AutoType,
     NullptrT,
@@ -1024,7 +1024,7 @@ impl Display for TypeKind {
 
 /// Array size types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ArraySizeType {
+pub enum ArraySize {
     Constant(usize),
     Variable(NodeRef),
     Incomplete,

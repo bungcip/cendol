@@ -11,7 +11,7 @@ use std::time::Instant;
 use indexmap::IndexMap;
 
 use crate::ast::dumper::AstDumper;
-use crate::ast::{Ast, NodeKind, ParsedAst, SourceId};
+use crate::ast::{Ast, NodeKind, PAst, SourceId};
 use crate::codegen::{ClifGen, ClifOutput, EmitKind};
 use crate::diagnostic::{DiagnosticEngine, IntoDiagnostic};
 use crate::driver::cli::PathOrBuffer;
@@ -225,7 +225,7 @@ impl CompilerDriver {
 
     fn visit_parsed_ast(
         &mut self,
-        parsed_ast: ParsedAst,
+        parsed_ast: PAst,
         mut symbol_table: SymbolTable,
     ) -> Result<(Ast, SymbolTable, TypeRegistry), PipelineError> {
         // Use the target triple from configuration to initialize TypeRegistry

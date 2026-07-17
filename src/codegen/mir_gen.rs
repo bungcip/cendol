@@ -8,7 +8,7 @@ use crate::mir::{
     MirFieldLayout, MirFunctionId, MirLinkage, MirRecordLayout, MirStmt, MirType, Operand, Place, Rvalue, Terminator,
     TypeId,
 };
-use crate::semantic::ArraySizeType;
+use crate::semantic::ArraySize;
 use crate::semantic::BuiltinType;
 use crate::semantic::FunctionParam;
 use crate::semantic::QualType;
@@ -834,7 +834,7 @@ impl<'a> MirGen<'a> {
         let type_info = self.registry.get(ty);
         if let TypeKind::Array {
             element_type,
-            size: ArraySizeType::Variable(size_expr),
+            size: ArraySize::Variable(size_expr),
         } = &type_info.kind
         {
             Some((*size_expr, *element_type))
@@ -1388,7 +1388,7 @@ impl<'a> MirGen<'a> {
             Record(Option<NameId>, bool, bool),
             Builtin(BuiltinType),
             Pointer(QualType),
-            Array(TypeRef, ArraySizeType),
+            Array(TypeRef, ArraySize),
             Function(TypeRef, SmallVec<[FunctionParam; 8]>, bool),
             Complex(TypeRef),
             Default,
@@ -1574,11 +1574,11 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn lower_array_type(&mut self, ty: TypeRef, element_type: TypeRef, size: &ArraySizeType) -> MirType {
+    fn lower_array_type(&mut self, ty: TypeRef, element_type: TypeRef, size: &ArraySize) -> MirType {
         let element = self.lower_type(element_type);
 
         match size {
-            ArraySizeType::Constant(s) if !self.registry.is_vla_type(ty) => {
+            ArraySize::Constant(s) if !self.registry.is_vla_type(ty) => {
                 let _ = self.registry.ensure_layout(ty);
                 let (layout_size, layout_align, element_ty, _) = self.registry.get_array_layout(ty);
                 let element_layout = self.registry.get_layout(element_ty);

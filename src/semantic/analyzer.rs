@@ -8,8 +8,8 @@ use crate::{
     diagnostic::{DiagnosticEngine, DiagnosticLevel},
     lang_options::{CStandard, LangOptions, PedanticMode},
     semantic::{
-        ArraySizeType, BuiltinFunctionKind, BuiltinType, FunctionParam, QualType, RecordMember, TypeKind,
-        TypeQualifiers, TypeRef, TypeRegistry,
+        ArraySize, BuiltinFunctionKind, BuiltinType, FunctionParam, QualType, RecordMember, TypeKind, TypeQualifiers,
+        TypeRef, TypeRegistry,
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticDiag, SemanticError},
@@ -45,7 +45,7 @@ struct SwitchCtx {
 /// Internal task used to extract information from TypeKind without cloning it.
 enum TypeAnalysisTask {
     Record(Arc<[RecordMember]>, bool),
-    Array(TypeRef, ArraySizeType),
+    Array(TypeRef, ArraySize),
     Function {
         return_type: TypeRef,
         parameters: Arc<[FunctionParam]>,
@@ -371,7 +371,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         let task = match &self.registry.get(ty).kind {
             TypeKind::Array { element_type, size } => {
-                let vla_expr = if let ArraySizeType::Variable(expr) = size {
+                let vla_expr = if let ArraySize::Variable(expr) = size {
                     Some(*expr)
                 } else {
                     None
@@ -1828,11 +1828,11 @@ impl<'a> SemanticAnalyzer<'a> {
 
         // Excess elements check: C11 §6.7.9p14
         if let TypeKind::Array {
-            size: ArraySizeType::Constant(target_size),
+            size: ArraySize::Constant(target_size),
             ..
         } = self.registry.get(target_qt.ty()).kind
             && let TypeKind::Array {
-                size: ArraySizeType::Constant(init_size),
+                size: ArraySize::Constant(init_size),
                 ..
             } = self.registry.get(init_qt.ty()).kind
             && init_size.saturating_sub(1) > target_size
@@ -2032,7 +2032,7 @@ impl<'a> SemanticAnalyzer<'a> {
         list: &InitializerList,
         target_qt: QualType,
         element_type: TypeRef,
-        array_size: &ArraySizeType,
+        array_size: &ArraySize,
     ) {
         let element_qt = QualType::new(element_type, target_qt.qualifiers());
 
@@ -2047,7 +2047,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
         }
 
-        let max_index = if let ArraySizeType::Constant(n) = array_size {
+        let max_index = if let ArraySize::Constant(n) = array_size {
             Some(*n)
         } else {
             None
@@ -2169,7 +2169,7 @@ impl<'a> SemanticAnalyzer<'a> {
                         end_idx = idx;
                     }
                 }
-                let max_len = if let ArraySizeType::Constant(len) = size {
+                let max_len = if let ArraySize::Constant(len) = size {
                     Some(len)
                 } else {
                     None
@@ -2228,7 +2228,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             TypeAnalysisTask::Array(element_type, size) => {
                 let element_qt = QualType::new(element_type, target_qt.qualifiers());
-                let max_len = if let ArraySizeType::Constant(len) = size {
+                let max_len = if let ArraySize::Constant(len) = size {
                     Some(len)
                 } else {
                     None
@@ -3456,7 +3456,7 @@ impl<'a> SemanticAnalyzer<'a> {
             let builtin_type = get_string_builtin_type(prefix);
             let element_type = self.registry.get_builtin_type(builtin_type);
 
-            let array_type = self.registry.array_of(element_type, ArraySizeType::Constant(size));
+            let array_type = self.registry.array_of(element_type, ArraySize::Constant(size));
             let _ = self.registry.ensure_layout(array_type);
 
             // Bolt ⚡: Eagerly set value category to LValue for string literals.
@@ -3907,7 +3907,7 @@ impl<'a> SemanticAnalyzer<'a> {
             let is_incomplete_array = matches!(
                 resolved.kind,
                 TypeKind::Array {
-                    size: ArraySizeType::Incomplete,
+                    size: ArraySize::Incomplete,
                     ..
                 }
             );

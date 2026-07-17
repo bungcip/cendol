@@ -12,15 +12,14 @@ use thin_vec::ThinVec;
 
 use super::Parser;
 use crate::ast::parsed::{
-    DeclSpec, ParsedAlignmentSpec, ParsedDesignatedInitializer, ParsedDesignator, ParsedNodeKind, ParsedNodeRef,
-    TypeSpec,
+    DeclSpec, PAlignmentSpec, PDesignatedInitializer, PDesignator, PNodeKind, PNodeRef, TypeSpec,
 };
 use crate::parser::type_builder::parse_type_name;
 use crate::parser::type_specifiers::parse_type_spec;
 use crate::parser::utils::parse_comma_separated_list;
 
 /// parse declaration or function definition
-pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Result<ParsedNodeRef, ParseDiag> {
+pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Result<PNodeRef, ParseDiag> {
     parser.transaction(|p| {
         let start_loc = p.current_token_span()?.start();
         let dummy = p.push_dummy();
@@ -40,12 +39,12 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
             && !has_storage_class
             && let Some(semi) = p.accept(TokenKind::Semicolon)
         {
-            let decl = ParsedDecl {
+            let decl = PDecl {
                 specifiers,
                 init_declarators: ThinVec::new(),
             };
             let span = SourceSpan::new(start_loc, semi.span.end());
-            return Ok(p.push_node(ParsedNodeKind::Declaration(decl), span));
+            return Ok(p.push_node(PNodeKind::Declaration(decl), span));
         }
 
         if !p.is_token(TokenKind::Semicolon)
@@ -109,7 +108,7 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
                 }
             }
 
-            init_declarators.push(ParsedInitDeclarator {
+            init_declarators.push(PInitDeclarator {
                 declarator,
                 initializer,
                 span,
@@ -124,13 +123,13 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
 
         let semi = p.expect(TokenKind::Semicolon)?;
 
-        let decl = ParsedDecl {
+        let decl = PDecl {
             specifiers,
             init_declarators,
         };
         Ok(p.replace_node(
             dummy,
-            ParsedNodeKind::Declaration(decl),
+            PNodeKind::Declaration(decl),
             SourceSpan::new(start_loc, semi.span.end()),
         ))
     })
@@ -141,8 +140,8 @@ fn parse_function_definition_tail(
     specifiers: ThinVec<DeclSpec>,
     declarator: DeclaratorRef,
     start_loc: SourceLoc,
-    dummy: ParsedNodeRef,
-) -> Result<ParsedNodeRef, ParseDiag> {
+    dummy: PNodeRef,
+) -> Result<PNodeRef, ParseDiag> {
     let scope_id = parser
         .ast
         .parsed_types
@@ -158,7 +157,7 @@ fn parse_function_definition_tail(
 
     let (body, body_end_loc) = res?;
 
-    let function_def = ParsedFunctionDef {
+    let function_def = PFunctionDef {
         specifiers,
         declarator,
         body,
@@ -166,12 +165,12 @@ fn parse_function_definition_tail(
 
     Ok(parser.replace_node(
         dummy,
-        ParsedNodeKind::FunctionDef(function_def),
+        PNodeKind::FunctionDef(function_def),
         SourceSpan::new(start_loc, body_end_loc),
     ))
 }
 
-pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let mut span = parser.current_token()?.span;
     let mut top_level_declarations = Vec::new();
 
@@ -184,14 +183,14 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRe
         }
 
         if let TokenKind::PragmaPack(kind) = token.kind {
-            let node = parser.push_node(ParsedNodeKind::PragmaPack(kind), token.span);
+            let node = parser.push_node(PNodeKind::PragmaPack(kind), token.span);
             top_level_declarations.push(node);
             parser.advance();
             continue;
         }
 
         if let TokenKind::PragmaVisibility(kind) = token.kind {
-            let node = parser.push_node(ParsedNodeKind::PragmaVisibility(kind), token.span);
+            let node = parser.push_node(PNodeKind::PragmaVisibility(kind), token.span);
             top_level_declarations.push(node);
             parser.advance();
             continue;
@@ -212,30 +211,27 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRe
 
     Ok(parser.replace_node(
         dummy,
-        ParsedNodeKind::TranslationUnit(top_level_declarations.into_boxed_slice()),
+        PNodeKind::TranslationUnit(top_level_declarations.into_boxed_slice()),
         span,
     ))
 }
 
-pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<ParsedNodeRef, ParseDiag> {
+pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<PNodeRef, ParseDiag> {
     let start = start_token.span;
     parser.expect(TokenKind::LeftParen)?;
     let condition = parser.parse_expr_assignment()?;
 
     let message_node = parser
         .accept(TokenKind::Comma)
-        .map(|_| -> Result<ParsedNodeRef, ParseDiag> {
+        .map(|_| -> Result<PNodeRef, ParseDiag> {
             let (lit, span) = parser.expect_string_literal()?;
-            Ok(parser.push_node(ParsedNodeKind::Literal(lit), span))
+            Ok(parser.push_node(PNodeKind::Literal(lit), span))
         })
         .transpose()?;
 
     parser.expect(TokenKind::RightParen)?;
     let semi = parser.expect(TokenKind::Semicolon)?;
-    Ok(parser.push_node(
-        ParsedNodeKind::StaticAssert(condition, message_node),
-        start.merge(semi.span),
-    ))
+    Ok(parser.push_node(PNodeKind::StaticAssert(condition, message_node), start.merge(semi.span)))
 }
 
 /// Parse declaration specifiers
@@ -335,9 +331,9 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>,
 
                 let alignment = if is_type_start {
                     let parsed_type = parse_type_name(parser)?;
-                    ParsedAlignmentSpec::Type(parsed_type)
+                    PAlignmentSpec::Type(parsed_type)
                 } else {
-                    ParsedAlignmentSpec::Expr(parser.parse_expr_min()?)
+                    PAlignmentSpec::Expr(parser.parse_expr_min()?)
                 };
                 parser.expect(TokenKind::RightParen)?;
                 specifiers.push(DeclSpec::AlignmentSpec(alignment, false));
@@ -362,7 +358,7 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>,
 }
 
 /// Parse initializer
-pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+pub(super) fn parse_initializer(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     if let Some(token) = parser.accept(TokenKind::LeftBrace) {
         let initializers = parse_comma_separated_list(parser, TokenKind::RightBrace, |parser| {
             if parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
@@ -370,7 +366,7 @@ pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
             } else {
                 let initializer = parse_initializer(parser)?;
 
-                Ok(ParsedDesignatedInitializer {
+                Ok(PDesignatedInitializer {
                     designation: Vec::new().into_boxed_slice(),
                     initializer,
                 })
@@ -379,33 +375,33 @@ pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
 
         let end_token = parser.expect(TokenKind::RightBrace)?;
         let span = token.span.merge(end_token.span);
-        Ok(parser.push_node(ParsedNodeKind::InitializerList(initializers.into_boxed_slice()), span))
+        Ok(parser.push_node(PNodeKind::InitializerList(initializers.into_boxed_slice()), span))
     } else {
         parser.parse_expr_assignment()
     }
 }
 
 /// Parse designated initializer
-fn parse_designated_initializer(parser: &mut Parser) -> Result<ParsedDesignatedInitializer, ParseDiag> {
+fn parse_designated_initializer(parser: &mut Parser) -> Result<PDesignatedInitializer, ParseDiag> {
     let designation = parse_designation(parser)?;
 
     parser.expect(TokenKind::Assign)?;
     let initializer = parse_initializer(parser)?;
 
-    Ok(ParsedDesignatedInitializer {
+    Ok(PDesignatedInitializer {
         designation,
         initializer,
     })
 }
 
 /// Parse designation
-fn parse_designation(parser: &mut Parser) -> Result<Box<[ParsedDesignator]>, ParseDiag> {
+fn parse_designation(parser: &mut Parser) -> Result<Box<[PDesignator]>, ParseDiag> {
     let mut designators = Vec::new();
 
     while parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
         if parser.accept(TokenKind::Dot).is_some() {
             let (field_name, _) = parser.expect_name()?;
-            designators.push(ParsedDesignator::FieldName(field_name));
+            designators.push(PDesignator::FieldName(field_name));
         } else {
             parser.expect(TokenKind::LeftBracket)?;
             let start_expr = parser.parse_expr_min()?;
@@ -413,10 +409,10 @@ fn parse_designation(parser: &mut Parser) -> Result<Box<[ParsedDesignator]>, Par
             if parser.accept(TokenKind::Ellipsis).is_some() {
                 let end_expr = parser.parse_expr_min()?;
                 parser.expect(TokenKind::RightBracket)?;
-                designators.push(ParsedDesignator::ArrayRange(start_expr, end_expr));
+                designators.push(PDesignator::ArrayRange(start_expr, end_expr));
             } else {
                 parser.expect(TokenKind::RightBracket)?;
-                designators.push(ParsedDesignator::ArrayIndex(start_expr));
+                designators.push(PDesignator::ArrayIndex(start_expr));
             }
         }
     }
@@ -463,9 +459,9 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
                     if parser.accept(TokenKind::LeftParen).is_some() {
                         let alignment = if parser.is_type_name_start() {
                             let parsed_type = parse_type_name(parser)?;
-                            ParsedAlignmentSpec::Type(parsed_type)
+                            PAlignmentSpec::Type(parsed_type)
                         } else {
-                            ParsedAlignmentSpec::Expr(parser.parse_expr_min()?)
+                            PAlignmentSpec::Expr(parser.parse_expr_min()?)
                         };
                         parser.expect(TokenKind::RightParen)?;
                         specs.push(DeclSpec::AlignmentSpec(alignment, true));

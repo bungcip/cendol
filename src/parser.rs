@@ -42,7 +42,7 @@ pub(crate) struct ParserState {
 pub struct Parser<'arena, 'src, 'lexer> {
     pub(crate) lexer: &'lexer mut Lexer<'src>,
     pub(crate) current_idx: usize,
-    pub(crate) ast: ParsedAst,
+    pub(crate) ast: PAst,
     pub(crate) lang_opts: &'src crate::lang_options::LangOptions,
 
     // Token caching for lookahead and backtracking
@@ -110,7 +110,7 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
         Parser {
             lexer,
             current_idx: 0,
-            ast: ParsedAst::new(),
+            ast: PAst::new(),
             lang_opts,
             token_cache: Vec::new(),
             symbol_table,
@@ -120,7 +120,7 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
         }
     }
 
-    pub(crate) fn take_ast(self) -> ParsedAst {
+    pub(crate) fn take_ast(self) -> PAst {
         self.ast
     }
 
@@ -336,33 +336,30 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     pub(super) fn parse_expression(
         &mut self,
         min_binding_power: expressions::BindingPower,
-    ) -> Result<ParsedNodeRef, ParseDiag> {
+    ) -> Result<PNodeRef, ParseDiag> {
         parse_expression(self, min_binding_power)
     }
 
     /// Parse expression with minimum binding power
-    pub(super) fn parse_expr_min(&mut self) -> Result<ParsedNodeRef, ParseDiag> {
+    pub(super) fn parse_expr_min(&mut self) -> Result<PNodeRef, ParseDiag> {
         self.parse_expression(BindingPower::MIN)
     }
 
     /// Parse expression up to assignment
-    pub(super) fn parse_expr_assignment(&mut self) -> Result<ParsedNodeRef, ParseDiag> {
+    pub(super) fn parse_expr_assignment(&mut self) -> Result<PNodeRef, ParseDiag> {
         self.parse_expression(BindingPower::ASSIGNMENT)
     }
 
     /// Parse an expression if the current token is not the given `end_token`.
     /// Then expect and consume the `end_token`.
-    pub(crate) fn parse_optional_expr_before(
-        &mut self,
-        end_token: TokenKind,
-    ) -> Result<Option<ParsedNodeRef>, ParseDiag> {
+    pub(crate) fn parse_optional_expr_before(&mut self, end_token: TokenKind) -> Result<Option<PNodeRef>, ParseDiag> {
         let expr = (!self.is_token(end_token)).then(|| self.parse_expr_min()).transpose()?;
         self.expect(end_token)?;
         Ok(expr)
     }
 
     /// Parse translation unit (top level)
-    pub(crate) fn parse_translation_unit(&mut self) -> Result<ParsedNodeRef, ParseDiag> {
+    pub(crate) fn parse_translation_unit(&mut self) -> Result<PNodeRef, ParseDiag> {
         declarations::parse_translation_unit(self)
     }
 
@@ -529,48 +526,48 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
 impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     /// Push a node to the AST and return its reference
     #[inline]
-    pub(super) fn push_node(&mut self, kind: ParsedNodeKind, span: SourceSpan) -> ParsedNodeRef {
-        self.ast.push_node(ParsedNode::new(kind, span))
+    pub(super) fn push_node(&mut self, kind: PNodeKind, span: SourceSpan) -> PNodeRef {
+        self.ast.push_node(PNode::new(kind, span))
     }
 
     #[inline]
-    pub(super) fn push_dummy(&mut self) -> ParsedNodeRef {
-        self.push_node(ParsedNodeKind::Dummy, SourceSpan::empty())
+    pub(super) fn push_dummy(&mut self) -> PNodeRef {
+        self.push_node(PNodeKind::Dummy, SourceSpan::empty())
     }
 
     /// Push a node to the AST and return its reference
     #[inline]
-    pub(super) fn replace_node(&mut self, old: ParsedNodeRef, kind: ParsedNodeKind, span: SourceSpan) -> ParsedNodeRef {
-        self.ast.replace_node(old, ParsedNode::new(kind, span))
+    pub(super) fn replace_node(&mut self, old: PNodeRef, kind: PNodeKind, span: SourceSpan) -> PNodeRef {
+        self.ast.replace_node(old, PNode::new(kind, span))
     }
 
     /// Push Declarator node to AST arena
     #[inline]
-    pub(super) fn alloc_decl(&mut self, declarator: ParsedDeclarator) -> DeclaratorRef {
+    pub(super) fn alloc_decl(&mut self, declarator: PDeclarator) -> DeclaratorRef {
         self.ast.parsed_types.alloc_decl(declarator)
     }
 
     /// Push BaseType node to AST arena
     #[inline]
-    pub(super) fn alloc_base_type(&mut self, base_type: ParsedBaseType) -> ParsedBaseTypeRef {
+    pub(super) fn alloc_base_type(&mut self, base_type: PBaseType) -> PBaseTypeRef {
         self.ast.parsed_types.alloc_base_type(base_type)
     }
 
     /// Allocate function parameters and return the range
     #[inline]
-    pub(super) fn alloc_params(&mut self, params: Vec<crate::ast::ParsedParam>) -> ParsedParamRange {
+    pub(super) fn alloc_params(&mut self, params: Vec<crate::ast::PParam>) -> PParamRange {
         self.ast.parsed_types.alloc_params(params)
     }
 
     /// Allocate struct members and return the range
     #[inline]
-    pub(super) fn alloc_struct_members(&mut self, members: Vec<ParsedStructMember>) -> ParsedStructMemberRange {
+    pub(super) fn alloc_struct_members(&mut self, members: Vec<PStructMember>) -> PStructMemberRange {
         self.ast.parsed_types.alloc_struct_members(members)
     }
 
     /// Allocate enum constants and return the range
     #[inline]
-    pub(super) fn alloc_enum_constants(&mut self, enumerators: Vec<ParsedEnumConstant>) -> ParsedEnumRange {
+    pub(super) fn alloc_enum_constants(&mut self, enumerators: Vec<PEnumConstant>) -> PEnumRange {
         self.ast.parsed_types.alloc_enum_constants(enumerators)
     }
 }

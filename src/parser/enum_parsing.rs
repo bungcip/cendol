@@ -36,7 +36,7 @@ pub(super) fn parse_enum_spec(parser: &mut Parser) -> Result<TypeSpec, ParseDiag
 }
 
 /// Parse enumerator
-fn parse_enumerator(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
+fn parse_enumerator(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let (name, mut span) = parser.expect_name()?;
     let value = if parser.accept(TokenKind::Assign).is_some() {
         let expr = parser.parse_expr_assignment()?;
@@ -46,6 +46,6 @@ fn parse_enumerator(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
         None
     };
 
-    let node = parser.push_node(ParsedNodeKind::EnumConstant(name, value), span);
+    let node = parser.push_node(PNodeKind::EnumConstant(name, value), span);
     Ok(node)
 }

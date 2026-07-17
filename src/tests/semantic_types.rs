@@ -1,7 +1,7 @@
 use super::semantic_common::{setup_lowering, setup_mir};
 use crate::ast::NameId;
 use crate::driver::artifact::CompilePhase;
-use crate::semantic::ArraySizeType;
+use crate::semantic::ArraySize;
 use crate::semantic::type_registry::TypeRegistry;
 use crate::semantic::types::{QualType, TypeClass, TypeRef};
 use crate::tests::test_utils::{
@@ -280,14 +280,14 @@ fn test_typeregistry_array_logic() {
     let int_ty = reg.type_int;
 
     // int[10] (Inline)
-    let a1 = reg.array_of(int_ty, ArraySizeType::Constant(10));
+    let a1 = reg.array_of(int_ty, ArraySize::Constant(10));
     assert_eq!(a1.class(), TypeClass::Array);
     assert_eq!(a1.array_len(), Some(10));
     assert_eq!(a1.base(), int_ty.base());
     assert!(a1.is_inline_array());
 
     // int[100] (Registry)
-    let a2 = reg.array_of(int_ty, ArraySizeType::Constant(100));
+    let a2 = reg.array_of(int_ty, ArraySize::Constant(100));
     assert_eq!(a2.class(), TypeClass::Array);
     assert_eq!(a2.array_len(), None); // Registry array
     assert!(a2.is_inline_array() == false);
@@ -295,7 +295,7 @@ fn test_typeregistry_array_logic() {
 
     // int*[5] (Registry - because int* doesn't have an index)
     let p1 = reg.pointer_to(QualType::unqualified(int_ty)); // int*
-    let ap1 = reg.array_of(p1, ArraySizeType::Constant(5));
+    let ap1 = reg.array_of(p1, ArraySize::Constant(5));
     assert_eq!(ap1.class(), TypeClass::Array);
     assert_eq!(ap1.array_len(), None); // Registry array
     assert!(ap1.is_inline_array() == false);
@@ -333,11 +333,11 @@ fn test_reconstruct_type() {
     }
 
     // Reconstruct int[10]
-    let a1 = reg.array_of(int_ty, ArraySizeType::Constant(10));
+    let a1 = reg.array_of(int_ty, ArraySize::Constant(10));
     let cow_a1 = reg.get(a1);
     if let crate::semantic::TypeKind::Array { element_type, size } = &cow_a1.kind {
         assert_eq!(*element_type, int_ty);
-        if let ArraySizeType::Constant(sz) = size {
+        if let ArraySize::Constant(sz) = size {
             assert_eq!(*sz, 10);
         } else {
             panic!("Expected Constant size");
@@ -776,7 +776,7 @@ fn test_attr_mode() {
 #[test]
 fn test_display_array_types() {
     use crate::ast::NodeRef;
-    use crate::semantic::ArraySizeType;
+    use crate::semantic::ArraySize;
     use crate::semantic::type_registry::TypeRegistry;
     use crate::semantic::types::BuiltinType;
     use target_lexicon::Triple;
@@ -785,19 +785,19 @@ fn test_display_array_types() {
     let int_ty = reg.get_builtin_type(BuiltinType::Int);
 
     // Constant size array
-    let arr_const = reg.array_of(int_ty, ArraySizeType::Constant(5));
+    let arr_const = reg.array_of(int_ty, ArraySize::Constant(5));
     assert_eq!(reg.display_type(arr_const), "int[5]");
 
     // Incomplete array
-    let arr_incomplete = reg.array_of(int_ty, ArraySizeType::Incomplete);
+    let arr_incomplete = reg.array_of(int_ty, ArraySize::Incomplete);
     assert_eq!(reg.display_type(arr_incomplete), "int[]");
 
     // Star array
-    let arr_star = reg.array_of(int_ty, ArraySizeType::Star);
+    let arr_star = reg.array_of(int_ty, ArraySize::Star);
     assert_eq!(reg.display_type(arr_star), "int[*]");
 
     // VLA
     let node_ref = NodeRef::new(1).unwrap();
-    let arr_vla = reg.array_of(int_ty, ArraySizeType::Variable(node_ref));
+    let arr_vla = reg.array_of(int_ty, ArraySize::Variable(node_ref));
     assert_eq!(reg.display_type(arr_vla), "int[*]");
 }

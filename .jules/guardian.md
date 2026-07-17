@@ -310,3 +310,6 @@ Learning: [The C standard sets specific rules regarding bit-fields. Validation p
 
 Learning: The _Atomic qualifier and _Atomic(type-name) specifier have specific restrictions in C11. They cannot be used with array, function, or void types. Furthermore, _Atomic(type-name) cannot be applied to an already atomic or qualified type.
 Action: Protect compiler invariants by validating that semantic errors for invalid atomic type specifiers and qualifiers are correctly generated.
+2024-05-18 - [Return Local Array Address]
+Learning: The compiler was correctly identifying returning the address of a local variable (e.g., `return &x`) but missed the case where `x` is a local array. Local arrays decay to pointers (e.g., `return x` is equivalent to `return &x[0]`). Thus, we should also emit the `ReturnLocalAddress` warning when returning a local array directly.
+Action: Extend `SemanticAnalyzer::visit_return_stmt` to check if the returned variable is a local array, not just an explicit `&x`. Added tests for both cases.

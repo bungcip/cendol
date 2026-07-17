@@ -113,6 +113,7 @@ pub mod driver_source_manager;
 pub mod driver_warning_formatting;
 
 // Guardian
+pub mod guardian_return_local_address;
 pub mod guardian_alias_completeness;
 pub mod guardian_alignas_constraints;
 pub mod guardian_alignas_vla;

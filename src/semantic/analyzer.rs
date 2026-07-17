@@ -1118,20 +1118,32 @@ impl<'a> SemanticAnalyzer<'a> {
             self.validate_assignment(node, target_ty, expr_ty, *expr);
         }
 
-        if let Some(expr) = value_expr
-            && let NodeKind::UnaryOp(UnaryOp::AddrOf, operand) = self.ast.get_kind(*expr)
-            && let NodeKind::Ident(name, sym) = self.ast.get_kind(*operand)
-        {
-            let symbol = self.symbol_table.get_symbol(*sym);
-            if let SymbolKind::Variable(v) = &symbol.kind {
-                // Check if it's a local variable (not static/extern)
-                let is_local = symbol.scope_id != crate::semantic::ScopeId::GLOBAL
-                    && v.storage != Some(StorageClass::Static)
-                    && v.storage != Some(StorageClass::Extern)
-                    && v.storage != Some(StorageClass::ThreadLocal);
+        if let Some(expr) = value_expr {
+            let kind = self.ast.get_kind(*expr);
 
-                if is_local {
-                    self.report_warning(node, SemanticError::ReturnLocalAddress { name: *name });
+            let mut ident_info = None;
+
+            if let NodeKind::UnaryOp(UnaryOp::AddrOf, operand) = kind {
+                if let NodeKind::Ident(name, sym) = self.ast.get_kind(*operand) {
+                    ident_info = Some((name, sym));
+                }
+            } else if let NodeKind::Ident(name, sym) = kind {
+                // Arrays decay to pointers, so returning 'x' when 'x' is an array is equivalent to '&x[0]'
+                ident_info = Some((name, sym));
+            }
+
+            if let Some((name, sym)) = ident_info {
+                let symbol = self.symbol_table.get_symbol(*sym);
+                if let SymbolKind::Variable(v) = &symbol.kind {
+                    // Check if it's a local variable (not static/extern)
+                    let is_local = symbol.scope_id != crate::semantic::ScopeId::GLOBAL
+                        && v.storage != Some(StorageClass::Static)
+                        && v.storage != Some(StorageClass::Extern)
+                        && v.storage != Some(StorageClass::ThreadLocal);
+
+                    if is_local && (symbol.type_info.is_array() || matches!(kind, NodeKind::UnaryOp(UnaryOp::AddrOf, _))) {
+                        self.report_warning(node, SemanticError::ReturnLocalAddress { name: *name });
+                    }
                 }
             }
         }

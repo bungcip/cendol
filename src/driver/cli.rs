@@ -191,7 +191,7 @@ impl std::fmt::Display for ArgError {
 ///
 /// This is the primary entry point for CLI parsing. It handles GCC/Clang
 /// style arguments natively (single-dash long options, `-f*` flags, etc.).
-pub(crate) fn parse_args_from<I>(args: I) -> Result<CompileConfig, ArgError>
+pub fn parse_args_from<I>(args: I) -> Result<CompileConfig, ArgError>
 where
     I: IntoIterator<Item = String>,
 {

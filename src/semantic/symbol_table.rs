@@ -12,6 +12,7 @@ use thiserror::Error;
 
 use crate::{
     ast::*,
+    lang_options::Visibility,
     semantic::{QualType, RecordMember, TypeRef},
 };
 
@@ -272,7 +273,74 @@ impl BuiltinFunctionKind {
     }
 }
 
-pub type SymbolRef = NonZeroU32;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[repr(u8)]
+pub enum SymbolClass {
+    Variable = 0,
+    Function,
+    Typedef,
+    EnumConstant,
+    Label,
+    Record = 5,
+    EnumTag = 6,
+}
+
+impl SymbolClass {
+    pub fn from_kind(kind: &SymbolKind) -> Self {
+        match kind {
+            SymbolKind::Variable(_) => SymbolClass::Variable,
+            SymbolKind::Function(_) => SymbolClass::Function,
+            SymbolKind::Typedef(_) => SymbolClass::Typedef,
+            SymbolKind::EnumConstant { .. } => SymbolClass::EnumConstant,
+            SymbolKind::Label => SymbolClass::Label,
+            SymbolKind::Record { .. } => SymbolClass::Record,
+            SymbolKind::EnumTag { .. } => SymbolClass::EnumTag,
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct SymbolRef(NonZeroU32);
+
+impl std::fmt::Debug for SymbolRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.get())
+    }
+}
+
+impl serde::Serialize for SymbolRef {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_u32(self.get())
+    }
+}
+
+impl SymbolRef {
+    const CLASS_SHIFT: u32 = 29;
+    const INDEX_MASK: u32 = (1 << Self::CLASS_SHIFT) - 1;
+
+    #[inline]
+    pub fn new_with_class(index: u32, class: SymbolClass) -> Option<Self> {
+        if index == 0 || index > Self::INDEX_MASK {
+            return None;
+        }
+        let raw = index | ((class as u32) << Self::CLASS_SHIFT);
+        NonZeroU32::new(raw).map(SymbolRef)
+    }
+
+    #[inline]
+    pub fn get(self) -> u32 {
+        self.0.get() & Self::INDEX_MASK
+    }
+
+    #[inline]
+    pub fn class(self) -> SymbolClass {
+        unsafe { std::mem::transmute((self.0.get() >> Self::CLASS_SHIFT) as u8) }
+    }
+}
 
 /// Represents the definition state of a symbol entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -298,7 +366,7 @@ pub struct Symbol {
     pub def_span: SourceSpan,
     pub def_state: DefinitionState,
     pub is_completed: bool,
-    pub visibility: crate::lang_options::Visibility,
+    pub visibility: Visibility,
     pub has_explicit_visibility: bool,
 }
 
@@ -477,13 +545,23 @@ impl SymbolTable {
         let new_scope_id = ScopeId::new(self.next_scope_id).unwrap();
         self.next_scope_id += 1;
 
-        let new_scope = Scope {
-            parent: Some(self.current_scope_id),
-            level: self.scopes[self.current_scope_id.get() as usize - 1].level + 1,
-            ..Default::default()
-        };
+        let level = self.scopes[self.current_scope_id.get() as usize - 1].level + 1;
+        let parent = Some(self.current_scope_id);
 
-        self.scopes.push(new_scope);
+        let idx = new_scope_id.get() as usize - 1;
+        if idx < self.scopes.len() {
+            let scope = &mut self.scopes[idx];
+            scope.parent = parent;
+            scope.level = level;
+            // The hashmaps are already cleared by clear_parser_symbols
+        } else {
+            self.scopes.push(Scope {
+                parent,
+                level,
+                ..Default::default()
+            });
+        }
+
         self.current_scope_id = new_scope_id;
         new_scope_id
     }
@@ -607,8 +685,9 @@ impl SymbolTable {
 
     fn push_symbol(&mut self, entry: Symbol) -> SymbolRef {
         let index = self.entries.len() as u32 + 1;
+        let class = SymbolClass::from_kind(&entry.kind);
         self.entries.push(entry);
-        SymbolRef::new(index).expect("SymbolEntryRef overflow")
+        SymbolRef::new_with_class(index, class).expect("SymbolEntryRef overflow")
     }
 
     pub(crate) fn get_symbol(&self, index: SymbolRef) -> &Symbol {
@@ -981,6 +1060,7 @@ impl SymbolTable {
         }
         self.undo_log.clear();
         self.current_scope_id = ScopeId::GLOBAL;
+        self.next_scope_id = 2;
     }
 }
 

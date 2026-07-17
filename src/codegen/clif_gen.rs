@@ -118,7 +118,7 @@ pub(crate) struct BodyEmitContext<'a, 'b> {
     pub stack_slots: &'a HashMap<LocalId, StackSlot>,
     pub module: &'a mut ObjectModule,
     pub clif_blocks: &'a HashMap<MirBlockId, Block>,
-    pub return_types: Vec<Type>,
+    pub return_types: &'a [Type],
     pub return_ptr: Option<Value>,
     pub func: &'a MirFunction,
     pub func_id_map: &'a HashMap<MirFunctionId, FuncId>,
@@ -614,8 +614,8 @@ fn emit_call_args(
     sig: &Signature,
     ctx: &mut BodyEmitContext,
     start_sig_idx: usize,
-) -> Vec<Value> {
-    let mut arg_values = Vec::new();
+) -> smallvec::SmallVec<[Value; 8]> {
+    let mut arg_values = smallvec::SmallVec::new();
     let mut sig_idx = start_sig_idx;
 
     // Count usage (future expansion)
@@ -767,7 +767,8 @@ fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut Body
     let (return_type_id, param_types, is_variadic, name_linkage, target_addr, visibility) = match call_target {
         CallTarget::Direct(func_id) => {
             let func = ctx.mir.get_function(*func_id);
-            let param_types: Vec<TypeId> = func.params.iter().map(|&p| ctx.mir.get_local(p).type_id).collect();
+            let param_types: smallvec::SmallVec<[TypeId; 8]> =
+                func.params.iter().map(|&p| ctx.mir.get_local(p).type_id).collect();
             let name_linkage = Some((func.name, func.linkage));
             (
                 func.return_type,
@@ -788,14 +789,28 @@ fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut Body
                         return_type,
                         params,
                         is_variadic,
-                    } => ((*return_type, params.clone()), false, *is_variadic),
+                    } => (
+                        (
+                            *return_type,
+                            params.iter().copied().collect::<smallvec::SmallVec<[TypeId; 8]>>(),
+                        ),
+                        false,
+                        *is_variadic,
+                    ),
                     _ => panic!("Indirect call operand points to non-function type"),
                 },
                 MirType::Function {
                     return_type,
                     params,
                     is_variadic,
-                } => ((*return_type, params.clone()), true, *is_variadic),
+                } => (
+                    (
+                        *return_type,
+                        params.iter().copied().collect::<smallvec::SmallVec<[TypeId; 8]>>(),
+                    ),
+                    true,
+                    *is_variadic,
+                ),
                 _ => panic!("Indirect call operand is not a pointer"),
             };
 
@@ -836,7 +851,7 @@ fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut Body
     sig.is_variadic = is_variadic;
 
     let mut start_sig_idx = 0;
-    let mut arg_values = Vec::new();
+    let mut arg_values = smallvec::SmallVec::<[Value; 8]>::new();
 
     if has_hidden_ptr {
         // Allocate space for the large return value
@@ -2530,7 +2545,7 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
             // For unreachable, default to appropriate return based on function type
             if !ctx.return_types.is_empty() {
                 let mut ret_values = Vec::new();
-                for &ret_type in &ctx.return_types {
+                for &ret_type in ctx.return_types {
                     let val = if ret_type == types::F32 {
                         ctx.builder.ins().f32const(0.0)
                     } else if ret_type == types::F64 {
@@ -2622,11 +2637,11 @@ fn finalize_function_processing(
         .expect("module operation failed");
 
     // Only define the function body if it's a defined function (not extern)
-    if func.linkage != MirLinkage::Import {
-        if let Err(e) = module.define_function(id, func_ctx) {
-            println!("{}", func_ctx.func.display());
-            panic!("module operation failed: {:?}", e);
-        }
+    if func.linkage != MirLinkage::Import
+        && let Err(e) = module.define_function(id, func_ctx)
+    {
+        println!("{}", func_ctx.func.display());
+        panic!("module operation failed: {:?}", e);
     }
 
     if emit_kind == EmitKind::Clif {
@@ -2930,15 +2945,6 @@ impl ClifGen {
             // Get the MIR block
             let mir_block = self.mir.get_block(current_block_id);
 
-            // ========================================================================
-            // SECTION 1: Process statements within this block
-            // ========================================================================
-            let statements_to_process: Vec<MirStmt> = mir_block
-                .statements
-                .iter()
-                .map(|&stmt_id| self.mir.get_statement(stmt_id).clone())
-                .collect();
-
             let mut return_ptr = None;
             if has_hidden_ptr {
                 // Return pointer is the first block parameter
@@ -2953,15 +2959,18 @@ impl ClifGen {
                 module: &mut self.module,
                 func,
                 clif_blocks: &clif_blocks,
-                return_types: return_types.clone(),
+                return_types: &return_types,
                 return_ptr,
                 func_id_map: &self.func_id_map,
                 data_id_map: &self.data_id_map,
                 pointee_to_pointer: &self.pointee_to_pointer,
             };
 
-            // Process statements
-            for stmt in &statements_to_process {
+            // ========================================================================
+            // SECTION 1: Process statements within this block
+            // ========================================================================
+            for &stmt_id in &mir_block.statements {
+                let stmt = self.mir.get_statement(stmt_id);
                 visit_statement(stmt, &mut ctx);
             }
 

@@ -160,9 +160,19 @@ impl<'src> Preprocessor<'src> {
         // Pre-expand arguments (prescan)
         let mut expanded_args = Vec::with_capacity(args.len());
         for (idx, arg) in args.iter().enumerate() {
+            let mut actually_needs_expansion = false;
             let needs_expansion = macro_info.parameter_needs_expansion.get(idx).copied().unwrap_or(false);
 
             if needs_expansion {
+                for t in arg {
+                    if matches!(t.kind, PPTokenKind::Identifier(_)) {
+                        actually_needs_expansion = true;
+                        break;
+                    }
+                }
+            }
+
+            if actually_needs_expansion {
                 let mut arg_clone = arg.clone();
                 // GCC semantics: Arguments are pre-expanded in an independent context.
                 // Do not inherit caller's hide sets during pre-expansion!

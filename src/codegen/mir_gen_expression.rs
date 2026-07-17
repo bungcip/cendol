@@ -363,13 +363,13 @@ impl<'a> MirGen<'a> {
         }
 
         if let Some(const_id) = self.operand_to_const_id(&operand) {
-            let const_val = self.mb.get_constants().get(const_id.index()).unwrap().clone();
+            let const_val = self.mb.get_constants().get(const_id.index()).unwrap();
 
-            let is_true = match const_val.kind {
-                ConstValueKind::Int(val) => val != 0,
-                ConstValueKind::Float(val) => val != 0.0,
+            let is_true = match &const_val.kind {
+                ConstValueKind::Int(val) => *val != 0,
+                ConstValueKind::Float(val) => *val != 0.0,
                 ConstValueKind::FunctionAddress(_) | ConstValueKind::GlobalAddress(_, _) => true,
-                ConstValueKind::Bool(val) => val,
+                ConstValueKind::Bool(val) => *val,
                 ConstValueKind::Null => false,
                 _ => return Operand::Cast(bool_ty_id, Box::new(operand)),
             };
@@ -648,7 +648,7 @@ impl<'a> MirGen<'a> {
                 }
             }
             SymbolKind::Function(_) => {
-                let func_id = self.get_or_declare_function(sym);
+                let func_id = self.get_or_declare_function(entry);
                 let func_type = self.get_function_type(func_id);
                 let func_ptr_type = self.mb.add_type(MirType::Pointer { pointee: func_type });
                 Operand::Constant(self.create_constant(func_ptr_type, ConstValueKind::FunctionAddress(func_id)))
@@ -982,7 +982,7 @@ impl<'a> MirGen<'a> {
     fn apply_bitfield_truncation(&mut self, op: Operand, bit_info: &BitFieldInfo, mir_ty: TypeId) -> Operand {
         if let Some(const_id) = self.operand_to_const_id(&op) {
             let constants = self.mb.get_constants();
-            let const_val = constants.get(const_id.index()).unwrap().clone();
+            let const_val = constants.get(const_id.index()).unwrap();
             if let ConstValueKind::Int(val) = const_val.kind {
                 let truncated = bit_info.truncate(val);
                 let new_const = self.mb.create_constant(mir_ty, ConstValueKind::Int(truncated));
@@ -1074,7 +1074,7 @@ impl<'a> MirGen<'a> {
 
         // Fold constant casts if types are compatible
         if let Some(const_id) = self.operand_to_const_id(&operand) {
-            let const_val = self.mb.get_constant(const_id).clone();
+            let const_val = self.mb.get_constant(const_id);
             let mir_type = self.mb.get_type(target_ty);
 
             let is_compatible = match (&const_val.kind, mir_type) {
@@ -1086,13 +1086,13 @@ impl<'a> MirGen<'a> {
             };
 
             if is_compatible {
-                let truncated_kind = match const_val.kind {
+                let truncated_kind = match &const_val.kind {
                     ConstValueKind::Int(val) => {
                         // C11 6.3.1.2-3: When converting to _Bool, the result is 0 if the value is 0, otherwise 1
                         if matches!(mir_type, MirType::Bool) {
-                            ConstValueKind::Int(if val != 0 { 1 } else { 0 })
+                            ConstValueKind::Int(if *val != 0 { 1 } else { 0 })
                         } else {
-                            ConstValueKind::Int(mir_type.truncate_int(val))
+                            ConstValueKind::Int(mir_type.truncate_int(*val))
                         }
                     }
                     ConstValueKind::FunctionAddress(_) | ConstValueKind::GlobalAddress(_, _)
@@ -1102,14 +1102,14 @@ impl<'a> MirGen<'a> {
                     }
                     ConstValueKind::Float(val) => {
                         if matches!(mir_type, MirType::Bool) {
-                            ConstValueKind::Int(if val != 0.0 { 1 } else { 0 })
+                            ConstValueKind::Int(if *val != 0.0 { 1 } else { 0 })
                         } else if matches!(mir_type, MirType::F32) {
-                            ConstValueKind::Float((val as f32) as f64)
+                            ConstValueKind::Float((*val as f32) as f64)
                         } else {
-                            ConstValueKind::Float(val)
+                            ConstValueKind::Float(*val)
                         }
                     }
-                    kind => kind,
+                    kind => kind.clone(),
                 };
                 return Operand::Constant(self.create_constant(target_ty, truncated_kind));
             }
@@ -1151,24 +1151,28 @@ impl<'a> MirGen<'a> {
 
         // Get the function type to determine parameter types for conversions
         let func_node_kind = self.ast.get_kind(call_expr.callee);
-        // Bolt ⚡: Avoid cloning TypeKind. Extract parameter types directly.
         let param_types = if let NodeKind::Ident(_, sym) = func_node_kind {
             let symbol = *sym;
             let func_entry = self.symbol_table.get_symbol(symbol);
-            let mut qt_params = None;
+            let mut qt_params = smallvec::SmallVec::<[QualType; 8]>::new();
+            let mut is_func = false;
             {
                 let type_info = self.registry.get(func_entry.type_info.ty());
                 if let TypeKind::Function { parameters, .. } = &type_info.kind {
-                    qt_params = Some(parameters.iter().map(|p| p.param_type).collect::<Vec<_>>());
+                    is_func = true;
+                    qt_params.extend(parameters.iter().map(|p| p.param_type));
                 }
             }
-
-            qt_params.map(|params| {
-                params
-                    .into_iter()
-                    .map(|qt| self.lower_qual_type(qt))
-                    .collect::<Vec<_>>()
-            })
+            if is_func {
+                Some(
+                    qt_params
+                        .into_iter()
+                        .map(|qt| self.lower_qual_type(qt))
+                        .collect::<smallvec::SmallVec<[TypeId; 8]>>(),
+                )
+            } else {
+                None
+            }
         } else {
             None
         };

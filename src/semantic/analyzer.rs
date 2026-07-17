@@ -8,12 +8,13 @@ use crate::{
     diagnostic::{DiagnosticEngine, DiagnosticLevel},
     lang_options::{CStandard, LangOptions, PedanticMode},
     semantic::{
-        ArraySizeType, BuiltinFunctionKind, BuiltinType, FunctionParam, QualType, RecordMember, SymbolKind, SymbolRef,
-        SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
+        ArraySizeType, BuiltinFunctionKind, BuiltinType, FunctionParam, QualType, RecordMember, TypeKind,
+        TypeQualifiers, TypeRef, TypeRegistry,
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticDiag, SemanticError},
         literal_utils::get_string_builtin_type,
+        symbol_table::{SymbolClass, SymbolKind, SymbolRef, SymbolTable},
         types::TypeClass,
     },
 };
@@ -2385,7 +2386,9 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn identify_builtin(&self, callee: NodeRef) -> (Option<BuiltinFunctionKind>, Option<AtomicOp>) {
-        if let NodeKind::Ident(_, sym_ref) = self.ast.get_kind(callee) {
+        if let NodeKind::Ident(_, sym_ref) = self.ast.get_kind(callee)
+            && sym_ref.class() == SymbolClass::Function
+        {
             let sym = self.symbol_table.get_symbol(*sym_ref);
             if let SymbolKind::Function(f) = &sym.kind {
                 return (f.builtin_kind, f.builtin_kind.and_then(|k| k.to_atomic_op()));
@@ -2986,18 +2989,20 @@ impl<'a> SemanticAnalyzer<'a> {
                 None
             }
             NodeKind::AsmStmt(data) => {
-                for op_node in data.output_start.range(data.output_len) {
-                    if let NodeKind::AsmConstraint(c) = self.ast.get_kind(op_node) {
-                        self.visit_node(c.expr);
-                        if !self.is_lvalue(c.expr) {
-                            self.report_error(c.expr, SemanticError::NotAnLvalue);
+                let output_start = data.child_start.add_offset(1);
+                for op_node in output_start.range(data.output_len) {
+                    if let NodeKind::AsmConstraint(_, expr) = self.ast.get_kind(op_node) {
+                        self.visit_node(*expr);
+                        if !self.is_lvalue(*expr) {
+                            self.report_error(*expr, SemanticError::NotAnLvalue);
                         }
                     }
                 }
-                for op_node in data.input_start.range(data.input_len) {
-                    if let NodeKind::AsmConstraint(c) = self.ast.get_kind(op_node) {
-                        self.visit_node(c.expr);
-                        self.apply_lvalue_conversion(c.expr);
+                let input_start = output_start.add_offset(data.output_len);
+                for op_node in input_start.range(data.input_len) {
+                    if let NodeKind::AsmConstraint(_, expr) = self.ast.get_kind(op_node) {
+                        self.visit_node(*expr);
+                        self.apply_lvalue_conversion(*expr);
                     }
                 }
                 None
@@ -3207,11 +3212,11 @@ impl<'a> SemanticAnalyzer<'a> {
         match kind {
             NodeKind::Literal(l) => self.visit_literal(*l, node),
             NodeKind::Ident(_, sym) => {
-                let symbol = self.symbol_table.get_symbol(*sym);
                 // Bolt ⚡: Eagerly set value category to LValue for variables and functions.
-                if matches!(symbol.kind, SymbolKind::Variable(_) | SymbolKind::Function(_)) {
+                if matches!(sym.class(), SymbolClass::Variable | SymbolClass::Function) {
                     self.semantic_info.value_categories[node.index()] = ValueCategory::LValue;
                 }
+                let symbol = self.symbol_table.get_symbol(*sym);
                 // Use symbol.type_info for all symbols including enum constants.
                 // For enum constants, type_info is set to the enum's underlying integer type
                 // during lowering, matching GCC's extension (not always plain 'int' per strict C11).

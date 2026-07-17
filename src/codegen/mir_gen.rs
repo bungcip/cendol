@@ -16,6 +16,8 @@ use crate::semantic::SymbolKind;
 use crate::semantic::SymbolRef;
 use crate::semantic::SymbolTable;
 use crate::semantic::TypeKind;
+use crate::semantic::symbol_table::Symbol;
+use crate::semantic::symbol_table::SymbolClass;
 
 use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::{Conversion, ScopeId};
@@ -180,10 +182,9 @@ impl<'a> MirGen<'a> {
             .expect("Global should be lowered by visit_variable")
     }
 
-    pub(super) fn get_or_declare_function(&mut self, sym: SymbolRef) -> MirFunctionId {
-        let entry = self.symbol_table.get_symbol(sym);
+    pub(super) fn get_or_declare_function(&mut self, entry: &Symbol) -> MirFunctionId {
         let mut target_name = entry.name;
-        if let crate::semantic::symbol_table::SymbolKind::Function(f) = &entry.kind
+        if let SymbolKind::Function(f) = &entry.kind
             && let Some(linkage) = f.linkage_name
         {
             target_name = linkage;
@@ -216,17 +217,13 @@ impl<'a> MirGen<'a> {
                 ..
             } = &type_info.kind
             {
-                fn_data = Some((
-                    *return_type,
-                    parameters.iter().map(|p| p.param_type).collect::<Vec<_>>(),
-                    *is_variadic,
-                ));
+                fn_data = Some((*return_type, std::sync::Arc::clone(parameters), *is_variadic));
             }
         }
 
         if let Some((return_type, parameters, is_variadic)) = fn_data {
             let return_mir_type = self.lower_type(return_type);
-            let param_mir_types = parameters.into_iter().map(|p| self.lower_qual_type(p)).collect();
+            let param_mir_types = parameters.iter().map(|p| self.lower_qual_type(p.param_type)).collect();
 
             let func_id = self.define_or_declare_function(
                 target_name,
@@ -361,70 +358,9 @@ impl<'a> MirGen<'a> {
                 // Expression statement: value not needed, only side-effects
                 self.visit_expression(expr, false);
             }
-            NodeKind::AsmStmt(data) => {
-                let mut outputs = Vec::new();
-                for op_node in data.output_start.range(data.output_len) {
-                    if let NodeKind::AsmConstraint(c) = self.ast.get_kind(op_node) {
-                        let place = self.visit_expression_as_place(c.expr);
-                        outputs.push((c.constraint, place));
-                    }
-                }
-
-                let mut inputs = Vec::new();
-                for op_node in data.input_start.range(data.input_len) {
-                    if let NodeKind::AsmConstraint(c) = self.ast.get_kind(op_node) {
-                        let expr_op = self.visit_expression(c.expr, true);
-                        inputs.push((c.constraint, expr_op));
-                    }
-                }
-
-                let mut clobbers = Vec::new();
-                for op_node in data.clobber_start.range(data.clobber_len) {
-                    if let NodeKind::AsmClobber(c) = self.ast.get_kind(op_node) {
-                        clobbers.push(*c);
-                    }
-                }
-
-                self.add_stmt(MirStmt::InlineAsm {
-                    template: data.template,
-                    outputs,
-                    inputs,
-                    clobbers,
-                    is_volatile: data.is_volatile,
-                });
-            }
-            NodeKind::Break => {
-                let target = self.func_state_mut().break_target.unwrap();
-                let target_depth = self.func_state().break_depth.unwrap();
-                let current_depth = self.func_state().scope_cleanup.len();
-
-                if current_depth > target_depth {
-                    for i in (target_depth..current_depth).rev() {
-                        let actions: SmallVec<[CleanupAction; 8]> =
-                            SmallVec::from_slice(&self.func_state().scope_cleanup[i]);
-                        for action in actions.into_iter().rev() {
-                            self.emit_cleanup(action);
-                        }
-                    }
-                }
-                self.set_terminator(Terminator::Goto(target));
-            }
-            NodeKind::Continue => {
-                let target = self.func_state_mut().continue_target.unwrap();
-                let target_depth = self.func_state().continue_depth.unwrap();
-                let current_depth = self.func_state().scope_cleanup.len();
-
-                if current_depth > target_depth {
-                    for i in (target_depth..current_depth).rev() {
-                        let actions: SmallVec<[CleanupAction; 8]> =
-                            SmallVec::from_slice(&self.func_state().scope_cleanup[i]);
-                        for action in actions.into_iter().rev() {
-                            self.emit_cleanup(action);
-                        }
-                    }
-                }
-                self.set_terminator(Terminator::Goto(target));
-            }
+            NodeKind::AsmStmt(data) => self.visit_asm_stmt(&data),
+            NodeKind::Break => self.visit_break_stmt(),
+            NodeKind::Continue => self.visit_continue_stmt(),
             NodeKind::Goto(label_name, _) => self.visit_goto_stmt(label_name),
             NodeKind::ComputedGoto(expr) => self.visit_computed_goto_stmt(expr),
             NodeKind::Label(label_name, stmt, _) => self.visit_label_stmt(label_name, stmt),
@@ -473,17 +409,94 @@ impl<'a> MirGen<'a> {
         }
     }
 
+    fn visit_asm_stmt(&mut self, data: &nodes::AsmStmtData) {
+        let template = match self.ast.get_kind(data.child_start) {
+            NodeKind::Literal(l) => *l,
+            _ => unreachable!(),
+        };
+
+        let mut outputs = Vec::new();
+        let output_start = data.child_start.add_offset(1);
+        for op_node in output_start.range(data.output_len) {
+            if let NodeKind::AsmConstraint(constraint, expr) = self.ast.get_kind(op_node) {
+                let place = self.visit_expression_as_place(*expr);
+                outputs.push((*constraint, place));
+            }
+        }
+
+        let mut inputs = Vec::new();
+        let input_start = output_start.add_offset(data.output_len);
+        for op_node in input_start.range(data.input_len) {
+            if let NodeKind::AsmConstraint(constraint, expr) = self.ast.get_kind(op_node) {
+                let expr_op = self.visit_expression(*expr, true);
+                inputs.push((*constraint, expr_op));
+            }
+        }
+
+        let mut clobbers = Vec::new();
+        let clobber_start = input_start.add_offset(data.input_len);
+        for op_node in clobber_start.range(data.clobber_len) {
+            if let NodeKind::AsmClobber(c) = self.ast.get_kind(op_node) {
+                clobbers.push(*c);
+            }
+        }
+
+        self.add_stmt(MirStmt::InlineAsm {
+            template,
+            outputs,
+            inputs,
+            clobbers,
+            is_volatile: data.is_volatile,
+        });
+    }
+
+    fn visit_break_stmt(&mut self) {
+        let target = self.func_state_mut().break_target.unwrap();
+        let target_depth = self.func_state().break_depth.unwrap();
+        let current_depth = self.func_state().scope_cleanup.len();
+
+        if current_depth > target_depth {
+            for i in (target_depth..current_depth).rev() {
+                let actions: SmallVec<[CleanupAction; 8]> = SmallVec::from_slice(&self.func_state().scope_cleanup[i]);
+                for action in actions.into_iter().rev() {
+                    self.emit_cleanup(action);
+                }
+            }
+        }
+        self.set_terminator(Terminator::Goto(target));
+    }
+
+    fn visit_continue_stmt(&mut self) {
+        let target = self.func_state_mut().continue_target.unwrap();
+        let target_depth = self.func_state().continue_depth.unwrap();
+        let current_depth = self.func_state().scope_cleanup.len();
+
+        if current_depth > target_depth {
+            for i in (target_depth..current_depth).rev() {
+                let actions: SmallVec<[CleanupAction; 8]> = SmallVec::from_slice(&self.func_state().scope_cleanup[i]);
+                for action in actions.into_iter().rev() {
+                    self.emit_cleanup(action);
+                }
+            }
+        }
+        self.set_terminator(Terminator::Goto(target));
+    }
+
     fn predeclare_global_functions(&mut self) {
         let global_scope = self.symbol_table.get_scope(ScopeId::GLOBAL);
-        let mut global_symbols: Vec<_> = global_scope.symbols.values().copied().collect();
+        let mut global_symbols: Vec<_> = global_scope
+            .symbols
+            .values()
+            .copied()
+            .filter(|s| s.class() == SymbolClass::Function)
+            .collect();
 
         // Sort by symbol name to ensure deterministic order for snapshot tests
         global_symbols.sort_by_key(|s| self.symbol_table.get_symbol(*s).name);
 
         for sym in global_symbols {
-            if let SymbolKind::Function(_) = self.symbol_table.get_symbol(sym).kind {
-                self.get_or_declare_function(sym);
-            }
+            let entry = self.symbol_table.get_symbol(sym);
+            self.get_or_declare_function(entry);
         }
     }
 
@@ -496,17 +509,8 @@ impl<'a> MirGen<'a> {
     }
 
     pub(super) fn evaluate_constant_usize(&mut self, expr: NodeRef, error_msg: &str) -> usize {
-        let operand = self.visit_expression(expr, true);
-        if let Some(const_id) = self.operand_to_const_id(&operand) {
-            let const_val = self.mb.get_constants().get(const_id.index()).unwrap();
-            if let ConstValueKind::Int(val) = const_val.kind {
-                val as usize
-            } else {
-                panic!("{}", error_msg);
-            }
-        } else {
-            panic!("{}", error_msg);
-        }
+        let val = self.const_ctx().eval_int(expr).expect(error_msg);
+        val as usize
     }
 
     pub(super) fn lower_condition(&mut self, condition: NodeRef) -> Operand {
@@ -569,7 +573,7 @@ impl<'a> MirGen<'a> {
     fn visit_function(&mut self, function: &FunctionDef) {
         let symbol_entry = self.symbol_table.get_symbol(function.symbol);
         let mut func_name = symbol_entry.name;
-        if let crate::semantic::symbol_table::SymbolKind::Function(f) = &symbol_entry.kind
+        if let SymbolKind::Function(f) = &symbol_entry.kind
             && let Some(linkage) = f.linkage_name
         {
             func_name = linkage;
@@ -1304,17 +1308,26 @@ impl<'a> MirGen<'a> {
         let kind = *self.ast.get_kind(node);
         match kind {
             NodeKind::Case(expr, stmt) => {
-                let op = self.visit_expression(expr, true);
-                let val = self.operand_to_const_id_strict(op, "Case label must be constant");
+                let val_i64 = self.const_ctx().eval_int(expr).expect("Case label must be constant");
+                let expr_ty = self.ast.qual_type_of(expr);
+                let mir_ty = self.lower_qual_type(expr_ty);
+                let val = self.create_constant(mir_ty, ConstValueKind::Int(val_i64));
                 cases.push((node, Some(val), None));
                 self.collect_switch_cases_recursive(stmt, cases);
             }
             NodeKind::CaseRange(start, end, stmt) => {
-                let start_op = self.visit_expression(start, true);
-                let start_val = self.operand_to_const_id_strict(start_op, "Case range start must be constant");
+                let start_i64 = self
+                    .const_ctx()
+                    .eval_int(start)
+                    .expect("Case range start must be constant");
+                let start_ty = self.ast.qual_type_of(start);
+                let start_mir_ty = self.lower_qual_type(start_ty);
+                let start_val = self.create_constant(start_mir_ty, ConstValueKind::Int(start_i64));
 
-                let end_op = self.visit_expression(end, true);
-                let end_val = self.operand_to_const_id_strict(end_op, "Case range end must be constant");
+                let end_i64 = self.const_ctx().eval_int(end).expect("Case range end must be constant");
+                let end_ty = self.ast.qual_type_of(end);
+                let end_mir_ty = self.lower_qual_type(end_ty);
+                let end_val = self.create_constant(end_mir_ty, ConstValueKind::Int(end_i64));
 
                 cases.push((node, Some(start_val), Some(end_val)));
                 self.collect_switch_cases_recursive(stmt, cases);
@@ -1808,8 +1821,8 @@ impl<'a> MirGen<'a> {
             | Conversion::FloatingCast { .. } => {
                 // Fold constant casts if types are compatible
                 if let Some(const_id) = self.operand_to_const_id(&operand) {
-                    let const_val = self.mb.get_constants()[const_id.index()].clone();
                     let mir_type = self.mb.get_type(to_mir_type);
+                    let const_val = &self.mb.get_constants()[const_id.index()];
 
                     let is_compatible = match (&const_val.kind, mir_type) {
                         (ConstValueKind::Int(_), t) => t.is_int() || t.is_pointer(),
@@ -1820,16 +1833,16 @@ impl<'a> MirGen<'a> {
                     };
 
                     if is_compatible {
-                        let truncated_kind = match const_val.kind {
+                        let truncated_kind = match &const_val.kind {
                             ConstValueKind::Int(val) => {
                                 // C11 6.3.1.2-3: When converting to _Bool, the result is 0 if the value is 0, otherwise 1
                                 if matches!(mir_type, MirType::Bool) {
-                                    ConstValueKind::Int(if val != 0 { 1 } else { 0 })
+                                    ConstValueKind::Int(if *val != 0 { 1 } else { 0 })
                                 } else {
-                                    ConstValueKind::Int(mir_type.truncate_int(val))
+                                    ConstValueKind::Int(mir_type.truncate_int(*val))
                                 }
                             }
-                            kind => kind,
+                            kind => kind.clone(),
                         };
                         Operand::Constant(self.create_constant(to_mir_type, truncated_kind))
                     } else {
@@ -2462,9 +2475,9 @@ impl<'a> MirGen<'a> {
         // Binary search: split cases at the middle
         let mid = cases.len() / 2;
         let (start_id, _, _) = cases[mid];
-        let start_const = self.mb.get_constants().get(start_id.index()).unwrap().clone();
+        let start_const_ty = self.mb.get_constants().get(start_id.index()).unwrap().ty;
         let start_op = Operand::Constant(start_id);
-        let cast_start_op = if start_const.ty != cond_ty_id {
+        let cast_start_op = if start_const_ty != cond_ty_id {
             Operand::Cast(cond_ty_id, Box::new(start_op))
         } else {
             start_op
@@ -2497,18 +2510,18 @@ impl<'a> MirGen<'a> {
         cond_ty_id: TypeId,
         bool_ty_id: TypeId,
     ) -> Operand {
-        let start_const = self.mb.get_constants().get(start_id.index()).unwrap().clone();
+        let start_const_ty = self.mb.get_constants().get(start_id.index()).unwrap().ty;
         let start_op = Operand::Constant(start_id);
-        let cast_start_op = if start_const.ty != cond_ty_id {
+        let cast_start_op = if start_const_ty != cond_ty_id {
             Operand::Cast(cond_ty_id, Box::new(start_op))
         } else {
             start_op
         };
 
         if let Some(end_id) = end_id_opt {
-            let end_const = self.mb.get_constants().get(end_id.index()).unwrap().clone();
+            let end_const_ty = self.mb.get_constants().get(end_id.index()).unwrap().ty;
             let end_op = Operand::Constant(end_id);
-            let cast_end_op = if end_const.ty != cond_ty_id {
+            let cast_end_op = if end_const_ty != cond_ty_id {
                 Operand::Cast(cond_ty_id, Box::new(end_op))
             } else {
                 end_op

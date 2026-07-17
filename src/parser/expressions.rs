@@ -234,7 +234,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
 }
 
 fn parse_unary_operator(parser: &mut Parser, mut token: Token) -> Result<ParsedNodeRef, ParseDiag> {
-    let mut ops = Vec::new();
+    let mut ops = smallvec::SmallVec::<[(UnaryOp, SourceSpan); 8]>::new();
 
     loop {
         let op = match token.kind {

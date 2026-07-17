@@ -748,8 +748,7 @@ fn test_multidim_array_string_init_designator() {
     type %t0 = i8
     type %t1 = [10]%t0
     type %t2 = [1]%t1
-    type %t3 = i32
-    type %t4 = [10]%t0
+    type %t3 = [10]%t0
 
     global @arr: [1][10]i8 = const array_literal [const array_literal [const 104, const 101, const 108, const 108, const 111, const 0, const 0, const 0, const 0, const 0]]
     ");

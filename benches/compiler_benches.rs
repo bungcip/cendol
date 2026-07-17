@@ -1,6 +1,6 @@
+use cendol::driver::CompilerDriver;
 use cendol::driver::artifact::CompilePhase;
-use cendol::driver::cli::PreprocessorOptions;
-use cendol::driver::{Cli, CompilerDriver};
+use cendol::driver::cli::parse_args_from;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::path::Path;
 use std::process::Command;
@@ -34,14 +34,17 @@ fn bench_compiler_stages(c: &mut Criterion) {
 
     let run_stage = |b: &mut criterion::Bencher, phase: CompilePhase| {
         b.iter(|| {
-            let cli = Cli {
-                input_files: vec![SQLITE_PATH.into()],
-                include_paths: vec!["realworld/sqlite".into()],
-                defines: vec!["SQLITE_THREADSAFE=0".to_string()],
-                preprocessor: PreprocessorOptions { max_include_depth: 100 },
-                ..Default::default()
-            };
-            let mut driver = CompilerDriver::new(cli).expect("Failed to create driver");
+            let args = vec![
+                "cendol",
+                "-I",
+                "realworld/sqlite",
+                "-DSQLITE_THREADSAFE=0",
+                "--max-include-depth",
+                "100",
+                SQLITE_PATH,
+            ];
+            let config = parse_args_from(args.into_iter().map(String::from)).unwrap();
+            let mut driver = CompilerDriver::from_config(config);
             let _ = driver.run_pipeline(phase);
         })
     };
@@ -49,6 +52,7 @@ fn bench_compiler_stages(c: &mut Criterion) {
     group.bench_function("preprocess_sqlite", |b| run_stage(b, CompilePhase::Preprocess));
     group.bench_function("parse_sqlite", |b| run_stage(b, CompilePhase::Parse));
     group.bench_function("analyze_sqlite", |b| run_stage(b, CompilePhase::Mir));
+    group.bench_function("codegen_sqlite", |b| run_stage(b, CompilePhase::Cranelift));
 
     group.finish();
 }

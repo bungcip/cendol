@@ -21,7 +21,7 @@ use crate::lang_options::{CStandard, LangOptions, PedanticMode, Visibility};
 use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::errors::{SemanticDiag, SemanticError};
 use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
-use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
+use crate::semantic::symbol_table::{DefinitionState, SymbolClass, SymbolTableError};
 use crate::semantic::{
     ArraySizeType, BuiltinFunctionKind, BuiltinType, EnumConstant, Namespace, RecordMember, ScopeId, SymbolKind,
     SymbolRef, SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry, Variable,
@@ -946,27 +946,23 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         self.symbol_table.get_symbol_mut(sym).type_info = composite;
 
         if new_ty.is_function() {
-            self.check_function_redeclaration(name, new_ty, span, symbol_def_span, symbol_type_info);
+            // self.check_function_redeclaration(name, new_ty, span, symbol_def_span, symbol_type_info);
+            let is_noreturn = |qt: QualType, reg: &TypeRegistry| {
+                matches!(&reg.get(qt.ty()).kind, TypeKind::Function { is_noreturn: true, .. })
+            };
+
+            if is_noreturn(symbol_type_info, self.registry) != is_noreturn(new_ty, self.registry) {
+                self.report_error(
+                    span,
+                    SemanticError::ConflictingTypes {
+                        name,
+                        first_def: symbol_def_span,
+                    },
+                );
+            }
         }
 
         composite
-    }
-
-    fn check_function_redeclaration(
-        &mut self,
-        name: NameId,
-        new_ty: QualType,
-        span: SourceSpan,
-        first_def: SourceSpan,
-        existing_ty: QualType,
-    ) {
-        let is_noreturn = |qt: QualType, reg: &TypeRegistry| {
-            matches!(&reg.get(qt.ty()).kind, TypeKind::Function { is_noreturn: true, .. })
-        };
-
-        if is_noreturn(existing_ty, self.registry) != is_noreturn(new_ty, self.registry) {
-            self.report_error(span, SemanticError::ConflictingTypes { name, first_def });
-        }
     }
 
     fn check_function_constraints(
@@ -2103,55 +2099,46 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 lower_simple!(NodeKind::ExpressionStmt(e.map(|x| self.visit_expression(x))))
             }
             ParsedNodeKind::AsmStmt(e) => {
-                let output_start = self.ast.next_node_ref();
-                for op in &e.outputs {
-                    let span = self.parsed_ast.get_node(op.expr).span;
-                    self.ast.push_dummy(span);
-                }
-                for (i, op) in e.outputs.iter().enumerate() {
-                    let expr = self.visit_expression(op.expr);
-                    let node_ref = NodeRef::new(output_start.raw() + i as u32).unwrap();
-                    self.ast.set_kind(
-                        node_ref,
-                        NodeKind::AsmConstraint(AsmConstraintData {
-                            constraint: op.constraint,
-                            expr,
-                        }),
-                    );
-                }
+                let child_start = self.ast.next_node_ref();
                 let output_len = e.outputs.len() as u16;
-
-                let input_start = self.ast.next_node_ref();
-                for op in &e.inputs {
-                    let span = self.parsed_ast.get_node(op.expr).span;
-                    self.ast.push_dummy(span);
-                }
-                for (i, op) in e.inputs.iter().enumerate() {
-                    let expr = self.visit_expression(op.expr);
-                    let node_ref = NodeRef::new(input_start.raw() + i as u32).unwrap();
-                    self.ast.set_kind(
-                        node_ref,
-                        NodeKind::AsmConstraint(AsmConstraintData {
-                            constraint: op.constraint,
-                            expr,
-                        }),
-                    );
-                }
                 let input_len = e.inputs.len() as u16;
-
-                let clobber_start = self.ast.next_node_ref();
-                for &clobber in &e.clobbers {
-                    self.ast.push_node(NodeKind::AsmClobber(clobber), span);
-                }
                 let clobber_len = e.clobbers.len() as u16;
 
+                // Push template as first child
+                self.ast.push_node(NodeKind::Literal(e.template), span);
+
+                for _ in 0..(output_len + input_len + clobber_len) {
+                    self.push_dummy(span);
+                }
+
+                let mut current_idx = child_start.raw() + 1;
+
+                for op in &e.outputs {
+                    let expr = self.visit_expression(op.expr);
+                    let node_ref = NodeRef::new(current_idx).unwrap();
+                    self.ast
+                        .set_kind(node_ref, NodeKind::AsmConstraint(op.constraint, expr));
+                    current_idx += 1;
+                }
+
+                for op in &e.inputs {
+                    let expr = self.visit_expression(op.expr);
+                    let node_ref = NodeRef::new(current_idx).unwrap();
+                    self.ast
+                        .set_kind(node_ref, NodeKind::AsmConstraint(op.constraint, expr));
+                    current_idx += 1;
+                }
+
+                for &clobber in &e.clobbers {
+                    let node_ref = NodeRef::new(current_idx).unwrap();
+                    self.ast.set_kind(node_ref, NodeKind::AsmClobber(clobber));
+                    current_idx += 1;
+                }
+
                 lower_simple!(NodeKind::AsmStmt(AsmStmtData {
-                    template: e.template,
-                    output_start,
+                    child_start,
                     output_len,
-                    input_start,
                     input_len,
-                    clobber_start,
                     clobber_len,
                     is_volatile: e.is_volatile,
                 }))
@@ -2492,7 +2479,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 return sym;
             }
             self.report_error(span, SemanticError::UndeclaredIdentifier { name });
-            SymbolRef::new(1).expect("SymbolRef 1 creation failed")
+            crate::semantic::symbol_table::SymbolRef::new_with_class(
+                1,
+                crate::semantic::symbol_table::SymbolClass::Variable,
+            )
+            .expect("SymbolRef 1 creation failed")
         }
     }
 
@@ -2528,7 +2519,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.symbol_table
                     .lookup_label(name)
                     .map(|(s, _)| s)
-                    .unwrap_or_else(|| SymbolRef::new(1).unwrap())
+                    .unwrap_or_else(|| SymbolRef::new_with_class(1, SymbolClass::Label).unwrap())
             }
         }
     }
@@ -2540,7 +2531,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // Forward references are okay because of pre-scan
             // But if NOT even in pre-scan, then it's undeclared
             self.report_error(span, SemanticError::UndeclaredIdentifier { name });
-            SymbolRef::new(1).unwrap()
+            SymbolRef::new_with_class(1, SymbolClass::Label).unwrap()
         }
     }
 
@@ -2590,10 +2581,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         match node_kind {
             NodeKind::Literal(_) => true,
             NodeKind::Ident(_, sym) => {
-                let symbol = self.symbol_table.get_symbol(sym);
-                if matches!(symbol.kind, SymbolKind::EnumConstant { .. }) {
+                if sym.class() == SymbolClass::EnumConstant {
                     return true;
                 }
+                let symbol = self.symbol_table.get_symbol(sym);
                 // Function designators and array names are effectively constants (pointers)
                 if symbol.is_function() || symbol.type_info.is_array() {
                     return symbol.has_static_duration();
@@ -3274,8 +3265,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 (symbol.type_info.ty(), symbol.is_completed, symbol.def_span)
             };
 
-            let is_mismatch = match &self.symbol_table.get_symbol(sym_ref).kind {
-                SymbolKind::Record { .. } => {
+            let is_mismatch = match sym_ref.class() {
+                SymbolClass::Record => {
                     if let TypeKind::Record {
                         is_union: existing_is_union,
                         ..
@@ -3352,7 +3343,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 (symbol.type_info.ty(), symbol.is_completed, symbol.def_span, has_enums)
             };
 
-            let is_mismatch = !matches!(&self.symbol_table.get_symbol(sym_ref).kind, SymbolKind::EnumTag { .. });
+            let is_mismatch = sym_ref.class() != SymbolClass::EnumTag;
 
             if is_mismatch {
                 return Err(SemanticDiag::new(

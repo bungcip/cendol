@@ -88,7 +88,7 @@ pub(crate) enum NodeKind {
 
     ExpressionStmt(Option<NodeRef> /* expression */), // Expression followed by ';'
     AsmStmt(AsmStmtData),
-    AsmConstraint(AsmConstraintData),
+    AsmConstraint(LitRef /* constraint */, NodeRef /* expr */),
     AsmClobber(LitRef),
 
     // --- Declarations & Definitions ---
@@ -335,17 +335,12 @@ impl NodeKind {
             }
 
             NodeKind::AsmStmt(data) => {
-                for c in data.output_start.range(data.output_len) {
-                    f(c);
-                }
-                for c in data.input_start.range(data.input_len) {
-                    f(c);
-                }
-                for c in data.clobber_start.range(data.clobber_len) {
+                let total_len = 1 + data.output_len as u32 + data.input_len as u32 + data.clobber_len as u32;
+                for c in data.child_start.range(total_len) {
                     f(c);
                 }
             }
-            NodeKind::AsmConstraint(data) => f(data.expr),
+            NodeKind::AsmConstraint(_, expr) => f(*expr),
             NodeKind::AsmClobber(_) => {}
 
             NodeKind::VarDecl(data) => {
@@ -701,18 +696,11 @@ pub(crate) struct GenericAssociation {
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct AsmStmtData {
-    pub(crate) template: LitRef,
-    pub(crate) output_start: NodeRef,
+    pub(crate) child_start: NodeRef,
     pub(crate) output_len: u16,
-    pub(crate) input_start: NodeRef,
     pub(crate) input_len: u16,
-    pub(crate) clobber_start: NodeRef,
     pub(crate) clobber_len: u16,
     pub(crate) is_volatile: bool,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
-pub(crate) struct AsmConstraintData {
-    pub(crate) constraint: LitRef,
-    pub(crate) expr: NodeRef,
-}
+const _: () = assert!(std::mem::size_of::<NodeKind>() <= 16, "NodeKind size exceeds 16 bytes");

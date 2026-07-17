@@ -29,7 +29,7 @@ pub(crate) use expressions::BindingPower;
 use expressions::parse_expression;
 pub(crate) use lexer::{Lexer, Token, TokenKind};
 
-use crate::semantic::{ScopeId, SymbolKind, SymbolTable};
+use crate::semantic::{ScopeId, SymbolTable};
 
 #[derive(Clone)]
 pub(crate) struct ParserState {
@@ -368,7 +368,7 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
 
     fn is_type_name(&self, symbol: NameId) -> bool {
         if let Some(sym_ref) = self.symbol_table.lookup_symbol(symbol) {
-            matches!(self.symbol_table.get_symbol(sym_ref).kind, SymbolKind::Typedef(..))
+            sym_ref.class() == crate::semantic::symbol_table::SymbolClass::Typedef
         } else {
             false
         }

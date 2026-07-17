@@ -250,6 +250,7 @@ impl CompilerDriver {
         Ok((ast, symbol_table, registry))
     }
 
+    #[cfg(debug_assertions)]
     fn validate_ast_invariants(&self, ast: &Ast) {
         for kind in &ast.kinds {
             match kind {

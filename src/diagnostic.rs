@@ -39,6 +39,7 @@ pub(crate) struct DiagnosticEngine {
     pub(crate) error_limit_reached: bool,
     /// Bolt ⚡: Flag to ensure the "too many warnings" note is only emitted once.
     pub(crate) warning_limit_reached: bool,
+    pub(crate) stream_muted: usize,
     pub(crate) disabled_warnings: HashSet<String>,
     pub(crate) diagnostic_stack: Vec<HashSet<String>>,
     pub(crate) renderer: Renderer,
@@ -62,6 +63,7 @@ impl Default for DiagnosticEngine {
             warning_limit: None,
             error_limit_reached: false,
             warning_limit_reached: false,
+            stream_muted: 0,
             disabled_warnings: HashSet::new(),
             diagnostic_stack: Vec::new(),
             renderer,
@@ -175,16 +177,42 @@ impl DiagnosticEngine {
         self.error_count > 0
     }
 
-    pub(crate) fn report_streaming(&mut self, mut diagnostic: Diagnostic, sm: &SourceManager) {
+    pub(crate) fn report_streaming(&mut self, mut diag: Diagnostic, sm: &SourceManager) {
         let prev_len = self.diagnostics.len();
-        diagnostic.is_streamed = true;
-        self.report_diagnostic(diagnostic);
-        if self.diagnostics.len() > prev_len {
+        if self.stream_muted == 0 {
+            diag.is_streamed = true;
+        }
+        self.report_diagnostic(diag);
+        if self.diagnostics.len() > prev_len && self.stream_muted == 0 {
             let added_diag = self.diagnostics.last().unwrap();
             if let Ok(mut writer) = self.writer.lock() {
                 let mut fmt_writer = FmtToIoWrite(&mut **writer);
                 let _ = self.print_single(added_diag, sm, &mut fmt_writer);
                 let _ = writeln!(writer);
+            }
+        }
+    }
+
+    pub(crate) fn flush_stream(&mut self, sm: &SourceManager) {
+        if self.stream_muted > 0 {
+            return;
+        }
+        let mut to_print = Vec::new();
+        for diag in &mut self.diagnostics {
+            if !diag.is_streamed {
+                diag.is_streamed = true;
+                to_print.push(diag.clone());
+            }
+        }
+        if !to_print.is_empty() {
+            if let Ok(mut writer) = self.writer.lock() {
+                for diag in to_print {
+                    {
+                        let mut fmt_writer = FmtToIoWrite(&mut **writer);
+                        let _ = self.print_single(&diag, sm, &mut fmt_writer);
+                    }
+                    let _ = writeln!(writer);
+                }
             }
         }
     }

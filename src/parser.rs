@@ -35,6 +35,8 @@ use crate::semantic::{ScopeId, SymbolTable};
 pub(crate) struct ParserState {
     current_idx: usize,
     diag_len: usize,
+    error_count: usize,
+    warning_count: usize,
     symbol_table_state: crate::semantic::symbol_table::SymbolTableState,
 }
 
@@ -442,18 +444,25 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     }
 
     fn save_state(&mut self) -> ParserState {
-        let diag_len = self.diag().diagnostics.len();
+        let current_idx = self.current_idx;
+        let symbol_table_state = self.symbol_table.save_state();
+        let diag = self.diag();
         ParserState {
-            current_idx: self.current_idx,
-            diag_len,
-            symbol_table_state: self.symbol_table.save_state(),
+            current_idx,
+            diag_len: diag.diagnostics.len(),
+            error_count: diag.error_count,
+            warning_count: diag.warning_count,
+            symbol_table_state,
         }
     }
 
     fn restore_state(&mut self, state: ParserState) {
         self.current_idx = state.current_idx;
-        self.diag().diagnostics.truncate(state.diag_len);
         self.symbol_table.restore_state(state.symbol_table_state);
+        let diag = self.diag();
+        diag.diagnostics.truncate(state.diag_len);
+        diag.error_count = state.error_count;
+        diag.warning_count = state.warning_count;
     }
 
     /// Execute a parsing function within a transaction.
@@ -464,12 +473,20 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
         F: FnOnce(&mut Parser<'arena, 'src, 'lexer>) -> Result<T, E>,
     {
         let trx = utils::ParserTransaction::new(self);
+        trx.parser.diag().stream_muted += 1;
         match f(trx.parser) {
             Ok(result) => {
+                trx.parser.diag().stream_muted -= 1;
+                let sm_ptr = trx.parser.lexer.preprocessor.sm as *const _;
+                trx.parser.diag().flush_stream(unsafe { &*sm_ptr });
                 trx.commit();
                 Ok(result)
             }
-            Err(e) => Err(e),
+            Err(e) => {
+                trx.parser.diag().stream_muted -= 1;
+                // when rolled back, the ParserTransaction Drop impl restores state (and truncates error/warnings)
+                Err(e)
+            }
         }
     }
 

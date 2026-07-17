@@ -18,6 +18,7 @@ PROJECTS = {
     },
     "sds": {
         "repo": "https://github.com/antirez/sds",
+        "patch_cmd": ["sh", "-c", "sed -i 's/-std=c99/-std=c11/g' Makefile"],
         "build_cmd": ["make", "CC={CC}"],
         "test_cmd": ["./sds-test"],
         "clean_cmd": ["make", "clean"],

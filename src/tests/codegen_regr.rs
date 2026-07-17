@@ -355,3 +355,32 @@ fn test_label_map_cleared_between_functions() {
     let status = run_c_code_exit_status(source);
     assert_eq!(status, 0);
 }
+#[test]
+fn test_unreachable_float_return() {
+    let source = r#"
+        double foo(void) {
+        }
+        int main() {
+            return 0;
+        }
+    "#;
+
+    let clif_dump = setup_cranelift(source);
+    // Should compile without verifier panicking due to `iconst.f64`
+    insta::assert_snapshot!(clif_dump, @"
+    ; Function: foo
+    function u0:0() -> f64 system_v {
+    block0:
+        v0 = f64const 0.0
+        return v0  ; v0 = 0.0
+    }
+
+
+    ; Function: main
+    function u0:0() -> i32 system_v {
+    block0:
+        v0 = iconst.i32 0
+        return v0  ; v0 = 0
+    }
+    ");
+}

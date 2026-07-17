@@ -2531,7 +2531,13 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
             if !ctx.return_types.is_empty() {
                 let mut ret_values = Vec::new();
                 for &ret_type in &ctx.return_types {
-                    let val = ctx.builder.ins().iconst(ret_type, 0i64);
+                    let val = if ret_type == types::F32 {
+                        ctx.builder.ins().f32const(0.0)
+                    } else if ret_type == types::F64 {
+                        ctx.builder.ins().f64const(0.0)
+                    } else {
+                        ctx.builder.ins().iconst(ret_type, 0i64)
+                    };
                     ret_values.push(val);
                 }
                 ctx.builder.ins().return_(&ret_values);
@@ -2616,11 +2622,11 @@ fn finalize_function_processing(
         .expect("module operation failed");
 
     // Only define the function body if it's a defined function (not extern)
-    if func.linkage != MirLinkage::Import
-        && let Err(e) = module.define_function(id, func_ctx)
-    {
-        println!("{}", func_ctx.func.display());
-        panic!("module operation failed: {:?}", e);
+    if func.linkage != MirLinkage::Import {
+        if let Err(e) = module.define_function(id, func_ctx) {
+            println!("{}", func_ctx.func.display());
+            panic!("module operation failed: {:?}", e);
+        }
     }
 
     if emit_kind == EmitKind::Clif {

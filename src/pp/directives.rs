@@ -770,7 +770,7 @@ impl<'src> Preprocessor<'src> {
                 span: SourceSpan::from_loc(loc),
                 ..Default::default()
             };
-            self.diag.report_diagnostic(diag);
+            self.diag.report(diag, self.sm);
             self.emit_error(PPError::PragmaError(message), loc)
         } else {
             let diag = Diagnostic {
@@ -779,7 +779,7 @@ impl<'src> Preprocessor<'src> {
                 span: SourceSpan::from_loc(loc),
                 ..Default::default()
             };
-            self.diag.report_diagnostic(diag);
+            self.diag.report(diag, self.sm);
             Ok(())
         }
     }

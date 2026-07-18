@@ -89,14 +89,17 @@ fn test_diagnostic_engine_writer() {
     let writer = SharedBuffer(raw_buf.clone());
     de.set_writer(Box::new(writer));
 
-    de.report_diagnostic(Diagnostic {
-        level: DiagnosticLevel::Note,
-        message: "Test custom note".to_string(),
-        span: SourceSpan::default(),
-        hints: Vec::new(),
-        warning_name: None,
-        is_streamed: false,
-    });
+    de.report(
+        Diagnostic {
+            level: DiagnosticLevel::Note,
+            message: "Test custom note".to_string(),
+            span: SourceSpan::default(),
+            hints: Vec::new(),
+            warning_name: None,
+            is_streamed: false,
+        },
+        &sm,
+    );
 
     de.print(&sm, false);
 

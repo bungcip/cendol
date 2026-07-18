@@ -198,8 +198,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let mut error = SemanticDiag::new(span, kind);
         error.notes = notes;
         error.level = Some(DiagnosticLevel::Error);
-        self.diag
-            .report_semantic_streaming(error, self.source_manager, self.registry);
+        self.diag.report_semantic(error, self.source_manager, self.registry);
     }
 
     fn report_warning(&mut self, node: NodeRef, kind: SemanticError) {
@@ -209,8 +208,7 @@ impl<'a> SemanticAnalyzer<'a> {
             let span = self.ast.get_span(node);
             let mut error = SemanticDiag::new(span, kind);
             error.level = Some(DiagnosticLevel::Warning);
-            self.diag
-                .report_semantic_streaming(error, self.source_manager, self.registry);
+            self.diag.report_semantic(error, self.source_manager, self.registry);
         }
     }
 

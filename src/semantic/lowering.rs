@@ -27,7 +27,7 @@ use crate::semantic::{
     SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry, Variable,
 };
 use crate::semantic::{FunctionParam, QualType};
-use crate::source_manager::SourceSpan;
+use crate::source_manager::{SourceManager, SourceSpan};
 use std::sync::Arc;
 
 /// Context for the semantic lowering phase
@@ -48,6 +48,7 @@ pub(crate) struct LowerCtx<'a, 'src> {
     pub(crate) type_to_tag_sym: HashMap<TypeRef, SymbolRef>,
     pub(crate) keywords: LoweringKeywords,
     pub(crate) in_tag_decl: bool,
+    pub(crate) sm: &'a SourceManager,
 }
 
 pub(crate) struct LoweringKeywords {
@@ -82,6 +83,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         symbol_table: &'a mut SymbolTable,
         registry: &'a mut TypeRegistry,
         lang_opts: &'a LangOptions,
+        sm: &'a SourceManager,
     ) -> Self {
         Self {
             parsed_ast,
@@ -99,6 +101,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             type_to_tag_sym: HashMap::new(),
             keywords: LoweringKeywords::new(),
             in_tag_decl: false,
+            sm,
         }
     }
 
@@ -113,7 +116,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     pub(crate) fn report_error(&mut self, span: SourceSpan, kind: SemanticError) {
         let error = SemanticDiag::new(span, kind);
         for diag in error.into_diagnostic(self.registry) {
-            self.diag.report_diagnostic(diag);
+            self.diag.report(diag, self.sm);
         }
     }
 
@@ -126,7 +129,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             error.level = Some(DiagnosticLevel::Warning);
         }
         for diag in error.into_diagnostic(self.registry) {
-            self.diag.report_diagnostic(diag);
+            self.diag.report(diag, self.sm);
         }
     }
 
@@ -605,6 +608,7 @@ fn finalize_tentative_definitions(
     symbol_table: &mut SymbolTable,
     registry: &TypeRegistry,
     diag: &mut DiagnosticEngine,
+    sm: &SourceManager,
 ) {
     for entry in &mut symbol_table.entries {
         if entry.scope_id == ScopeId::GLOBAL
@@ -630,7 +634,7 @@ fn finalize_tentative_definitions(
             };
             let error = SemanticDiag::new(entry.def_span, kind);
             for d in error.into_diagnostic(registry) {
-                diag.report_diagnostic(d);
+                diag.report(d, sm);
             }
         }
     }
@@ -644,18 +648,19 @@ pub(crate) fn visit_ast(
     symbol_table: &mut SymbolTable,
     registry: &mut TypeRegistry,
     lang_opts: &LangOptions,
+    sm: &SourceManager,
 ) {
     symbol_table.clear_parser_symbols();
 
     // Create lowering context
-    let mut lower_ctx = LowerCtx::new(parsed_ast, ast, diag, symbol_table, registry, lang_opts);
+    let mut lower_ctx = LowerCtx::new(parsed_ast, ast, diag, symbol_table, registry, lang_opts, sm);
 
     // Perform recursive scope-aware lowering starting from root
     let root = parsed_ast.get_root();
     lower_ctx.visit_node(root);
 
-    // Finalize tentative definitions
-    finalize_tentative_definitions(lower_ctx.symbol_table, lower_ctx.registry, lower_ctx.diag);
+    // Finalize tentative definitions in file scope
+    finalize_tentative_definitions(symbol_table, registry, diag, sm);
 }
 
 impl<'a, 'src> LowerCtx<'a, 'src> {

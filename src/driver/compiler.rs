@@ -128,7 +128,7 @@ impl CompilerDriver {
         let t0 = Instant::now();
         if stop_after == CompilePhase::Preprocess {
             out.preprocessed = Some(preprocessor.process(source_id).map_err(|e| {
-                self.de.report_streaming(e.into(), &self.sm);
+                self.de.report(e.into(), &self.sm);
                 PipelineError::Fatal
             })?);
             if timing_enabled {
@@ -144,7 +144,7 @@ impl CompilerDriver {
         let t1 = Instant::now();
         if stop_after == CompilePhase::Lex {
             out.lexed = Some(lexer.tokenize_all().map_err(|e| {
-                self.de.report_streaming(e.into(), &self.sm);
+                self.de.report(e.into(), &self.sm);
                 PipelineError::Fatal
             })?);
             self.check_diagnostics_and_return_if_error()?;
@@ -163,7 +163,7 @@ impl CompilerDriver {
 
         parse_result.map_err(|e| {
             for diag in e.into_diagnostic() {
-                self.de.report_streaming(diag, &self.sm);
+                self.de.report(diag, &self.sm);
             }
             PipelineError::Fatal
         })?;
@@ -240,6 +240,7 @@ impl CompilerDriver {
             &mut symbol_table,
             &mut registry,
             &self.config.lang_options,
+            &self.sm,
         );
 
         self.check_diagnostics_and_return_if_error()?;
@@ -319,6 +320,7 @@ impl CompilerDriver {
             &symbol_table,
             &mut registry,
             &self.config.lang_options,
+            &self.sm,
         );
         let mir_program = sema.visit_module();
         if let Some(t1) = t1 {

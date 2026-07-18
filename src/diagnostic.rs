@@ -44,6 +44,7 @@ pub(crate) struct DiagnosticEngine {
     pub(crate) diagnostic_stack: Vec<HashSet<String>>,
     pub(crate) renderer: Renderer,
     pub(crate) writer: std::sync::Mutex<Box<dyn std::io::Write + Send>>,
+    pub(crate) is_testing: bool,
 }
 
 impl Default for DiagnosticEngine {
@@ -68,6 +69,7 @@ impl Default for DiagnosticEngine {
             diagnostic_stack: Vec::new(),
             renderer,
             writer: std::sync::Mutex::new(Box::new(std::io::stderr())),
+            is_testing: false,
         }
     }
 }
@@ -123,27 +125,42 @@ impl DiagnosticEngine {
         self.warning_limit = Some(limit);
     }
 
-    pub(crate) fn report_diagnostic(&mut self, diagnostic: Diagnostic) {
-        if diagnostic.level == DiagnosticLevel::Warning
-            && diagnostic
+    pub(crate) fn report(&mut self, mut diag: Diagnostic, sm: &SourceManager) {
+        if diag.level == DiagnosticLevel::Warning
+            && diag
                 .warning_name
                 .is_some_and(|name| self.disabled_warnings.contains(name))
         {
             return;
         }
 
-        match diagnostic.level {
+        let emit_diag = |engine: &mut Self, mut d: Diagnostic| {
+            if !engine.is_testing && engine.stream_muted == 0 {
+                d.is_streamed = true;
+            }
+            engine.diagnostics.push(d.clone());
+            if !engine.is_testing && engine.stream_muted == 0 {
+                if let Ok(mut writer) = engine.writer.lock() {
+                    let mut fmt_writer = FmtToIoWrite(&mut **writer);
+                    let _ = engine.print_single(&d, sm, &mut fmt_writer);
+                    let _ = writeln!(writer);
+                }
+            }
+        };
+
+        match diag.level {
             DiagnosticLevel::Error => {
                 if let Some(limit) = self.error_limit
                     && self.error_count >= limit
                 {
                     if !self.error_limit_reached {
-                        self.diagnostics.push(Diagnostic {
+                        let limit_diag = Diagnostic {
                             level: DiagnosticLevel::Note,
                             message: format!("too many errors emitted, stopping after {} errors", limit),
-                            span: diagnostic.span,
+                            span: diag.span,
                             ..Default::default()
-                        });
+                        };
+                        emit_diag(self, limit_diag);
                         self.error_limit_reached = true;
                     }
                     return;
@@ -155,12 +172,13 @@ impl DiagnosticEngine {
                     && self.warning_count >= limit
                 {
                     if !self.warning_limit_reached {
-                        self.diagnostics.push(Diagnostic {
+                        let limit_diag = Diagnostic {
                             level: DiagnosticLevel::Note,
                             message: format!("too many warnings emitted, stopping after {} warnings", limit),
-                            span: diagnostic.span,
+                            span: diag.span,
                             ..Default::default()
-                        });
+                        };
+                        emit_diag(self, limit_diag);
                         self.warning_limit_reached = true;
                     }
                     return;
@@ -170,31 +188,15 @@ impl DiagnosticEngine {
             DiagnosticLevel::Note => {}
         }
 
-        self.diagnostics.push(diagnostic);
+        emit_diag(self, diag);
     }
 
     pub(crate) fn has_errors(&self) -> bool {
         self.error_count > 0
     }
 
-    pub(crate) fn report_streaming(&mut self, mut diag: Diagnostic, sm: &SourceManager) {
-        let prev_len = self.diagnostics.len();
-        if self.stream_muted == 0 {
-            diag.is_streamed = true;
-        }
-        self.report_diagnostic(diag);
-        if self.diagnostics.len() > prev_len && self.stream_muted == 0 {
-            let added_diag = self.diagnostics.last().unwrap();
-            if let Ok(mut writer) = self.writer.lock() {
-                let mut fmt_writer = FmtToIoWrite(&mut **writer);
-                let _ = self.print_single(added_diag, sm, &mut fmt_writer);
-                let _ = writeln!(writer);
-            }
-        }
-    }
-
     pub(crate) fn flush_stream(&mut self, sm: &SourceManager) {
-        if self.stream_muted > 0 {
+        if self.stream_muted > 0 || self.is_testing {
             return;
         }
         let mut to_print = Vec::new();
@@ -217,14 +219,14 @@ impl DiagnosticEngine {
         }
     }
 
-    pub(crate) fn report_semantic_streaming(
+    pub(crate) fn report_semantic(
         &mut self,
         err: crate::semantic::errors::SemanticDiag,
         source_manager: &SourceManager,
         registry: &crate::semantic::TypeRegistry,
     ) {
         for diag in err.into_diagnostic(registry) {
-            self.report_streaming(diag, source_manager);
+            self.report(diag, source_manager);
         }
     }
 

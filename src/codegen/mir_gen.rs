@@ -1,32 +1,22 @@
 use crate::ast::nodes;
 use crate::ast::*;
-use crate::lang_options::SignedOverflowMode;
-use crate::mir::MirArrayLayout;
-use crate::mir::MirProgram;
+use crate::diagnostic::DiagnosticEngine;
+use crate::lang_options::{LangOptions, SignedOverflowMode, Visibility};
 use crate::mir::{
-    AtomicMemOrder, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, GlobalDecl, LocalId, MirBlockId, MirBuilder,
-    MirFieldLayout, MirFunctionId, MirLinkage, MirRecordLayout, MirStmt, MirType, Operand, Place, Rvalue, Terminator,
-    TypeId,
+    AtomicMemOrder, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, GlobalDecl, GlobalId, LocalId,
+    MirArrayLayout, MirBlockId, MirBuilder, MirFieldLayout, MirFunctionId, MirLinkage, MirProgram, MirRecordLayout,
+    MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
 };
-use crate::semantic::ArraySize;
-use crate::semantic::BuiltinType;
-use crate::semantic::FunctionParam;
-use crate::semantic::QualType;
-use crate::semantic::SymbolKind;
-use crate::semantic::SymbolRef;
-use crate::semantic::SymbolTable;
-use crate::semantic::TypeKind;
-use crate::semantic::symbol_table::Symbol;
-use crate::semantic::symbol_table::SymbolClass;
-
 use crate::semantic::const_eval::ConstEvalCtx;
-use crate::semantic::{Conversion, ScopeId};
-use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
+use crate::semantic::symbol_table::{Symbol, SymbolClass};
+use crate::semantic::{
+    ArraySize, BuiltinType, Conversion, DefinitionState, FunctionParam, QualType, ScopeId, SymbolKind, SymbolRef,
+    SymbolTable, TypeKind, TypeRef, TypeRegistry,
+};
+use crate::source_manager::SourceManager;
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use target_lexicon::Architecture;
-
-use crate::mir::GlobalId;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum CleanupAction {
@@ -75,7 +65,7 @@ impl FunctionState {
 
 pub(crate) struct MirGen<'a> {
     pub(crate) ast: &'a Ast,
-    pub(crate) diag: &'a mut crate::diagnostic::DiagnosticEngine,
+    pub(crate) diag: &'a mut DiagnosticEngine,
     pub(crate) symbol_table: &'a SymbolTable, // Now immutable
     pub(crate) mb: MirBuilder,
     pub(crate) registry: &'a mut TypeRegistry,
@@ -88,7 +78,8 @@ pub(crate) struct MirGen<'a> {
     pub(crate) keywords: MirGenKeywords,
     pub(crate) is_pic: bool,
     pub(crate) signed_overflow_mode: SignedOverflowMode,
-    pub(crate) visibility: crate::lang_options::Visibility,
+    pub(crate) visibility: Visibility,
+    pub(crate) sm: &'a SourceManager,
 }
 
 pub(crate) struct MirGenKeywords {
@@ -245,10 +236,11 @@ impl<'a> MirGen<'a> {
     }
     pub(crate) fn new(
         ast: &'a Ast,
-        diag: &'a mut crate::diagnostic::DiagnosticEngine,
+        diag: &'a mut DiagnosticEngine,
         symbol_table: &'a SymbolTable,
         registry: &'a mut TypeRegistry,
-        options: &crate::lang_options::LangOptions,
+        options: &LangOptions,
+        sm: &'a SourceManager,
     ) -> Self {
         Self {
             ast,
@@ -266,6 +258,7 @@ impl<'a> MirGen<'a> {
             is_pic: options.fpic,
             signed_overflow_mode: options.signed_overflow_mode,
             visibility: options.visibility,
+            sm,
         }
     }
 
@@ -279,12 +272,15 @@ impl<'a> MirGen<'a> {
     }
 
     pub(crate) fn report_error(&mut self, span: crate::source_manager::SourceSpan, message: String) {
-        self.diag.report_diagnostic(crate::diagnostic::Diagnostic {
-            level: crate::diagnostic::DiagnosticLevel::Error,
-            message,
-            span,
-            ..Default::default()
-        });
+        self.diag.report(
+            crate::diagnostic::Diagnostic {
+                level: crate::diagnostic::DiagnosticLevel::Error,
+                message,
+                span,
+                ..Default::default()
+            },
+            self.sm,
+        );
     }
 
     // create dummy operand

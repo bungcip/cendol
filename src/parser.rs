@@ -45,7 +45,7 @@ pub struct Parser<'arena, 'src, 'lexer> {
     pub(crate) lexer: &'lexer mut Lexer<'src>,
     pub(crate) current_idx: usize,
     pub(crate) ast: PAst,
-    pub(crate) lang_opts: &'src crate::lang_options::LangOptions,
+    pub(crate) lang_opts: &'src LangOptions,
 
     // Token caching for lookahead and backtracking
     pub(crate) token_cache: Vec<Token>,
@@ -134,7 +134,7 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     pub(crate) fn report_error<T: crate::diagnostic::IntoDiagnostic>(&mut self, error: T) {
         let sm = &*self.lexer.preprocessor.sm;
         for diag in error.into_diagnostic() {
-            self.lexer.preprocessor.diag.report_streaming(diag, sm);
+            self.lexer.preprocessor.diag.report(diag, sm);
         }
     }
 

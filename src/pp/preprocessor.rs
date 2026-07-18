@@ -640,7 +640,7 @@ impl<'src> Preprocessor<'src> {
             span,
             ..Default::default()
         };
-        self.diag.report_streaming(diag, self.sm);
+        self.diag.report(diag, self.sm);
     }
 
     /// Helper to report error diagnostics from PPError
@@ -648,7 +648,7 @@ impl<'src> Preprocessor<'src> {
         use crate::diagnostic::IntoDiagnostic;
         let diags = err.into_diagnostic();
         for diag in diags {
-            self.diag.report_streaming(diag, self.sm);
+            self.diag.report(diag, self.sm);
         }
     }
 
@@ -676,7 +676,7 @@ impl<'src> Preprocessor<'src> {
         }
 
         for diag in diags {
-            self.diag.report_streaming(diag, self.sm);
+            self.diag.report(diag, self.sm);
         }
     }
 
@@ -701,7 +701,7 @@ impl<'src> Preprocessor<'src> {
             warning_name: Some(name),
             ..Default::default()
         };
-        self.diag.report_streaming(diag, self.sm);
+        self.diag.report(diag, self.sm);
     }
 }
 

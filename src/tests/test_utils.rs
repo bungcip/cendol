@@ -7,13 +7,16 @@ use crate::source_manager::SourceManager;
 
 fn setup_driver(source: &str, phase: CompilePhase) -> CompilerDriver {
     let config = CompileConfig::from_virtual_file(source.to_string(), phase);
-    CompilerDriver::from_config(config)
+    let mut driver = CompilerDriver::from_config(config);
+    driver.de.is_testing = true;
+    driver
 }
 
 /// provide default SourceManager & DiagnosticEngine
 pub(crate) fn setup_sm_and_de() -> (SourceManager, DiagnosticEngine) {
     let sm = SourceManager::new();
-    let de = DiagnosticEngine::default();
+    let mut de = DiagnosticEngine::default();
+    de.is_testing = true;
     (sm, de)
 }
 
@@ -78,6 +81,7 @@ pub(crate) fn run_pass_with_std(
     let mut config = CompileConfig::from_virtual_file(source.to_string(), phase);
     config.lang_options.c_standard = std;
     let mut driver = CompilerDriver::from_config(config);
+    driver.de.is_testing = true;
     let result = driver.run_pipeline(phase).map_err(|e| format!("{:?}", e));
     if result.is_err() {
         panic!("Compilation failed unexpectedly: {:?}", driver.de.diagnostics);
@@ -100,6 +104,7 @@ pub(crate) fn run_fail_with_message_and_std(source: &str, message: &str, std: cr
     let mut config = CompileConfig::from_virtual_file(source.to_string(), CompilePhase::Mir);
     config.lang_options.c_standard = std;
     let mut driver = CompilerDriver::from_config(config);
+    driver.de.is_testing = true;
     let result = driver.run_pipeline(CompilePhase::Mir).map_err(|e| format!("{:?}", e));
     assert!(result.is_err(), "Compilation should have failed");
     check_diagnostic_message_only(&driver, message);

@@ -139,12 +139,14 @@ impl DiagnosticEngine {
                 d.is_streamed = true;
             }
             engine.diagnostics.push(d.clone());
-            if !engine.is_testing && engine.stream_muted == 0
-                && let Ok(mut writer) = engine.writer.lock() {
-                    let mut fmt_writer = FmtToIoWrite(&mut **writer);
-                    let _ = engine.print_single(&d, sm, &mut fmt_writer);
-                    let _ = writeln!(writer);
-                }
+            if !engine.is_testing
+                && engine.stream_muted == 0
+                && let Ok(mut writer) = engine.writer.lock()
+            {
+                let mut fmt_writer = FmtToIoWrite(&mut **writer);
+                let _ = engine.print_single(&d, sm, &mut fmt_writer);
+                let _ = writeln!(writer);
+            }
         };
 
         match diag.level {
@@ -206,15 +208,16 @@ impl DiagnosticEngine {
             }
         }
         if !to_print.is_empty()
-            && let Ok(mut writer) = self.writer.lock() {
-                for diag in to_print {
-                    {
-                        let mut fmt_writer = FmtToIoWrite(&mut **writer);
-                        let _ = self.print_single(&diag, sm, &mut fmt_writer);
-                    }
-                    let _ = writeln!(writer);
+            && let Ok(mut writer) = self.writer.lock()
+        {
+            for diag in to_print {
+                {
+                    let mut fmt_writer = FmtToIoWrite(&mut **writer);
+                    let _ = self.print_single(&diag, sm, &mut fmt_writer);
                 }
+                let _ = writeln!(writer);
             }
+        }
     }
 
     pub(crate) fn report_semantic(

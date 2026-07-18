@@ -3282,15 +3282,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             TypeKind::Enum {
                 has_fixed_underlying_type,
                 base_type: existing,
-                is_complete,
-                enumerators: existing_enum,
                 ..
-            } => {
-                if *is_complete && !enumerators.is_empty() && !existing_enum.is_empty() {
-                    // TODO: Both have enumerators -> Redefinition
-                }
-                (*has_fixed_underlying_type, *existing)
-            }
+            } => (*has_fixed_underlying_type, *existing),
             _ => (false, self.registry.type_int),
         };
 

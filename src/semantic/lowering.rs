@@ -3283,9 +3283,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 has_fixed_underlying_type,
                 base_type: existing,
                 ..
-            } => {
-                (*has_fixed_underlying_type, *existing)
-            }
+            } => (*has_fixed_underlying_type, *existing),
             _ => (false, self.registry.type_int),
         };
 

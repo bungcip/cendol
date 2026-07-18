@@ -553,10 +553,10 @@ fn special_keywords() -> &'static SpecialKeywords {
     })
 }
 
-fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
-    static KEYWORDS: std::sync::OnceLock<hashbrown::HashMap<StringId, TokenKind>> = std::sync::OnceLock::new();
+fn keyword_map() -> &'static rustc_hash::FxHashMap<StringId, TokenKind> {
+    static KEYWORDS: std::sync::OnceLock<rustc_hash::FxHashMap<StringId, TokenKind>> = std::sync::OnceLock::new();
     KEYWORDS.get_or_init(|| {
-        let mut m = hashbrown::HashMap::new();
+        let mut m = rustc_hash::FxHashMap::default();
         m.insert(StringId::new("auto"), TokenKind::Auto);
         m.insert(StringId::new("break"), TokenKind::Break);
         m.insert(StringId::new("case"), TokenKind::Case);

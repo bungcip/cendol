@@ -30,12 +30,7 @@ fn test_header_search_resolution() {
     File::create(framework_dir.join("frm.h")).unwrap();
     File::create(local_dir.join("loc.h")).unwrap();
 
-    let mut search = HeaderSearch {
-        system_path: Vec::new(),
-        framework_path: Vec::new(),
-        quoted_includes: Vec::new(),
-        angled_includes: Vec::new(),
-    };
+    let mut search = HeaderSearch::new();
 
     search.add_system_path(system_dir.clone());
     search.add_angled_path(angled_dir.clone());
@@ -87,12 +82,7 @@ fn test_header_search_include_next() {
     File::create(include_b.join("foo.h")).unwrap();
     File::create(include_c.join("foo.h")).unwrap();
 
-    let mut search = HeaderSearch {
-        system_path: Vec::new(),
-        framework_path: Vec::new(),
-        quoted_includes: Vec::new(),
-        angled_includes: Vec::new(),
-    };
+    let mut search = HeaderSearch::new();
 
     // Add paths in order: A, B, C
     search.add_angled_path(include_a.clone());
@@ -117,12 +107,7 @@ fn test_header_search_include_next() {
 
     // Case 4: Test with quoted includes and mixed paths
     // Clear paths and reconfigure
-    let mut search = HeaderSearch {
-        system_path: Vec::new(),
-        framework_path: Vec::new(),
-        quoted_includes: Vec::new(),
-        angled_includes: Vec::new(),
-    };
+    let mut search = HeaderSearch::new();
 
     search.add_quoted_path(include_a.clone());
     search.add_angled_path(include_b.clone());

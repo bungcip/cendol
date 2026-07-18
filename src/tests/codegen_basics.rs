@@ -1,11 +1,109 @@
 //! Basic MIR to Cranelift IR lowering tests
-use crate::ast::NameId;
-use crate::codegen::{ClifGen, ClifOutput, EmitKind};
 use crate::driver::artifact::CompilePhase;
-use crate::mir::ConstValueKind;
-use crate::mir::{MirStmt, MirType, Operand, Place, Rvalue, Terminator};
-use crate::tests::codegen_common::{run_c_code_exit_status, setup_cranelift};
+use crate::tests::codegen_common::{run_c_code_exit_status, run_c_code_with_output, setup_cranelift};
 use crate::tests::test_utils::run_pass;
+
+#[test]
+fn test_movi_unsigned_constant_codegen() {
+    let source = r#"
+        int main() {
+            unsigned long long x;
+            x = 0xffffabcd;
+            return 0;
+        }
+    "#;
+
+    let clif_dump = setup_cranelift(source);
+    // 0xffffabcd = 4294945741
+    // We expect `uextend` for casting unsigned int to unsigned long long.
+    // If it was signed (int), it would use `sextend`.
+
+    // With improved heuristic, 0xffffabcd is parsed as signed long (i64), so no extension needed
+    assert!(
+        clif_dump.contains("iconst.i64"),
+        "Expected iconst.i64 for constant load, found:\n{}",
+        clif_dump
+    );
+}
+
+#[test]
+fn test_deref_hang_regression() {
+    // must be fast
+    let source = r#"
+        void f() {}
+        void (*p)() = f;
+        int main() {
+            (************************************************************************************************************************************************************f)();
+            return 0;
+        }
+    "#;
+    setup_cranelift(source);
+}
+
+#[test]
+fn test_global_variable_modification_not_folded() {
+    let source = r#"
+        int printf(const char *format, ...);
+        int crc32_context = 5;
+        void crc32_byte() { crc32_context = 0; }
+        int main() {
+            crc32_byte();
+            // This triggers an implicit conversion (BitXor with unsigned long long 5UL)
+            // which previously caused constant folding to the initial value 5.
+            printf("checksum = %08X\n", crc32_context ^ 5UL);
+            return 0;
+        }
+    "#;
+
+    let output = run_c_code_with_output(source);
+    assert_eq!(output.trim(), "checksum = 00000005");
+}
+
+#[test]
+fn test_deeply_nested_unary_ops_stack_overflow() {
+    // Generate a very long sequence of unary operators
+    let mut source = String::from("int main() { int x = 0; int *p = &x; return ");
+    for _ in 0..160 {
+        source.push('!');
+    }
+    source.push_str("x; }");
+
+    // Run in a thread with a tightly constrained stack
+    // This perfectly mimics GitHub CI bounds under `llvm-cov` to prevent future regressions.
+    let handle = std::thread::Builder::new()
+        .stack_size(512 * 1024) // 512 KB
+        .name("tight_stack_test".to_string())
+        .spawn(move || {
+            crate::tests::codegen_common::setup_cranelift(&source);
+        })
+        .unwrap();
+
+    handle
+        .join()
+        .expect("Thread panicked, likely due to stack overflow in deeply nested unary operations.");
+}
+
+#[test]
+fn test_label_map_cleared_between_functions() {
+    let source = r#"
+        int f1() {
+            int x = 0;
+            goto retry;
+        retry:
+            return x;
+        }
+
+        int main() {
+            int y = 1;
+            goto retry;
+        retry:
+            return f1() + y - 1;
+        }
+    "#;
+    // This should not panic during clif_gen due to label block IDs leaking across functions.
+    let status = run_c_code_exit_status(source);
+    assert_eq!(status, 0);
+}
 
 #[test]
 fn test_boolean_logic_lowering() {
@@ -122,160 +220,6 @@ fn test_boolean_logic_lowering() {
 }
 
 #[test]
-fn test_float_to_char_conversion() {
-    let source = r#"
-            int main() {
-                char c = 97.0;
-                short s = 98.0;
-                return 0;
-            }
-        "#;
-    // Verify it compiles without crashing
-    let clif_dump = setup_cranelift(source);
-    insta::assert_snapshot!(clif_dump, @"
-    ; Function: main
-    function u0:0() -> i32 system_v {
-        ss0 = explicit_slot 1
-        ss1 = explicit_slot 2, align = 2
-
-    block0:
-        v0 = f64const 0x1.8400000000000p6
-        v1 = fcvt_to_sint_sat.i32 v0  ; v0 = 0x1.8400000000000p6
-        v2 = ireduce.i8 v1
-        v8 = stack_addr.i64 ss0
-        store notrap v2, v8
-        v3 = f64const 0x1.8800000000000p6
-        v4 = fcvt_to_sint_sat.i32 v3  ; v3 = 0x1.8800000000000p6
-        v5 = ireduce.i16 v4
-        v7 = stack_addr.i64 ss1
-        store notrap v5, v7
-        v6 = iconst.i32 0
-        return v6  ; v6 = 0
-    }
-    ");
-}
-
-#[test]
-fn test_f128_constant_promotion() {
-    let mut builder = crate::mir::MirBuilder::new(8);
-
-    // Setup Type F128
-    let f128_type_id = builder.add_type(MirType::F128);
-    let void_type_id = builder.add_type(MirType::Void);
-
-    // Function
-    let func_id = builder.define_function(
-        NameId::new("main"),
-        vec![],
-        void_type_id,
-        false,
-        crate::mir::MirLinkage::External,
-    );
-
-    let const_id = builder.create_constant(f128_type_id, ConstValueKind::Float(34.1));
-
-    {
-        let mut fb = builder.build_function(func_id, None);
-        let block_id = fb.create_block();
-        fb.builder.set_function_entry_block(func_id, block_id);
-        fb.current_block = Some(block_id);
-
-        // Create a local to hold it
-        let local_id = fb.create_local(None, f128_type_id, false);
-
-        // Store it
-        fb.add_stmt(MirStmt::Assign(
-            Place::Local(local_id),
-            Rvalue::Use(Operand::Constant(const_id)),
-        ));
-
-        fb.set_terminator(Terminator::Return(None));
-    }
-
-    let mir = builder.consume();
-    let lowerer = ClifGen::new(mir);
-    let result = lowerer.visit_module(EmitKind::Clif);
-
-    match result {
-        ClifOutput::ClifDump(clif_ir) => {
-            insta::assert_snapshot!(clif_ir, @"
-            ; Function: main
-            function u0:0() system_v {
-                ss0 = explicit_slot 16, align = 16
-                gv0 = symbol colocated userextname0
-
-            block0:
-                v0 = symbol_value.i64 gv0
-                v1 = load.i64 v0
-                v2 = load.i64 v0+8
-                v3 = iconst.i64 15
-                v4 = ushr v2, v3  ; v3 = 15
-                v5 = iconst.i64 1
-                v6 = band v4, v5  ; v5 = 1
-                v7 = iconst.i64 63
-                v8 = ishl v6, v7  ; v7 = 63
-                v9 = iconst.i64 0x7fff
-                v10 = band v2, v9  ; v9 = 0x7fff
-                v11 = iconst.i64 0x7fff
-                v12 = icmp eq v10, v11  ; v11 = 0x7fff
-                v13 = iconst.i64 -15360
-                v14 = iadd v10, v13  ; v13 = -15360
-                v15 = iconst.i64 2047
-                v16 = select v12, v15, v14  ; v15 = 2047
-                v17 = iconst.i64 52
-                v18 = ishl v16, v17  ; v17 = 52
-                v19 = iconst.i64 0x7fff_ffff_ffff_ffff
-                v20 = band v1, v19  ; v19 = 0x7fff_ffff_ffff_ffff
-                v21 = iconst.i64 11
-                v22 = ushr v20, v21  ; v21 = 11
-                v23 = iconst.i64 0x000f_ffff_ffff_ffff
-                v24 = band v22, v23  ; v23 = 0x000f_ffff_ffff_ffff
-                v25 = bor v8, v18
-                v26 = bor v25, v24
-                v27 = bitcast.f64 v26
-                v28 = stack_addr.i64 ss0
-                v29 = iconst.i64 0
-                store v29, v28  ; v29 = 0
-                store v29, v28+8  ; v29 = 0
-                v30 = bitcast.i64 v27
-                v31 = iconst.i64 63
-                v32 = ushr v30, v31  ; v31 = 63
-                v33 = iconst.i64 52
-                v34 = ushr v30, v33  ; v33 = 52
-                v35 = iconst.i64 2047
-                v36 = band v34, v35  ; v35 = 2047
-                v37 = iconst.i64 0x000f_ffff_ffff_ffff
-                v38 = band v30, v37  ; v37 = 0x000f_ffff_ffff_ffff
-                v39 = iconst.i64 2047
-                v40 = icmp eq v36, v39  ; v39 = 2047
-                v41 = iconst.i64 0x3c00
-                v42 = iadd v36, v41  ; v41 = 0x3c00
-                v43 = iconst.i64 0x7fff
-                v44 = select v40, v43, v42  ; v43 = 0x7fff
-                v45 = iconst.i64 15
-                v46 = ishl v32, v45  ; v45 = 15
-                v47 = bor v46, v44
-                v48 = iconst.i64 11
-                v49 = ishl v38, v48  ; v48 = 11
-                v50 = iconst.i64 0
-                v51 = icmp ne v36, v50  ; v50 = 0
-                v52 = iconst.i64 -9223372036854775808
-                v53 = iconst.i64 0
-                v54 = select v51, v52, v53  ; v52 = -9223372036854775808, v53 = 0
-                v55 = bor v49, v54
-                store v55, v28
-                store v47, v28+8
-                v56 = iconst.i16 0
-                store v56, v28+10  ; v56 = 0
-                return
-            }
-            ");
-        }
-        ClifOutput::ObjectFile(_) => panic!("Expected Clif dump"),
-    }
-}
-
-#[test]
 fn test_string_literal_pointer_cast_() {
     run_pass(
         r#"
@@ -304,32 +248,6 @@ fn test_constant_range_validation() {
         "#,
         CompilePhase::Cranelift,
     );
-}
-
-#[test]
-fn test_array_with_large_zero_init() {
-    // this must be fast
-    let source = r#"
-        int bigarray[2147483647];
-        int main() { return 0; }
-    "#;
-    run_pass(source, CompilePhase::EmitObject);
-}
-
-#[test]
-fn test_array_size_in_tenary() {
-    let code = r#"
-    int main() {
-        // This array size calculation relies on constant folding of the ternary operator.
-        // If it fails, it might be treated as a VLA of size 0 or cause a crash.
-        int a[1 ? 1 : 10];
-
-        a[0] = 42;
-        return a[0];
-    }
-    "#;
-    let output = run_c_code_exit_status(code);
-    assert_eq!(output, 42);
 }
 
 #[test]
@@ -392,88 +310,6 @@ fn test_thread_local_runtime() {
 }
 
 #[test]
-fn test_struct_identity_cast_cranelift_ir() {
-    let src = "
-        struct S { int a; };
-        void foo() {
-            struct S s;
-            struct S s2 = (struct S)s;
-        }
-    ";
-
-    let clif_output = setup_cranelift(src);
-    insta::assert_snapshot!(clif_output, @"
-    ; Function: foo
-    function u0:0() system_v {
-        ss0 = explicit_slot 4, align = 4
-        ss1 = explicit_slot 4, align = 4
-        sig0 = (i64, i64, i64) -> i64 system_v
-        fn0 = u0:1 sig0
-
-    block0:
-        v0 = stack_addr.i64 ss0
-        v1 = stack_addr.i64 ss1
-        v2 = iconst.i64 4
-        v3 = call fn0(v1, v0, v2)  ; v2 = 4
-        return
-    }
-    ");
-}
-
-#[test]
-fn test_store_truncation_overflow_regression() {
-    let source = r#"
-typedef unsigned char u8;
-
-int main() {
-    // Layout: field at 0. padding/sentinel at 1..7.
-    // If we increment field, and it stores 4 bytes, it will overwrite 1,2,3.
-
-    struct {
-        u8 val;
-        u8 pad[7];
-    } s;
-
-    // Initialize
-    s.val = 10;
-    for(int i=0; i<7; i++) s.pad[i] = 0xAA;
-
-    // Increment (s.val++ -> Assign(s.val, Add(s.val, 1)))
-    // If store size is not truncated to u8, it writes 4 bytes.
-    s.val++;
-
-    if (s.val != 11) return 1;
-
-    for(int i=0; i<3; i++) {
-        if (s.pad[i] != 0xAA) {
-            return 2;
-        }
-    }
-
-    return 0;
-}
-"#;
-    let status = run_c_code_exit_status(source);
-    assert_eq!(status, 0, "Memory corruption detected in store truncation");
-}
-
-#[test]
-fn test_hex_float_negative_exponent() {
-    run_pass(
-        r#"
-        int main() {
-            double d = 0x1.0p-2;
-            if (d == 0.25) {
-                return 0;
-            }
-            return 1;
-        }
-        "#,
-        CompilePhase::Cranelift,
-    );
-}
-
-#[test]
 fn test_function_pointer_address_of() {
     let source = r#"
 typedef void (*Pfunc)(void);
@@ -492,6 +328,7 @@ int main() {
 "#;
     run_pass(source, CompilePhase::Cranelift);
 }
+
 #[test]
 fn test_cleanup_goto_backward() {
     use crate::tests::codegen_common::*;

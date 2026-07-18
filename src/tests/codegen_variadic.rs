@@ -1,6 +1,6 @@
 //! Tests for variadic functions
 use crate::driver::artifact::CompilePhase;
-use crate::tests::codegen_common::{run_c_code_with_output, setup_cranelift};
+use crate::tests::codegen_common::{run_c_code_exit_status, run_c_code_with_output, setup_cranelift};
 use crate::tests::test_utils::run_pass;
 
 #[test]
@@ -311,4 +311,38 @@ int main() {
 "#;
     let output = run_c_code_with_output(code);
     assert_eq!(output.trim(), "34.1");
+}
+
+#[test]
+fn test_variadic_struct_argument_crash() {
+    let source = r#"
+        struct foo {
+            int i, j, k;
+            char *p;
+            float v;
+        };
+
+        int
+        bar(struct foo f, struct foo *p, int n, ...)
+        {
+            if (f.i != p->i)
+                return 0;
+            return p->j + n;
+        }
+
+        int
+        main(void)
+        {
+            struct foo f;
+
+            f.i = f.j = 1;
+            bar(f, &f, 2);
+            bar(f, &f, 2, 1, f, &f);
+
+            return 0;
+        }
+    "#;
+    // This should not panic and should exit with status 0
+    let status = run_c_code_exit_status(source);
+    assert_eq!(status, 0);
 }

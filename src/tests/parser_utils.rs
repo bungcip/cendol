@@ -433,11 +433,11 @@ fn extract_declarator_name(ast: &PAst, declarator: DeclaratorRef) -> String {
     let declarator = ast.parsed_types.get_decl(declarator);
     match declarator {
         PDeclarator::Identifier(name) => name.map(|n| n.to_string()).unwrap_or_else(|| "<unnamed>".to_string()),
-        PDeclarator::Pointer { inner, .. } => extract_declarator_name(ast, *inner),
-        PDeclarator::Array { inner, .. } => extract_declarator_name(ast, *inner),
-        PDeclarator::Function { inner, .. } => extract_declarator_name(ast, *inner),
-        PDeclarator::BitField { inner, .. } => extract_declarator_name(ast, *inner),
-        PDeclarator::Attribute { inner, .. } => extract_declarator_name(ast, *inner),
+        PDeclarator::Pointer { inner, .. }
+        | PDeclarator::Array { inner, .. }
+        | PDeclarator::Function { inner, .. }
+        | PDeclarator::BitField { inner, .. }
+        | PDeclarator::Attribute { inner, .. } => extract_declarator_name(ast, *inner),
     }
 }
 
@@ -632,31 +632,21 @@ pub(crate) fn setup_declaration_with_std(source: &str, std: CStandard) -> Resolv
 }
 
 pub(crate) fn setup_declaration_with_errors(source: &str) -> ParseDiag {
-    let (_, decl_result) = setup_source(source, |p| declarations::parse_decl(p, false));
-    match decl_result {
-        Ok(_) => panic!("Expected parse error"),
-        Err(e) => e,
-    }
+    setup_source(source, |p| declarations::parse_decl(p, false))
+        .1
+        .unwrap_err()
 }
 
 pub(crate) fn setup_statement(source: &str) -> ResolvedNodeKind {
     let (ast, stmt_result) = setup_source(source, statements::parse_statement);
-
-    match stmt_result {
-        Ok(node) => resolve_node(&ast, node),
-        _ => panic!("Expected statement"),
-    }
+    resolve_node(&ast, stmt_result.expect("Expected statement"))
 }
 
 /// Setup a compound statement, useful for testing multi-statement blocks
 pub(crate) fn setup_compound(source: &str) -> ResolvedNodeKind {
     let source = format!("{{ {} }}", source);
     let (ast, stmt_result) = setup_source(&source, parse_compound_statement);
-
-    match stmt_result {
-        Ok((node, _)) => resolve_node(&ast, node),
-        _ => panic!("Expected multi statement block"),
-    }
+    resolve_node(&ast, stmt_result.expect("Expected multi statement block").0)
 }
 
 pub(crate) fn setup_translation_unit(source: &str) -> ResolvedNodeKind {

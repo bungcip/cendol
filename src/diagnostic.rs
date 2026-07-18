@@ -125,7 +125,7 @@ impl DiagnosticEngine {
         self.warning_limit = Some(limit);
     }
 
-    pub(crate) fn report(&mut self, mut diag: Diagnostic, sm: &SourceManager) {
+    pub(crate) fn report(&mut self, diag: Diagnostic, sm: &SourceManager) {
         if diag.level == DiagnosticLevel::Warning
             && diag
                 .warning_name
@@ -139,13 +139,12 @@ impl DiagnosticEngine {
                 d.is_streamed = true;
             }
             engine.diagnostics.push(d.clone());
-            if !engine.is_testing && engine.stream_muted == 0 {
-                if let Ok(mut writer) = engine.writer.lock() {
+            if !engine.is_testing && engine.stream_muted == 0
+                && let Ok(mut writer) = engine.writer.lock() {
                     let mut fmt_writer = FmtToIoWrite(&mut **writer);
                     let _ = engine.print_single(&d, sm, &mut fmt_writer);
                     let _ = writeln!(writer);
                 }
-            }
         };
 
         match diag.level {
@@ -206,8 +205,8 @@ impl DiagnosticEngine {
                 to_print.push(diag.clone());
             }
         }
-        if !to_print.is_empty() {
-            if let Ok(mut writer) = self.writer.lock() {
+        if !to_print.is_empty()
+            && let Ok(mut writer) = self.writer.lock() {
                 for diag in to_print {
                     {
                         let mut fmt_writer = FmtToIoWrite(&mut **writer);
@@ -216,7 +215,6 @@ impl DiagnosticEngine {
                     let _ = writeln!(writer);
                 }
             }
-        }
     }
 
     pub(crate) fn report_semantic(

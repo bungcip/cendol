@@ -20,6 +20,10 @@ pub(crate) fn setup_cranelift(c_code: &str) -> String {
 }
 
 fn compile_and_run_c(source: &str) -> std::process::Output {
+    compile_and_run_c_with_ftrapv(source, false)
+}
+
+pub(crate) fn compile_and_run_c_with_ftrapv(source: &str, ftrapv: bool) -> std::process::Output {
     let temp_file = NamedTempFile::new().unwrap();
     let temp_path = temp_file.into_temp_path();
     let exe_path = temp_path.to_path_buf();
@@ -33,7 +37,14 @@ fn compile_and_run_c(source: &str) -> std::process::Output {
         ..Default::default()
     };
 
-    // Add include paths manually since we are not using CLI parsing
+    use crate::lang_options::SignedOverflowMode;
+    config.lang_options.signed_overflow_mode = if ftrapv {
+        SignedOverflowMode::Trap
+    } else {
+        SignedOverflowMode::Wrap
+    };
+
+    // Add include paths manually
     config
         .preprocessor
         .system_include_paths
@@ -42,7 +53,6 @@ fn compile_and_run_c(source: &str) -> std::process::Output {
     let mut driver = crate::driver::compiler::CompilerDriver::from_config(config);
     let result = driver.run();
 
-    // Check for compilation errors
     if result.is_err() || driver.sm.get_file_id("test.c").is_none() {
         driver.print_diagnostics();
         panic!("Compilation failed");

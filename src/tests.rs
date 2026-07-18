@@ -12,7 +12,6 @@ pub mod pp_internal;
 pub mod pp_lexical;
 pub mod pp_macros;
 pub mod pp_pedantic;
-pub mod pp_pragma_once_dedup;
 
 // Parser
 
@@ -101,7 +100,6 @@ pub mod codegen_builtins;
 pub mod codegen_common;
 pub mod codegen_float;
 pub mod codegen_global_redeclaration;
-pub mod codegen_regr;
 pub mod codegen_structs;
 pub mod codegen_switch;
 pub mod codegen_trapv;

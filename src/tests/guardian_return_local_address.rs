@@ -9,7 +9,13 @@ fn diagnostic_return_local_address() {
             return &x;
         }
     "#;
-    run_pass_with_diagnostic(source, CompilePhase::Mir, "address of stack memory associated with local variable 'x' returned", 4, 13);
+    run_pass_with_diagnostic(
+        source,
+        CompilePhase::Mir,
+        "address of stack memory associated with local variable 'x' returned",
+        4,
+        13,
+    );
 }
 
 #[test]
@@ -20,5 +26,11 @@ fn diagnostic_return_local_array_address() {
             return x;
         }
     "#;
-    run_pass_with_diagnostic(source, CompilePhase::Mir, "address of stack memory associated with local variable 'x' returned", 4, 13);
+    run_pass_with_diagnostic(
+        source,
+        CompilePhase::Mir,
+        "address of stack memory associated with local variable 'x' returned",
+        4,
+        13,
+    );
 }

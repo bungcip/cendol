@@ -113,7 +113,6 @@ pub mod driver_source_manager;
 pub mod driver_warning_formatting;
 
 // Guardian
-pub mod guardian_return_local_address;
 pub mod guardian_alias_completeness;
 pub mod guardian_alignas_constraints;
 pub mod guardian_alignas_vla;
@@ -141,6 +140,7 @@ pub mod guardian_offsetof;
 pub mod guardian_parameter_compatibility;
 pub mod guardian_parameter_completeness;
 pub mod guardian_register_constraints;
+pub mod guardian_return_local_address;
 pub mod guardian_sizeof_alignof;
 pub mod guardian_static_array_constraints;
 pub mod guardian_storage_class_parameter;

@@ -1141,7 +1141,9 @@ impl<'a> SemanticAnalyzer<'a> {
                         && v.storage != Some(StorageClass::Extern)
                         && v.storage != Some(StorageClass::ThreadLocal);
 
-                    if is_local && (symbol.type_info.is_array() || matches!(kind, NodeKind::UnaryOp(UnaryOp::AddrOf, _))) {
+                    if is_local
+                        && (symbol.type_info.is_array() || matches!(kind, NodeKind::UnaryOp(UnaryOp::AddrOf, _)))
+                    {
                         self.report_warning(node, SemanticError::ReturnLocalAddress { name: *name });
                     }
                 }

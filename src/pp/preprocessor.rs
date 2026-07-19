@@ -590,7 +590,7 @@ impl<'src> Preprocessor<'src> {
                     self.report_pp_warning(err);
                 }
                 return Some(token);
-            } else if self.pop_lexer() == false {
+            } else if !self.pop_lexer() {
                 return None;
             }
         }

@@ -536,8 +536,7 @@ pub enum StorageClass {
     Static,
     Auto,
     Register,
-    ThreadLocal, // C11 _Thread_local
-    Constexpr,   // C23 constexpr
+    Constexpr, // C23 constexpr
 }
 
 impl StorageClass {
@@ -548,7 +547,6 @@ impl StorageClass {
             StorageClass::Static => "static",
             StorageClass::Auto => "auto",
             StorageClass::Register => "register",
-            StorageClass::ThreadLocal => "_Thread_local",
             StorageClass::Constexpr => "constexpr",
             StorageClass::None => "",
         }

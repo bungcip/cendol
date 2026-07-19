@@ -220,6 +220,7 @@ pub struct PFunctionDef {
 #[derive(Debug, Clone)]
 pub enum DeclSpec {
     StorageClass(StorageClass),
+    ThreadLocal,
     TypeQualifier(TypeQualifier),
     FunctionSpec(FunctionSpec),
     AlignmentSpec(PAlignmentSpec, bool /* is_gnu */),
@@ -296,6 +297,7 @@ pub struct PParam {
     pub name: Option<NameId>,
     pub ty: PType,
     pub storage: StorageClass,
+    pub is_thread_local: bool,
     pub is_inline: bool,
     pub is_noreturn: bool,
     pub alignment: Option<PAlignmentSpec>,

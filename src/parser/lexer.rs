@@ -230,7 +230,6 @@ impl TokenKind {
             Static => Some(StorageClass::Static),
             Auto => Some(StorageClass::Auto),
             Register => Some(StorageClass::Register),
-            ThreadLocal => Some(StorageClass::ThreadLocal),
             Constexpr => Some(StorageClass::Constexpr),
             _ => None,
         }

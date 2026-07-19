@@ -878,7 +878,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     if let PNodeKind::Declaration(decl) = &parsed_init.kind {
                         init_decl_count = decl.init_declarators.len();
                         for spec in &decl.specifiers {
-                            if let DeclSpec::StorageClass(sc) = spec
+                            if matches!(spec, DeclSpec::ThreadLocal) {
+                                self.report_error(parsed_init.span, SemanticError::NonLocalVariableInForLoop);
+                            } else if let DeclSpec::StorageClass(sc) = spec
                                 && !matches!(sc, crate::ast::StorageClass::Auto | crate::ast::StorageClass::Register)
                             {
                                 self.report_error(parsed_init.span, SemanticError::NonLocalVariableInForLoop);
@@ -1885,10 +1887,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if spec_info.cleanup_func.is_some()
             && (is_global
-                || matches!(
-                    storage,
-                    StorageClass::Extern | StorageClass::Static | StorageClass::ThreadLocal
-                ))
+                || spec_info.is_thread_local
+                || matches!(storage, StorageClass::Extern | StorageClass::Static))
         {
             self.report_warning(span, SemanticError::AttributeCleanupOnNonLocal);
         }
@@ -3541,7 +3541,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         for spec in specs {
             match spec {
-                DeclSpec::StorageClass(StorageClass::ThreadLocal) => {
+                DeclSpec::ThreadLocal => {
                     if info.is_thread_local {
                         self.report_error(span, SemanticError::ConflictingStorageClasses);
                     }
@@ -3691,8 +3691,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
             }
 
+            if param.is_thread_local {
+                self.report_error(span, SemanticError::ThreadLocalNotAllowed);
+            }
             match param.storage {
-                StorageClass::ThreadLocal => self.report_error(span, SemanticError::ThreadLocalNotAllowed),
                 sc if sc != StorageClass::None && sc != StorageClass::Register => {
                     self.report_error(span, SemanticError::InvalidStorageClassForParameter)
                 }

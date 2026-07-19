@@ -34,7 +34,9 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
         let has_record_enum_type = specifiers
             .iter()
             .any(|s| matches!(s, DeclSpec::TypeSpec(TypeSpec::Record(..) | TypeSpec::Enum(..))));
-        let has_storage_class = specifiers.iter().any(|s| matches!(s, DeclSpec::StorageClass(_)));
+        let has_storage_class = specifiers
+            .iter()
+            .any(|s| matches!(s, DeclSpec::StorageClass(_) | DeclSpec::ThreadLocal));
 
         if has_record_enum_type
             && !has_storage_class
@@ -247,11 +249,15 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>,
             | TokenKind::Static
             | TokenKind::Auto
             | TokenKind::Register
-            | TokenKind::ThreadLocal
             | TokenKind::Constexpr => {
                 let storage_class = token.kind.as_storage_class().unwrap();
                 parser.advance();
                 specifiers.push(DeclSpec::StorageClass(storage_class));
+            }
+
+            TokenKind::ThreadLocal => {
+                parser.advance();
+                specifiers.push(DeclSpec::ThreadLocal);
             }
 
             TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Atomic => {

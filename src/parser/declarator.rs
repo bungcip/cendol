@@ -324,12 +324,14 @@ fn parse_function_parameters(
         let param_parsed_type = build_type(parser, &specifiers, declarator)?;
 
         let mut storage = StorageClass::None;
+        let mut is_thread_local = false;
         let mut is_inline = false;
         let mut is_noreturn = false;
         let mut alignment = None;
         for spec in &specifiers {
             match spec {
                 DeclSpec::StorageClass(sc) => storage = *sc,
+                DeclSpec::ThreadLocal => is_thread_local = true,
                 DeclSpec::FunctionSpec(fs) => match fs {
                     FunctionSpec::Inline => is_inline = true,
                     FunctionSpec::Noreturn => is_noreturn = true,
@@ -347,6 +349,7 @@ fn parse_function_parameters(
             name,
             ty: param_parsed_type,
             storage,
+            is_thread_local,
             is_inline,
             is_noreturn,
             alignment,

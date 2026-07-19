@@ -1140,7 +1140,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     let is_local = symbol.scope_id != crate::semantic::ScopeId::GLOBAL
                         && v.storage != StorageClass::Static
                         && v.storage != StorageClass::Extern
-                        && v.storage != StorageClass::ThreadLocal;
+                        && !v.is_thread_local;
 
                     if is_local
                         && (symbol.type_info.is_array() || matches!(kind, NodeKind::UnaryOp(UnaryOp::AddrOf, _)))

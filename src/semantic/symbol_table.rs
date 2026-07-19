@@ -379,7 +379,7 @@ impl Symbol {
     pub(crate) fn has_linkage(&self) -> bool {
         match &self.kind {
             SymbolKind::Function(_) => true,
-            SymbolKind::Variable(v) => v.is_global || v.storage == StorageClass::Extern || v.is_thread_local,
+            SymbolKind::Variable(v) => v.is_global || v.storage == StorageClass::Extern,
             _ => false,
         }
     }

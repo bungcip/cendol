@@ -159,6 +159,7 @@ fn resolve_specs(ast: &PAst, specifiers: &[DeclSpec]) -> Vec<String> {
                 _ => format!("{:?}", ts),
             },
             DeclSpec::StorageClass(sc) => format!("{:?}", sc),
+            DeclSpec::ThreadLocal => "ThreadLocal".to_string(),
             DeclSpec::TypeQualifier(tq) => format!("TypeQualifier({:?})", tq),
             DeclSpec::FunctionSpec(fs) => format!("{:?}", fs),
             DeclSpec::AlignmentSpec(aspec, _) => format!("{:?}", aspec),

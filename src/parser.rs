@@ -570,16 +570,4 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     pub(super) fn alloc_params(&mut self, params: Vec<crate::ast::PParam>) -> PParamRange {
         self.ast.parsed_types.alloc_params(params)
     }
-
-    /// Allocate struct members and return the range
-    #[inline]
-    pub(super) fn alloc_struct_members(&mut self, members: Vec<PStructMember>) -> PStructMemberRange {
-        self.ast.parsed_types.alloc_struct_members(members)
-    }
-
-    /// Allocate enum constants and return the range
-    #[inline]
-    pub(super) fn alloc_enum_constants(&mut self, enumerators: Vec<PEnumConstant>) -> PEnumRange {
-        self.ast.parsed_types.alloc_enum_constants(enumerators)
-    }
 }

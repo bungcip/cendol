@@ -60,7 +60,7 @@ impl<'a> ConstEvalCtx<'a> {
         let mut default_expr = None;
 
         for assoc_node in gs.assoc_start.range(gs.assoc_len) {
-            if let NodeKind::GenericAssociation(ga) = self.ast.get_kind(assoc_node) {
+            if let NodeKind::GenericAssoc(ga) = self.ast.get_kind(assoc_node) {
                 if let Some(assoc_qt) = ga.ty {
                     let decayed_assoc = self.registry.find_decayed_type(assoc_qt).unwrap_or(assoc_qt);
                     if self.registry.is_compatible(unqualified_ctrl, decayed_assoc) {
@@ -181,13 +181,13 @@ impl<'a> ConstEvalCtx<'a> {
                     let p_t = self.registry.get_pointee(t.ty())?;
                     let p_e = self.registry.get_pointee(e.ty())?;
                     if p_t.is_void() || p_e.is_void() {
-                        let res_quals = p_t.qualifiers() | p_e.qualifiers();
+                        let res_quals = p_t.quals() | p_e.quals();
                         let void_ptr = self
                             .registry
                             .find_pointer_to(QualType::new(self.registry.type_void, res_quals))?;
                         Some(QualType::unqualified(void_ptr))
                     } else if self.registry.is_compatible(p_t.strip_all(), p_e.strip_all()) {
-                        let res_p_quals = p_t.qualifiers() | p_e.qualifiers();
+                        let res_p_quals = p_t.quals() | p_e.quals();
                         let p_composite = self.registry.find_composite_type(p_t.strip_all(), p_e.strip_all())?;
                         let res_p_ty = QualType::new(p_composite.ty(), res_p_quals);
                         let ptr = self.registry.find_pointer_to(res_p_ty)?;

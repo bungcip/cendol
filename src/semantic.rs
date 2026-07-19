@@ -28,5 +28,5 @@ pub use symbol_table::{
 pub use type_registry::TypeRegistry;
 pub use types::{
     ArraySize, BuiltinType, EnumConstant, FieldLayout, FunctionParam, QualType, RecordMember, Type, TypeKind,
-    TypeLayout, TypeQualifiers, TypeRef,
+    TypeLayout, TypeQuals, TypeRef,
 };

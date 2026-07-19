@@ -362,12 +362,12 @@ fn test_typeregistry_pointer_type_canonicalization() {
     assert_eq!(p3, p4, "int** should be canonicalized");
 
     // Test 2: Canonicalization of registry pointers with qualified pointees
-    let const_int = QualType::new(int_ty, crate::semantic::types::TypeQualifiers::CONST);
+    let const_int = QualType::new(int_ty, crate::semantic::types::TypeQuals::CONST);
     let p_const_int1 = reg.pointer_to(const_int);
     let p_const_int2 = reg.pointer_to(const_int);
     assert_eq!(p_const_int1, p_const_int2, "const int* should be canonicalized");
 
-    let volatile_int = QualType::new(int_ty, crate::semantic::types::TypeQualifiers::VOLATILE);
+    let volatile_int = QualType::new(int_ty, crate::semantic::types::TypeQuals::VOLATILE);
     let p_volatile_int1 = reg.pointer_to(volatile_int);
     let p_volatile_int2 = reg.pointer_to(volatile_int);
     assert_eq!(
@@ -377,7 +377,7 @@ fn test_typeregistry_pointer_type_canonicalization() {
 
     let const_volatile_int = QualType::new(
         int_ty,
-        crate::semantic::types::TypeQualifiers::CONST | crate::semantic::types::TypeQualifiers::VOLATILE,
+        crate::semantic::types::TypeQuals::CONST | crate::semantic::types::TypeQuals::VOLATILE,
     );
     let p_const_volatile_int1 = reg.pointer_to(const_volatile_int);
     let p_const_volatile_int2 = reg.pointer_to(const_volatile_int);

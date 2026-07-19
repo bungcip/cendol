@@ -80,7 +80,7 @@ fn test_atomic_type_specifier() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "Atomic(PType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) })"
+        - "Atomic(PType { base: 1, declarator: 1, quals: TypeQuals(0x0) })"
       init_declarators:
         - name: x
     "#);
@@ -92,7 +92,7 @@ fn test_atomic_type_specifier_with_pointer() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "Atomic(PType { base: 1, declarator: 2, qualifiers: TypeQualifiers(0x0) })"
+        - "Atomic(PType { base: 1, declarator: 2, quals: TypeQuals(0x0) })"
       init_declarators:
         - name: x
     "#);
@@ -678,7 +678,7 @@ fn test_atomic_specifier_syntax() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
-        - "Atomic(PType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) })"
+        - "Atomic(PType { base: 1, declarator: 1, quals: TypeQuals(0x0) })"
       init_declarators:
         - name: x
           kind: pointer

@@ -58,7 +58,7 @@ pub(crate) enum NodeKind {
 
     CompoundLiteral(QualType, NodeRef),
     GenericSelection(GenericSelection),
-    GenericAssociation(GenericAssociation),
+    GenericAssoc(GenericAssoc),
     BuiltinChooseExpr(NodeRef, NodeRef, NodeRef),
 
     // --- Statements (Complex statements are separate structs) ---
@@ -148,7 +148,7 @@ impl NodeKind {
             NodeKind::AlignOfType(..) => "AlignOfType",
             NodeKind::CompoundLiteral(..) => "CompoundLiteral",
             NodeKind::GenericSelection(..) => "GenericSelection",
-            NodeKind::GenericAssociation(..) => "GenericAssociation",
+            NodeKind::GenericAssoc(..) => "GenericAssociation",
             NodeKind::BuiltinChooseExpr(..) => "BuiltinChooseExpr",
             NodeKind::CompoundStmt(..) => "CompoundStmt",
             NodeKind::DeclList(..) => "DeclList",
@@ -291,7 +291,7 @@ impl NodeKind {
                 }
             }
 
-            NodeKind::GenericAssociation(ga) => {
+            NodeKind::GenericAssoc(ga) => {
                 f(ga.result_expr);
             }
 
@@ -692,7 +692,7 @@ pub(crate) struct GenericSelection {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub(crate) struct GenericAssociation {
+pub(crate) struct GenericAssoc {
     pub(crate) ty: Option<QualType>, // None for 'default:'
     pub(crate) result_expr: NodeRef,
 }

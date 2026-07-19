@@ -10,7 +10,7 @@ use crate::mir::{
 
 use crate::ast;
 use crate::semantic::{
-    ArraySize, BuiltinFunctionKind, Conversion, QualType, SymbolKind, SymbolRef, TypeKind, TypeQualifiers, TypeRef,
+    ArraySize, BuiltinFunctionKind, Conversion, QualType, SymbolKind, SymbolRef, TypeKind, TypeQuals, TypeRef,
     ValueCategory,
 };
 
@@ -1880,7 +1880,7 @@ impl<'a> MirGen<'a> {
                 let n = arg_start.add_offset(2);
 
                 let void_ptr = self.registry.type_void_ptr;
-                let const_void = QualType::new(self.registry.type_void, TypeQualifiers::CONST);
+                let const_void = QualType::new(self.registry.type_void, TypeQuals::CONST);
                 let const_void_ptr = self.registry.pointer_to(const_void);
 
                 let d_ty = self.lower_type(void_ptr);
@@ -1917,7 +1917,7 @@ impl<'a> MirGen<'a> {
                 let s2 = arg_start.add_offset(1);
                 let n = arg_start.add_offset(2);
 
-                let const_void = QualType::new(self.registry.type_void, TypeQualifiers::CONST);
+                let const_void = QualType::new(self.registry.type_void, TypeQuals::CONST);
                 let const_void_ptr = self.registry.pointer_to(const_void);
 
                 let cv_ptr_ty = self.lower_type(const_void_ptr);

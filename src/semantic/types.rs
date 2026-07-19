@@ -747,7 +747,7 @@ impl QualType {
     const TY_MASK: u32 = (1 << Self::QUAL_SHIFT) - 1;
 
     #[inline]
-    pub(crate) fn new(ty: TypeRef, quals: TypeQualifiers) -> Self {
+    pub(crate) fn new(ty: TypeRef, quals: TypeQuals) -> Self {
         debug_assert!(quals.bits() < (1 << Self::QUAL_BITS));
         debug_assert!(ty.raw() <= Self::TY_MASK);
 
@@ -759,7 +759,7 @@ impl QualType {
 
     #[inline]
     pub(crate) fn unqualified(ty: TypeRef) -> Self {
-        Self::new(ty, TypeQualifiers::empty())
+        Self::new(ty, TypeQuals::empty())
     }
 
     #[inline]
@@ -782,18 +782,18 @@ impl QualType {
     /// Bolt ⚡: Optimized with a fast-path to avoid reconstruction.
     #[inline]
     pub(crate) fn strip_for_parameter(self) -> Self {
-        let quals = self.qualifiers();
-        let ignored = TypeQualifiers::CONST | TypeQualifiers::VOLATILE | TypeQualifiers::RESTRICT;
+        let quals = self.quals();
+        let ignored = TypeQuals::CONST | TypeQuals::VOLATILE | TypeQuals::RESTRICT;
 
         if !quals.intersects(ignored) {
             return self;
         }
-        Self::new(self.ty(), quals & TypeQualifiers::ATOMIC)
+        Self::new(self.ty(), quals & TypeQuals::ATOMIC)
     }
 
     #[inline]
-    pub(crate) fn qualifiers(self) -> TypeQualifiers {
-        TypeQualifiers::from_bits_truncate((self.0.get() >> Self::QUAL_SHIFT) as u8)
+    pub(crate) fn quals(self) -> TypeQuals {
+        TypeQuals::from_bits_truncate((self.0.get() >> Self::QUAL_SHIFT) as u8)
     }
 
     #[inline]
@@ -803,12 +803,12 @@ impl QualType {
 
     #[inline]
     pub(crate) fn is_const(self) -> bool {
-        self.qualifiers().contains(TypeQualifiers::CONST)
+        self.quals().contains(TypeQuals::CONST)
     }
 
     #[inline]
     pub(crate) fn is_atomic(self) -> bool {
-        self.qualifiers().contains(TypeQualifiers::ATOMIC)
+        self.quals().contains(TypeQuals::ATOMIC)
     }
 
     #[inline]
@@ -888,14 +888,14 @@ impl QualType {
     /// Merge additional qualifiers into this qualified type.
     /// Returns a new QualType with the combined qualifiers.
     #[inline]
-    pub(crate) fn merge_qualifiers(self, additional: TypeQualifiers) -> Self {
-        Self::new(self.ty(), self.qualifiers() | additional)
+    pub(crate) fn merge_quals(self, additional: TypeQuals) -> Self {
+        Self::new(self.ty(), self.quals() | additional)
     }
 }
 
 impl Display for QualType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let quals = self.qualifiers();
+        let quals = self.quals();
         if !quals.is_empty() {
             write!(f, "{} ", quals)?;
         }
@@ -1033,7 +1033,7 @@ pub enum ArraySize {
 
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Default)]
-    pub struct TypeQualifiers: u8 {
+    pub struct TypeQuals: u8 {
         const CONST = 1 << 0;
         const VOLATILE = 1 << 1;
         const RESTRICT = 1 << 2;
@@ -1041,18 +1041,18 @@ bitflags! {
     }
 }
 
-impl TypeQualifiers {
+impl TypeQuals {
     pub(crate) fn from_type_qualifier(q: TypeQualifier) -> Self {
         match q {
-            TypeQualifier::Const => TypeQualifiers::CONST,
-            TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
-            TypeQualifier::Restrict => TypeQualifiers::RESTRICT,
-            TypeQualifier::Atomic => TypeQualifiers::ATOMIC,
+            TypeQualifier::Const => TypeQuals::CONST,
+            TypeQualifier::Volatile => TypeQuals::VOLATILE,
+            TypeQualifier::Restrict => TypeQuals::RESTRICT,
+            TypeQualifier::Atomic => TypeQuals::ATOMIC,
         }
     }
 }
 
-impl Display for TypeQualifiers {
+impl Display for TypeQuals {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut first = true;
         let mut write_qual = |q: &str| -> std::fmt::Result {
@@ -1064,16 +1064,16 @@ impl Display for TypeQualifiers {
             Ok(())
         };
 
-        if self.contains(TypeQualifiers::CONST) {
+        if self.contains(TypeQuals::CONST) {
             write_qual("const")?;
         }
-        if self.contains(TypeQualifiers::VOLATILE) {
+        if self.contains(TypeQuals::VOLATILE) {
             write_qual("volatile")?;
         }
-        if self.contains(TypeQualifiers::RESTRICT) {
+        if self.contains(TypeQuals::RESTRICT) {
             write_qual("restrict")?;
         }
-        if self.contains(TypeQualifiers::ATOMIC) {
+        if self.contains(TypeQuals::ATOMIC) {
             write_qual("_Atomic")?;
         }
         Ok(())

@@ -330,7 +330,7 @@ pub enum SemanticError {
         ty: QualType,
     },
     AlignasOnVla,
-    InvalidAtomicQualifier {
+    InvalidAtomicQual {
         type_kind: &'static str,
     },
     InvalidAtomicSpec {
@@ -414,9 +414,7 @@ pub enum SemanticError {
         first: QualType,
         new: QualType,
     },
-    AutoTypeNotAllowed {
-        context: &'static str,
-    },
+    AutoTypeNotAllowed(/* context: */ &'static str),
     BuiltinPrefetchNotConstant {
         arg: &'static str,
     },
@@ -863,7 +861,7 @@ impl DiagDisplay for SemanticError {
                 )
             }
             SemanticError::AlignasOnVla => write!(f, "alignment specifier cannot be used in a variably modified type"),
-            SemanticError::InvalidAtomicQualifier { type_kind } => {
+            SemanticError::InvalidAtomicQual { type_kind } => {
                 write!(f, "_Atomic qualifier cannot be used with {} type", type_kind)
             }
             SemanticError::InvalidAtomicSpec { reason } => {
@@ -998,7 +996,7 @@ impl DiagDisplay for SemanticError {
                 f.display_qual_type(*first),
                 f.display_qual_type(*new)
             ),
-            SemanticError::AutoTypeNotAllowed { context } => {
+            SemanticError::AutoTypeNotAllowed(context) => {
                 write!(f, "__auto_type is not allowed in {}", context)
             }
             SemanticError::BuiltinPrefetchNotConstant { arg } => {

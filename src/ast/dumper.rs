@@ -120,7 +120,7 @@ impl AstDumper {
                 types.insert(t1.ty());
                 types.insert(t2.ty());
             }
-            NodeKind::GenericAssociation(ga) => {
+            NodeKind::GenericAssoc(ga) => {
                 if let Some(qual_type) = ga.ty {
                     types.insert(qual_type.ty());
                 }
@@ -399,7 +399,7 @@ impl AstDumper {
                 write!(f, "control={}, ", gs.control.raw())?;
                 Self::write_range(f, "associations", gs.assoc_start, gs.assoc_len)?
             }
-            NodeKind::GenericAssociation(ga) => write!(f, "ty={:?}, result_expr={}", ga.ty, ga.result_expr.raw())?,
+            NodeKind::GenericAssoc(ga) => write!(f, "ty={:?}, result_expr={}", ga.ty, ga.result_expr.raw())?,
 
             NodeKind::CompoundStmt(cs) => Self::write_range(f, "stmts", cs.stmt_start, cs.stmt_len)?,
             NodeKind::DeclList(dl) => Self::write_range(f, "decls", dl.stmt_start, dl.stmt_len)?,

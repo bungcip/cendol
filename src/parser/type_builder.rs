@@ -7,9 +7,9 @@
 
 use crate::ast::*;
 use crate::parser::declarations::parse_decl_specs;
-use crate::parser::declarator::{get_declarator_name, is_abstract_declarator_start, parse_abstract_declarator};
+use crate::parser::declarator::{is_abstract_declarator_start, parse_abstract_declarator};
 use crate::parser::{ParseDiag, ParseError, TokenKind};
-use crate::semantic::TypeQualifiers;
+use crate::semantic::TypeQuals;
 use thin_vec::ThinVec;
 
 use super::Parser;
@@ -20,7 +20,7 @@ pub(crate) fn build_type(
     specifiers: &ThinVec<DeclSpec>,
     declarator: Option<DeclaratorRef>,
 ) -> Result<PType, ParseDiag> {
-    let (base, qualifiers) = parse_base_type_and_qualifiers(parser, specifiers)?;
+    let (base, quals) = parse_base_type_and_quals(parser, specifiers)?;
 
     let mut declarator = if let Some(d) = declarator {
         d
@@ -49,7 +49,7 @@ pub(crate) fn build_type(
     Ok(PType {
         base,
         declarator,
-        qualifiers,
+        quals,
     })
 }
 
@@ -108,11 +108,11 @@ fn merge_type_specs(current: TypeSpec, new: TypeSpec) -> Result<TypeSpec, ParseD
 }
 
 /// Parse base type and qualifiers from declaration specifiers
-fn parse_base_type_and_qualifiers(
+fn parse_base_type_and_quals(
     parser: &mut Parser,
     specifiers: &ThinVec<DeclSpec>,
-) -> Result<(PBaseTypeRef, TypeQualifiers), ParseDiag> {
-    let mut qualifiers = TypeQualifiers::empty();
+) -> Result<(PBaseTypeRef, TypeQuals), ParseDiag> {
+    let mut quals = TypeQuals::empty();
     let mut base_type_spec: Option<TypeSpec> = None;
     let mut other_base_type = None;
 
@@ -161,7 +161,7 @@ fn parse_base_type_and_qualifiers(
                 }
             },
             DeclSpec::TypeQualifier(q) => {
-                qualifiers |= TypeQualifiers::from_type_qualifier(*q);
+                quals |= TypeQuals::from_type_qualifier(*q);
             }
             _ => {}
         }
@@ -175,7 +175,7 @@ fn parse_base_type_and_qualifiers(
         parser.alloc_base_type(PBaseType::Builtin(TypeSpec::Int))
     };
 
-    Ok((base_type, qualifiers))
+    Ok((base_type, quals))
 }
 
 /// Convert a TypeSpec to a ParsedBaseType
@@ -217,31 +217,14 @@ fn parse_base_type(parser: &mut Parser, ts: &TypeSpec) -> Result<PBaseTypeRef, P
 
             Ok(parser.alloc_base_type(PBaseType::Builtin(Atomic(*parsed_type))))
         }
-        Record(is_union, tag, definition, _) => {
-            let members = if let Some(decls) = definition {
-                Some(parse_record_members(parser, decls)?)
-            } else {
-                None
-            };
-
-            Ok(parser.alloc_base_type(PBaseType::Record {
-                tag: *tag,
-                members,
-                is_union: *is_union,
-            }))
-        }
-        Enum(tag, enumerators, underlying_type) => {
-            let enumerators = enumerators
-                .as_ref()
-                .map(|e| parse_enum_constants(parser, e))
-                .transpose()?;
-
-            Ok(parser.alloc_base_type(PBaseType::Enum {
-                tag: *tag,
-                enumerators,
-                underlying_type: *underlying_type,
-            }))
-        }
+        Record(is_union, tag, definition, attributes) => Ok(parser.alloc_base_type(PBaseType::Builtin(
+            TypeSpec::Record(*is_union, *tag, definition.clone(), attributes.clone()),
+        ))),
+        Enum(tag, enumerators, underlying_type) => Ok(parser.alloc_base_type(PBaseType::Builtin(TypeSpec::Enum(
+            *tag,
+            enumerators.clone(),
+            *underlying_type,
+        )))),
         TypedefName(name) => Ok(parser.alloc_base_type(PBaseType::Typedef(*name))),
         AutoType => Ok(parser.alloc_base_type(PBaseType::Builtin(AutoType))),
         Typeof(ty) => Ok(parser.alloc_base_type(PBaseType::Typeof(*ty))),
@@ -265,81 +248,4 @@ pub(crate) fn parse_type_name(parser: &mut Parser) -> Result<PType, ParseDiag> {
 
     // Build the ParsedType from specifiers and declarator
     build_type(parser, &specifiers, declarator)
-}
-
-fn parse_record_members(parser: &mut Parser, member_nodes: &[PNodeRef]) -> Result<PStructMemberRange, ParseDiag> {
-    let mut parsed_members = Vec::new();
-    for &node in member_nodes {
-        let node_kind = parser.ast.get_node(node).kind.clone();
-        if let PNodeKind::Declaration(decl) = &node_kind {
-            for init_decl in &decl.init_declarators {
-                let member_name = get_declarator_name(&parser.ast.parsed_types, init_decl.declarator);
-                let is_bitfield = matches!(
-                    parser.ast.parsed_types.get_decl(init_decl.declarator),
-                    PDeclarator::BitField { .. }
-                );
-                if member_name.is_some() || is_bitfield {
-                    let member_parsed_type = build_type(parser, &decl.specifiers, Some(init_decl.declarator))?;
-                    let alignment = extract_alignment(&decl.specifiers, parser);
-                    let is_packed = extract_is_packed(&decl.specifiers);
-
-                    parsed_members.push(PStructMember {
-                        name: member_name,
-                        ty: member_parsed_type,
-                        alignment,
-                        is_packed,
-                        span: init_decl.span,
-                    });
-                }
-            }
-        }
-    }
-    Ok(parser.alloc_struct_members(parsed_members))
-}
-
-fn extract_alignment(specifiers: &[DeclSpec], parser: &Parser) -> Option<u16> {
-    for spec in specifiers {
-        if let DeclSpec::AlignmentSpec(align_spec, _) = spec {
-            match align_spec {
-                PAlignmentSpec::Expr(expr) => {
-                    if let PNodeKind::Literal(lit) = parser.ast.get_node(*expr).kind
-                        && let LitVal::Int { value, .. } = lit.get_val()
-                    {
-                        return Some(value as u16);
-                    }
-                }
-                PAlignmentSpec::Type(_) => {
-                    // Type-based alignment is harder to extract during parsing without a registry.
-                    // For now, we skip it here. It will be handled during lowering.
-                }
-            }
-        }
-    }
-    None
-}
-
-fn extract_is_packed(specifiers: &[DeclSpec]) -> bool {
-    specifiers.iter().any(|s| matches!(s, DeclSpec::AttributePacked))
-}
-
-fn parse_enum_constants(parser: &mut Parser, enum_nodes: &[PNodeRef]) -> Result<PEnumRange, ParseDiag> {
-    let mut parsed_enums = Vec::new();
-    for &enum_node in enum_nodes {
-        let enum_node = parser.ast.get_node(enum_node);
-        if let PNodeKind::EnumConstant(name, value_expr) = &enum_node.kind {
-            parsed_enums.push(PEnumConstant {
-                name: *name,
-                value: value_expr.as_ref().and_then(|expr| {
-                    if let PNodeKind::Literal(lit) = parser.ast.get_node(*expr).kind
-                        && let LitVal::Int { value, .. } = lit.get_val()
-                    {
-                        return Some(value);
-                    }
-                    None
-                }),
-                span: enum_node.span,
-            });
-        }
-    }
-    Ok(parser.alloc_enum_constants(parsed_enums))
 }

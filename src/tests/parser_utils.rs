@@ -504,18 +504,7 @@ fn extract_declarator_kind(ast: &PAst, declarator: DeclaratorRef) -> String {
 fn extract_base_kind(ast: &PAst, base: PBaseTypeRef) -> String {
     let base = ast.parsed_types.get_base_type(base);
     match base {
-        PBaseType::Builtin(spec) => {
-            let s = format!("{:?}", spec);
-            let mut result = String::new();
-            for (i, c) in s.chars().enumerate() {
-                if i > 0 && c.is_uppercase() {
-                    result.push(' ');
-                }
-                result.push(c.to_ascii_lowercase());
-            }
-            result
-        }
-        PBaseType::Record { tag, is_union, .. } => {
+        PBaseType::Builtin(TypeSpec::Record(is_union, tag, _, _)) => {
             let kind = if *is_union { "union" } else { "struct" };
             if let Some(tag) = tag {
                 format!("{} {}", kind, tag)
@@ -523,9 +512,7 @@ fn extract_base_kind(ast: &PAst, base: PBaseTypeRef) -> String {
                 "struct { ... }".to_string()
             }
         }
-        PBaseType::Enum {
-            tag, underlying_type, ..
-        } => {
+        PBaseType::Builtin(TypeSpec::Enum(tag, _, underlying_type)) => {
             let mut s = if let Some(tag) = tag {
                 format!("enum {}", tag)
             } else {
@@ -536,6 +523,17 @@ fn extract_base_kind(ast: &PAst, base: PBaseTypeRef) -> String {
                 s.push_str(&extract_type_kind(ast, ut));
             }
             s
+        }
+        PBaseType::Builtin(spec) => {
+            let s = format!("{:?}", spec);
+            let mut result = String::new();
+            for (i, c) in s.chars().enumerate() {
+                if i > 0 && c.is_uppercase() {
+                    result.push(' ');
+                }
+                result.push(c.to_ascii_lowercase());
+            }
+            result
         }
         PBaseType::Typedef(name) => name.to_string(),
         PBaseType::Typeof(..) => "typeof(...)".to_string(),

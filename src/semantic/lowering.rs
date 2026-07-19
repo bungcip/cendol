@@ -20,10 +20,10 @@ use crate::lang_options::{CStandard, LangOptions, PedanticMode, Visibility};
 use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::errors::{SemanticDiag, SemanticError};
 use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
-use crate::semantic::symbol_table::{DefinitionState, SymbolClass, SymbolTableError};
+use crate::semantic::symbol_table::{DefinitionState, Function, SymbolClass, SymbolTableError};
 use crate::semantic::{
     ArraySize, BuiltinFunctionKind, BuiltinType, EnumConstant, FunctionParam, Namespace, QualType, RecordMember,
-    ScopeId, SymbolKind, SymbolRef, SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry, Variable,
+    ScopeId, SymbolKind, SymbolRef, SymbolTable, TypeKind, TypeQuals, TypeRef, TypeRegistry, Variable,
 };
 use crate::source_manager::{SourceManager, SourceSpan};
 use std::sync::Arc;
@@ -140,8 +140,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn merge_qualifiers_with_check(&mut self, base: QualType, add: TypeQualifiers, span: SourceSpan) -> QualType {
-        if add.contains(TypeQualifiers::RESTRICT) {
+    fn merge_quals_with_check(&mut self, base: QualType, add: TypeQuals, span: SourceSpan) -> QualType {
+        if add.contains(TypeQuals::RESTRICT) {
             let is_valid = matches!(&self.registry.get(base.ty()).kind,
                 TypeKind::Pointer { pointee } if !pointee.is_function()
             );
@@ -150,16 +150,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.report_error(span, SemanticError::InvalidRestrict);
             }
         }
-        if add.contains(TypeQualifiers::ATOMIC) {
+        if add.contains(TypeQuals::ATOMIC) {
             if base.is_array() {
-                self.report_error(span, SemanticError::InvalidAtomicQualifier { type_kind: "array" });
+                self.report_error(span, SemanticError::InvalidAtomicQual { type_kind: "array" });
             } else if base.is_function() {
-                self.report_error(span, SemanticError::InvalidAtomicQualifier { type_kind: "function" });
+                self.report_error(span, SemanticError::InvalidAtomicQual { type_kind: "function" });
             } else if base.is_void() {
-                self.report_error(span, SemanticError::InvalidAtomicQualifier { type_kind: "void" });
+                self.report_error(span, SemanticError::InvalidAtomicQual { type_kind: "void" });
             }
         }
-        base.merge_qualifiers(add)
+        base.merge_quals(add)
     }
 
     fn check_static_assert(&mut self, cond: PNodeRef, msg: Option<PNodeRef>, span: SourceSpan) {
@@ -208,7 +208,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if let Some(width) = bit_field_size {
             if !member_type.is_integer() {
                 self.report_error(span, SemanticError::InvalidBitfieldType { ty: member_type });
-            } else if member_type.qualifiers().contains(TypeQualifiers::ATOMIC) {
+            } else if member_type.quals().contains(TypeQuals::ATOMIC) {
                 self.report_error(span, SemanticError::BitfieldHasAtomicType);
             } else if let Some((size, _)) = layout_info {
                 let type_width = size * 8;
@@ -306,7 +306,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         let has_static = size.is_static();
-        let quals = size.qualifiers();
+        let quals = size.quals();
 
         if (has_static || !quals.is_empty()) && !decl_ctx.in_parameter {
             if has_static {
@@ -328,7 +328,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let array_size = self.convert_parsed_array_size(size);
         let ty = self.registry.array_of(element_qt.ty(), array_size);
-        QualType::new(ty, element_qt.qualifiers())
+        QualType::new(ty, element_qt.quals())
     }
 
     fn resolve_atomic_specifier(&mut self, pty: PType, span: SourceSpan) -> Result<QualType, SemanticDiag> {
@@ -340,9 +340,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             Some("function type")
         } else if qt.is_void() {
             Some("void type")
-        } else if qt.qualifiers().contains(TypeQualifiers::ATOMIC) {
+        } else if qt.quals().contains(TypeQuals::ATOMIC) {
             Some("atomic type")
-        } else if !qt.qualifiers().is_empty() {
+        } else if !qt.quals().is_empty() {
             Some("qualified type")
         } else {
             None
@@ -352,7 +352,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(span, SemanticError::InvalidAtomicSpec { reason });
         }
 
-        Ok(qt.merge_qualifiers(TypeQualifiers::ATOMIC))
+        Ok(qt.merge_quals(TypeQuals::ATOMIC))
     }
 
     fn resolve_record_specifier(
@@ -583,7 +583,7 @@ pub(crate) struct DeclSpecInfo {
     pub(crate) storage: StorageClass,
     pub(crate) is_thread_local: bool,
     pub(crate) is_constexpr: bool,
-    pub(crate) qualifiers: TypeQualifiers,
+    pub(crate) quals: TypeQuals,
     pub(crate) base_type: Option<QualType>,
     pub(crate) is_typedef: bool,
     pub(crate) is_inline: bool,
@@ -595,7 +595,7 @@ pub(crate) struct DeclSpecInfo {
     pub(crate) is_packed: bool,
     pub(crate) cleanup_func: Option<PNodeRef>,
     pub(crate) is_transparent_union: bool,
-    pub(crate) visibility: Option<crate::lang_options::Visibility>,
+    pub(crate) visibility: Option<Visibility>,
     pub(crate) alias: Option<NameId>,
     pub(crate) asm_label: Option<NameId>,
     pub(crate) mode: Option<NameId>,
@@ -1345,7 +1345,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let array_size = ArraySize::Constant(name_len + 1);
         let array_type = self.registry.array_of(char_type, array_size);
 
-        let qt = QualType::new(array_type, TypeQualifiers::CONST);
+        let qt = QualType::new(array_type, TypeQuals::CONST);
         let _ = self.registry.ensure_layout(array_type);
 
         let storage = StorageClass::Static;
@@ -1434,7 +1434,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let mut base_qt = spec_info
             .base_type
             .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
-        base_qt = self.merge_qualifiers_with_check(base_qt, spec_info.qualifiers, span);
+        base_qt = self.merge_quals_with_check(base_qt, spec_info.quals, span);
 
         let mut final_qt = self.apply_declarator(
             base_qt,
@@ -1564,7 +1564,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let mut base_qt = spec_info
             .base_type
             .unwrap_or(QualType::unqualified(self.registry.type_int));
-        base_qt = self.merge_qualifiers_with_check(base_qt, spec_info.qualifiers, span);
+        base_qt = self.merge_quals_with_check(base_qt, spec_info.quals, span);
 
         if decl.init_declarators.is_empty() {
             let res = self.visit_tag_definition(&spec_info, span, target_slots);
@@ -1735,12 +1735,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 PDeclarator::Identifier(..)
             )
         {
-            self.report_error(
-                init.span,
-                SemanticError::AutoTypeNotAllowed {
-                    context: "complex declarator",
-                },
-            );
+            self.report_error(init.span, SemanticError::AutoTypeNotAllowed("complex declarator"));
         }
 
         let final_ty = self.apply_declarator(
@@ -1782,7 +1777,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             if let Some(base) = spec_info.base_type
                 && self.registry.get(base.ty()).kind == TypeKind::AutoType
             {
-                self.report_error(init.span, SemanticError::AutoTypeNotAllowed { context: "typedef" });
+                self.report_error(init.span, SemanticError::AutoTypeNotAllowed("typedef"));
             }
             self.check_function_specs(spec_info, init.span);
 
@@ -1850,7 +1845,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             name,
             final_qt.ty(),
             span,
-            crate::semantic::symbol_table::Function {
+            Function {
                 storage: spec_info.storage,
                 is_noreturn: spec_info.is_noreturn,
                 param_len,
@@ -1902,28 +1897,23 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             if init.is_none() {
                 self.report_error(span, SemanticError::ConstexprRequiresInitializer);
             }
-            qt = self.merge_qualifiers_with_check(qt.strip_all(), qt.qualifiers() | TypeQualifiers::CONST, span);
+            qt = self.merge_quals_with_check(qt.strip_all(), qt.quals() | TypeQuals::CONST, span);
         }
 
         if self.registry.get(qt.ty()).kind == TypeKind::AutoType {
             if let Some(init_node) = init {
                 let ie = self.visit_expression(init_node);
                 if let NodeKind::InitializerList(_) = self.ast.get_kind(ie) {
-                    self.report_error(
-                        span,
-                        SemanticError::AutoTypeNotAllowed {
-                            context: "initializer list",
-                        },
-                    );
+                    self.report_error(span, SemanticError::AutoTypeNotAllowed("initializer list"));
                     qt = QualType::unqualified(self.registry.type_error);
                 } else if let Some(mut deduced) = self.try_infer_type(ie) {
                     if deduced.is_array() || deduced.is_function() {
-                        deduced = self.registry.decay(deduced, TypeQualifiers::empty());
+                        deduced = self.registry.decay(deduced, TypeQuals::empty());
                     }
                     if !deduced.is_record() {
                         deduced = deduced.strip_all();
                     }
-                    qt = deduced.merge_qualifiers(qt.qualifiers());
+                    qt = deduced.merge_quals(qt.quals());
                 } else {
                     qt = QualType::unqualified(self.registry.type_error);
                 }
@@ -2062,7 +2052,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             if len == 0 && self.lang_opts.c_standard >= CStandard::C23 {
                 self.report_error(span, SemanticError::ZeroOrNegativeSizeArray { name });
             }
-            qt = QualType::new(self.registry.array_of(et, ArraySize::Constant(len)), qt.qualifiers());
+            qt = QualType::new(self.registry.array_of(et, ArraySize::Constant(len)), qt.quals());
             if is_new_or_redecl {
                 self.symbol_table.get_symbol_mut(sym).type_info = qt;
             }
@@ -2136,7 +2126,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn lower_type_inner(&mut self, pty: PType, span: SourceSpan, in_param: bool) -> Result<QualType, SemanticDiag> {
         let base_type_node = self.parsed_ast.parsed_types.get_base_type(pty.base);
         let qbase = self.convert_to_qual_type(base_type_node, span)?;
-        let qbase = self.merge_qualifiers_with_check(qbase, pty.qualifiers, span);
+        let qbase = self.merge_quals_with_check(qbase, pty.quals, span);
 
         let final_type = self.apply_declarator(
             qbase,
@@ -2147,7 +2137,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         );
 
         if in_param {
-            let ptr_quals = self.extract_array_param_qualifiers(pty.declarator);
+            let ptr_quals = self.extract_array_param_quals(pty.declarator);
             let mut decayed = self.registry.decay(final_type, ptr_quals);
             if let Some(first_member_ty) = self.registry.get_transparent_union_first_member_type(decayed.ty()) {
                 decayed = first_member_ty;
@@ -2158,21 +2148,19 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn extract_array_param_qualifiers(&self, declarator: DeclaratorRef) -> TypeQualifiers {
+    fn extract_array_param_quals(&self, declarator: DeclaratorRef) -> TypeQuals {
         let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
         match declarator {
-            PDeclarator::Identifier(..) => TypeQualifiers::empty(),
-            PDeclarator::Pointer { .. } => TypeQualifiers::empty(),
-            PDeclarator::Function { .. } => TypeQualifiers::empty(),
             PDeclarator::Array { inner, size } => {
-                let inner_quals = self.extract_array_param_qualifiers(*inner);
+                let inner_quals = self.extract_array_param_quals(*inner);
                 if !inner_quals.is_empty() {
                     return inner_quals;
                 }
-                size.qualifiers()
+                size.quals()
             }
-            PDeclarator::BitField { inner, .. } => self.extract_array_param_qualifiers(*inner),
-            PDeclarator::Attribute { inner, .. } => self.extract_array_param_qualifiers(*inner),
+            PDeclarator::BitField { inner, .. } => self.extract_array_param_quals(*inner),
+            PDeclarator::Attribute { inner, .. } => self.extract_array_param_quals(*inner),
+            _ => TypeQuals::empty(),
         }
     }
 
@@ -2239,31 +2227,26 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let element_type = *element_type;
             if let Some(deduced_size) = self.deduce_array_size_full(i, element_type) {
                 let new_ty = self.registry.array_of(element_type, ArraySize::Constant(deduced_size));
-                qt = QualType::new(new_ty, qt.qualifiers());
+                qt = QualType::new(new_ty, qt.quals());
             }
         }
         NodeKind::CompoundLiteral(qt, i)
     }
 
-    fn visit_generic_selection(
-        &mut self,
-        control: PNodeRef,
-        associations: &[PGenericAssociation],
-        span: SourceSpan,
-    ) -> NodeKind {
+    fn visit_generic_selection(&mut self, control: PNodeRef, assocs: &[PGenericAssoc], span: SourceSpan) -> NodeKind {
         let c = self.visit_expression(control);
-        let assoc_len = associations.len() as u16;
-        let mut assoc_dummies = Vec::with_capacity(associations.len());
+        let assoc_len = assocs.len() as u16;
+        let mut assoc_dummies = Vec::with_capacity(assocs.len());
         for _ in 0..assoc_len {
             assoc_dummies.push(self.push_dummy(span));
         }
 
-        for (i, a) in associations.iter().enumerate() {
+        for (i, a) in assocs.iter().enumerate() {
             let ty = a.type_name.map(|t| self.visit_type(t, span));
             let expr = self.visit_expression(a.result_expr);
             self.ast.set_kind(
                 assoc_dummies[i],
-                NodeKind::GenericAssociation(GenericAssociation { ty, result_expr: expr }),
+                NodeKind::GenericAssoc(GenericAssoc { ty, result_expr: expr }),
             );
         }
 
@@ -2542,7 +2525,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             NodeKind::GenericSelection(gs) => {
                 for assoc_node in gs.assoc_start.range(gs.assoc_len) {
-                    if let NodeKind::GenericAssociation(assoc) = self.ast.get_kind(assoc_node)
+                    if let NodeKind::GenericAssoc(assoc) = self.ast.get_kind(assoc_node)
                         && !self.is_constant_expr(assoc.result_expr)
                     {
                         return false;
@@ -2707,8 +2690,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             NodeKind::TernaryOp(_, t, e) => {
                 let mut tt = self.try_infer_type(t)?;
                 let mut et = self.try_infer_type(e)?;
-                tt = self.registry.decay(tt, TypeQualifiers::empty());
-                et = self.registry.decay(et, TypeQualifiers::empty());
+                tt = self.registry.decay(tt, TypeQuals::empty());
+                et = self.registry.decay(et, TypeQuals::empty());
                 if tt.ty() == et.ty() {
                     Some(tt)
                 } else if tt.is_arithmetic() && et.is_arithmetic() {
@@ -3011,10 +2994,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
         match declarator {
             PDeclarator::Identifier(..) => current_type,
-            PDeclarator::Pointer { qualifiers, inner } => {
+            PDeclarator::Pointer { quals, inner } => {
                 let pointer_type = self.registry.pointer_to(current_type);
-                let modified_current =
-                    self.merge_qualifiers_with_check(QualType::unqualified(pointer_type), *qualifiers, span);
+                let modified_current = self.merge_quals_with_check(QualType::unqualified(pointer_type), *quals, span);
                 self.apply_declarator(modified_current, *inner, span, spec_info, ctx)
             }
             PDeclarator::Array { inner, size } => {
@@ -3038,12 +3020,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
 
                 if self.registry.get(current_type.ty()).kind == TypeKind::AutoType {
-                    self.report_error(
-                        span,
-                        SemanticError::AutoTypeNotAllowed {
-                            context: "function return type",
-                        },
-                    );
+                    self.report_error(span, SemanticError::AutoTypeNotAllowed("function return type"));
                 }
 
                 let params_list = self.parsed_ast.parsed_types.get_params(*params);
@@ -3081,11 +3058,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         DeclSpec::AttributeVisibility(vis) => info.visibility = Some(*vis),
                         DeclSpec::AttributeAlias(lit) => {
                             let (value, _) = lit.get_val();
-                            info.alias = Some(NameId::new(&String::from_utf8_lossy(&value)));
+                            info.alias = Some(NameId::new(String::from_utf8_lossy(&value)));
                         }
                         DeclSpec::AttributeAsm(lit) => {
                             let (value, _) = lit.get_val();
-                            info.asm_label = Some(NameId::new(&String::from_utf8_lossy(&value)));
+                            info.asm_label = Some(NameId::new(String::from_utf8_lossy(&value)));
                         }
                         DeclSpec::AttributeMode(mode) => {
                             info.mode = Some(*mode);
@@ -3098,7 +3075,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 if let DeclSpec::AttributeMode(mode) = spec
                     && let Some(ty) = self.resolve_mode_type(*mode, modified_type.ty())
                 {
-                    modified_type = QualType::new(ty, modified_type.qualifiers());
+                    modified_type = QualType::new(ty, modified_type.quals());
                 }
 
                 self.apply_declarator(modified_type, *inner, span, spec_info, ctx)
@@ -3170,7 +3147,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             return Ok(ty);
         }
         let ty = self.registry.declare_record(tag, is_union);
-        let sym = self.symbol_table.define_record(tag_name, ty, false, span);
+        let sym = self.symbol_table.define_record(tag_name, ty, span);
 
         // Store unique mapping for anonymous tags and update side table with stable name
         if tag.is_none() {
@@ -3317,9 +3294,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         {
             let entry = self.symbol_table.get_symbol_mut(sym);
             entry.is_completed = true;
-            if let SymbolKind::EnumTag { is_complete } = &mut entry.kind {
-                *is_complete = true;
-            }
         }
 
         Ok(())
@@ -3359,15 +3333,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         {
             let entry = self.symbol_table.get_symbol_mut(entry);
             entry.is_completed = true;
-            if let SymbolKind::Record {
-                is_complete,
-                members: entry_members,
-                ..
-            } = &mut entry.kind
-            {
-                *is_complete = true;
-                *entry_members = members;
-            }
         }
         Ok(())
     }
@@ -3603,7 +3568,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     info.is_typedef |= *sc == StorageClass::Typedef;
                 }
                 DeclSpec::TypeQualifier(tq) => {
-                    info.qualifiers.insert(TypeQualifiers::from_type_qualifier(*tq));
+                    info.quals.insert(TypeQuals::from_type_qualifier(*tq));
                 }
                 DeclSpec::TypeSpec(ts) => {
                     let ty = self.resolve_type_spec(ts, span).unwrap_or_else(|e| {
@@ -3632,11 +3597,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 DeclSpec::AttributeVisibility(vis) => info.visibility = Some(*vis),
                 DeclSpec::AttributeAlias(lit) => {
                     let (value, _) = lit.get_val();
-                    info.alias = Some(NameId::new(&String::from_utf8_lossy(&value)));
+                    info.alias = Some(NameId::new(String::from_utf8_lossy(&value)));
                 }
                 DeclSpec::AttributeAsm(lit) => {
                     let (value, _) = lit.get_val();
-                    info.asm_label = Some(NameId::new(&String::from_utf8_lossy(&value)));
+                    info.asm_label = Some(NameId::new(String::from_utf8_lossy(&value)));
                 }
             }
         }
@@ -3659,7 +3624,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 .base_type
                 .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
             if let Some(ty) = self.resolve_mode_type(mode, base_qt.ty()) {
-                info.base_type = Some(QualType::new(ty, base_qt.qualifiers()));
+                info.base_type = Some(QualType::new(ty, base_qt.quals()));
             }
         }
 
@@ -3686,12 +3651,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let span = param.span;
 
             if let PBaseType::Builtin(TypeSpec::AutoType) = self.parsed_ast.parsed_types.get_base_type(param.ty.base) {
-                self.report_error(
-                    span,
-                    SemanticError::AutoTypeNotAllowed {
-                        context: "function parameter",
-                    },
-                );
+                self.report_error(span, SemanticError::AutoTypeNotAllowed("function parameter"));
             }
 
             let decayed_qt = self
@@ -3814,12 +3774,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if let Some(base) = spec_info.base_type
             && self.registry.get(base.ty()).kind == TypeKind::AutoType
         {
-            self.report_error(
-                node_span,
-                SemanticError::AutoTypeNotAllowed {
-                    context: "struct or union member",
-                },
-            );
+            self.report_error(node_span, SemanticError::AutoTypeNotAllowed("struct or union member"));
         }
 
         if spec_info.storage != StorageClass::None {
@@ -3828,7 +3783,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if decl.init_declarators.is_empty() {
             if let Some(base) = spec_info.base_type
-                && let qt = self.merge_qualifiers_with_check(base, spec_info.qualifiers, span)
+                && let qt = self.merge_quals_with_check(base, spec_info.quals, span)
                 && qt.is_record()
                 && matches!(&self.registry.get(qt.ty()).kind, TypeKind::Record { tag: None, .. })
             {
@@ -3873,7 +3828,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let base = spec_info
             .base_type
             .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
-        let qualified_base = self.merge_qualifiers_with_check(base, spec_info.qualifiers, id.span);
+        let qualified_base = self.merge_quals_with_check(base, spec_info.quals, id.span);
 
         let member_type = self.apply_declarator(
             qualified_base,
@@ -3901,105 +3856,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             is_packed: spec_info.is_packed,
             span: id.span,
         })
-    }
-
-    fn lower_record(
-        &mut self,
-        tag: Option<NameId>,
-        members: Option<PStructMemberRange>,
-        is_union: bool,
-        span: SourceSpan,
-    ) -> Result<QualType, SemanticDiag> {
-        let is_definition = members.is_some();
-        let ty = self.resolve_record_tag(tag, is_union, is_definition, span)?;
-        let Some(members_range) = members else {
-            return Ok(QualType::unqualified(ty));
-        };
-
-        let parsed_members = self.parsed_ast.parsed_types.get_struct_members(members_range);
-        let struct_members = parsed_members
-            .iter()
-            .map(|m| {
-                let member_type = self.lower_type(m.ty, span, false)?;
-                let bit_field_size = self.extract_bit_field_width(m.ty.declarator);
-                Ok(RecordMember {
-                    name: m.name,
-                    member_type,
-                    bit_field_size,
-                    alignment: m.alignment,
-                    is_packed: m.is_packed,
-                    span: m.span,
-                })
-            })
-            .collect::<Result<Vec<_>, SemanticDiag>>()?;
-
-        self.complete_record_symbol(tag, ty, struct_members, None, None, false, span)?;
-        Ok(QualType::unqualified(ty))
-    }
-
-    fn lower_enum(
-        &mut self,
-        tag: Option<NameId>,
-        enumerators: Option<PEnumRange>,
-        underlying_type: Option<PType>,
-        span: SourceSpan,
-    ) -> Result<QualType, SemanticDiag> {
-        let underlying_qt = underlying_type.map(|ut| self.lower_type(ut, span, false)).transpose()?;
-        if let Some(qt) = underlying_qt
-            && (!qt.is_integer() || qt.is_enum())
-        {
-            self.report_error(span, SemanticError::InvalidEnumUnderlyingType { ty: qt });
-        }
-
-        let is_definition = enumerators.is_some() || underlying_qt.is_some();
-        let ty = self.resolve_enum_tag(tag, is_definition, underlying_qt.is_some(), span)?;
-
-        if is_definition {
-            let mut enumerators_list = Vec::new();
-            if let Some(enum_range) = enumerators {
-                let parsed_enums = self.parsed_ast.parsed_types.get_enum_constants(enum_range);
-                enumerators_list.reserve_exact(parsed_enums.len());
-                let mut next_value = 0i64;
-
-                for m in parsed_enums {
-                    let value = m.value.unwrap_or(next_value);
-                    let is_representable = underlying_qt
-                        .map(|uqt| self.registry.get(uqt.ty()).truncate_int(value) == value)
-                        .unwrap_or_else(|| (i32::MIN as i64..=i32::MAX as i64).contains(&value));
-
-                    if !is_representable {
-                        self.report_error(
-                            m.span,
-                            SemanticError::EnumeratorValueNotRepresentable {
-                                name: m.name,
-                                value,
-                                target_ty: underlying_qt,
-                            },
-                        );
-                    }
-
-                    next_value = value.wrapping_add(1);
-                    let _ = self.symbol_table.define_enum_constant(m.name, value, ty, m.span);
-                    enumerators_list.push(EnumConstant {
-                        name: m.name,
-                        value,
-                        span: m.span,
-                        init_expr: None,
-                    });
-                }
-            }
-
-            self.complete_enum_symbol(
-                tag,
-                ty,
-                enumerators_list,
-                underlying_qt.map(|q| q.ty()),
-                underlying_qt.is_some(),
-                span,
-            )?;
-        }
-
-        Ok(QualType::unqualified(ty))
     }
 
     fn lower_typeof(&mut self, ty: PType, span: SourceSpan) -> Result<QualType, SemanticDiag> {
@@ -4032,12 +3888,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn convert_to_qual_type(&mut self, base_ty: &PBaseType, span: SourceSpan) -> Result<QualType, SemanticDiag> {
         match base_ty {
             PBaseType::Builtin(ts) => self.resolve_type_spec(ts, span),
-            PBaseType::Record { tag, members, is_union } => self.lower_record(*tag, *members, *is_union, span),
-            PBaseType::Enum {
-                tag,
-                enumerators,
-                underlying_type,
-            } => self.lower_enum(*tag, *enumerators, *underlying_type, span),
             PBaseType::Typedef(name) => self.resolve_typedef_name(*name, span),
             PBaseType::Typeof(ty) => self.lower_typeof(*ty, span),
             PBaseType::TypeofExpr(expr) => Ok(self.lower_typeof_expr(*expr, span)),

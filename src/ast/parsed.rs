@@ -4,7 +4,7 @@ use crate::{
         literal::LitRef,
     },
     lang_options::Visibility,
-    semantic::{ScopeId, TypeQualifiers},
+    semantic::{ScopeId, TypeQuals},
 };
 use std::num::NonZeroU32;
 use thin_vec::ThinVec;
@@ -106,7 +106,7 @@ pub enum PNodeKind {
     AlignOfType(PType),
 
     CompoundLiteral(PType, PNodeRef),
-    GenericSelection(PNodeRef, Box<[PGenericAssociation]>),
+    GenericSelection(PNodeRef, Box<[PGenericAssoc]>),
     BuiltinChooseExpr(PNodeRef, PNodeRef, PNodeRef),
     BuiltinComplex(PNodeRef, PNodeRef),
     BuiltinBitCast(PType, PNodeRef),
@@ -307,26 +307,26 @@ pub struct PParam {
 pub enum PArraySize {
     Expression {
         expr: PNodeRef,
-        qualifiers: TypeQualifiers,
+        quals: TypeQuals,
     },
     Star {
-        qualifiers: TypeQualifiers,
+        quals: TypeQuals,
     }, // [*] VLA
     Incomplete, // []
     VlaSpec {
         is_static: bool,
-        qualifiers: TypeQualifiers,
+        quals: TypeQuals,
         size: Option<PNodeRef>,
     }, // for VLA
 }
 
 impl PArraySize {
-    pub(crate) fn qualifiers(&self) -> TypeQualifiers {
+    pub(crate) fn quals(&self) -> TypeQuals {
         match self {
-            PArraySize::Expression { qualifiers, .. } => *qualifiers,
-            PArraySize::Star { qualifiers } => *qualifiers,
-            PArraySize::VlaSpec { qualifiers, .. } => *qualifiers,
-            PArraySize::Incomplete => TypeQualifiers::empty(),
+            PArraySize::Expression { quals, .. } => *quals,
+            PArraySize::Star { quals } => *quals,
+            PArraySize::VlaSpec { quals, .. } => *quals,
+            PArraySize::Incomplete => TypeQuals::empty(),
         }
     }
 
@@ -352,7 +352,7 @@ impl PArraySize {
 
 // Record definitions
 #[derive(Debug, Clone)]
-pub struct PGenericAssociation {
+pub struct PGenericAssoc {
     pub type_name: Option<PType>, // None for 'default:'
     pub result_expr: PNodeRef,
 }

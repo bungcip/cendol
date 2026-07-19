@@ -7,7 +7,7 @@
 use crate::parser::declarations::parse_decl_specs;
 use crate::parser::type_builder::build_type;
 use crate::parser::{ParseDiag, ParseError, Token, TokenKind};
-use crate::{ast::*, semantic::TypeQualifiers};
+use crate::{ast::*, semantic::TypeQuals};
 use thin_vec::thin_vec;
 
 use super::Parser;
@@ -137,50 +137,50 @@ pub(crate) fn parse_declarator(parser: &mut Parser, allow_bitfield: bool) -> Res
     Ok(reconstruct_declarator_chain(parser, pointers, trailing))
 }
 
-fn parse_type_qualifiers(parser: &mut Parser) -> Result<TypeQualifiers, ParseDiag> {
-    let mut qualifiers = TypeQualifiers::empty();
+fn parse_type_quals(parser: &mut Parser) -> Result<TypeQuals, ParseDiag> {
+    let mut quals = TypeQuals::empty();
     while let Some(token) = parser.try_current_token() {
         if let Some(q) = token.kind.as_type_qualifier() {
-            qualifiers.insert(TypeQualifiers::from_type_qualifier(q));
+            quals.insert(TypeQuals::from_type_qualifier(q));
             parser.advance();
         } else {
             break;
         }
     }
-    Ok(qualifiers)
+    Ok(quals)
 }
 
 fn parse_array_size(parser: &mut Parser) -> Result<PArraySize, ParseDiag> {
     let is_static = parser.accept(TokenKind::Static).is_some();
-    let qualifiers = parse_type_qualifiers(parser)?;
+    let quals = parse_type_quals(parser)?;
 
     if parser.accept(TokenKind::Star).is_some() {
-        Ok(PArraySize::Star { qualifiers })
+        Ok(PArraySize::Star { quals })
     } else if parser.is_token(TokenKind::RightBracket) {
         Ok(PArraySize::Incomplete)
     } else {
         let expr = parser.parse_expr_min()?;
-        if is_static || !qualifiers.is_empty() {
+        if is_static || !quals.is_empty() {
             Ok(PArraySize::VlaSpec {
                 is_static,
-                qualifiers,
+                quals,
                 size: Some(expr),
             })
         } else {
-            Ok(PArraySize::Expression { expr, qualifiers })
+            Ok(PArraySize::Expression { expr, quals })
         }
     }
 }
 
-fn parse_leading_pointers(parser: &mut Parser) -> Result<Vec<(TypeQualifiers, Vec<DeclSpec>)>, ParseDiag> {
+fn parse_leading_pointers(parser: &mut Parser) -> Result<Vec<(TypeQuals, Vec<DeclSpec>)>, ParseDiag> {
     let mut pointers = Vec::new();
     while parser.accept(TokenKind::Star).is_some() {
-        let qualifiers = parse_type_qualifiers(parser)?;
+        let quals = parse_type_quals(parser)?;
         let mut attrs = Vec::new();
         while parser.is_token(TokenKind::Attribute) {
             attrs.extend(super::declarations::parse_attribute(parser)?);
         }
-        pointers.push((qualifiers, attrs));
+        pointers.push((quals, attrs));
     }
     Ok(pointers)
 }
@@ -242,14 +242,11 @@ fn parse_trailing_declarators(
 
 fn reconstruct_declarator_chain(
     parser: &mut Parser,
-    chain: Vec<(TypeQualifiers, Vec<DeclSpec>)>,
+    chain: Vec<(TypeQuals, Vec<DeclSpec>)>,
     mut base: DeclaratorRef,
 ) -> DeclaratorRef {
-    for (qualifiers, attrs) in chain.into_iter().rev() {
-        base = parser.alloc_decl(PDeclarator::Pointer {
-            qualifiers,
-            inner: base,
-        });
+    for (quals, attrs) in chain.into_iter().rev() {
+        base = parser.alloc_decl(PDeclarator::Pointer { quals, inner: base });
         for attr in attrs {
             base = parser.alloc_decl(PDeclarator::Attribute {
                 inner: base,

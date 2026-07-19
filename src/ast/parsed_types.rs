@@ -10,8 +10,8 @@ use std::num::NonZeroU32;
 use serde::Serialize;
 
 use crate::ast::parsed::{DeclSpec, PArraySize, TypeSpec};
-use crate::ast::{NameId, PNodeRef, PParam, SourceSpan};
-use crate::semantic::TypeQualifiers;
+use crate::ast::{NameId, PNodeRef, PParam};
+use crate::semantic::TypeQuals;
 
 /// Type reference for parsed base types
 pub type PBaseTypeRef = NonZeroU32;
@@ -24,14 +24,7 @@ pub type DeclaratorRef = NonZeroU32;
 pub struct PType {
     pub base: PBaseTypeRef,        // NonZeroU32
     pub declarator: DeclaratorRef, // NonZeroU32
-    pub qualifiers: TypeQualifiers,
-}
-
-/// Range for struct members in the arena
-#[derive(Debug, Clone, Copy)]
-pub struct PStructMemberRange {
-    pub start: u32,
-    pub len: u32,
+    pub quals: TypeQuals,
 }
 
 /// Range for function parameters in the arena
@@ -39,33 +32,6 @@ pub struct PStructMemberRange {
 pub struct PParamRange {
     pub start: u32,
     pub len: u32,
-}
-
-/// Range for enum values in the arena
-#[derive(Debug, Clone, Copy)]
-pub struct PEnumRange {
-    pub start: u32,
-    pub len: u32,
-}
-
-// ParsedParam is now in parsed.rs
-
-/// Parsed struct/union member information
-#[derive(Debug, Clone)]
-pub struct PStructMember {
-    pub name: Option<NameId>,
-    pub ty: PType,
-    pub alignment: Option<u16>,
-    pub is_packed: bool,
-    pub span: SourceSpan,
-}
-
-/// Parsed enum constant information
-#[derive(Debug, Clone)]
-pub struct PEnumConstant {
-    pub name: NameId,
-    pub value: Option<i64>, // None for now, resolved later
-    pub span: SourceSpan,
 }
 
 /// Function flags for declarators
@@ -79,19 +45,6 @@ pub struct FunctionFlags {
 #[derive(Clone, Debug)]
 pub enum PBaseType {
     Builtin(TypeSpec),
-
-    Record {
-        tag: Option<NameId>,
-        members: Option<PStructMemberRange>, // index range
-        is_union: bool,
-    },
-
-    Enum {
-        tag: Option<NameId>,
-        enumerators: Option<PEnumRange>,
-        underlying_type: Option<PType>,
-    },
-
     Typedef(NameId),
     Typeof(PType),
     TypeofExpr(PNodeRef),
@@ -103,7 +56,7 @@ pub enum PBaseType {
 pub enum PDeclarator {
     Identifier(Option<NameId>),
     Pointer {
-        qualifiers: TypeQualifiers,
+        quals: TypeQuals,
         inner: DeclaratorRef,
     },
 
@@ -136,8 +89,6 @@ pub struct PTypeArena {
     base_types: Vec<PBaseType>,
     declarators: Vec<PDeclarator>,
     params: Vec<PParam>,
-    struct_members: Vec<PStructMember>,
-    enum_constants: Vec<PEnumConstant>,
 }
 
 impl PTypeArena {
@@ -163,22 +114,6 @@ impl PTypeArena {
         PParamRange { start, len }
     }
 
-    /// Allocate struct members and return the range
-    pub(crate) fn alloc_struct_members(&mut self, members: Vec<PStructMember>) -> PStructMemberRange {
-        let start = self.struct_members.len() as u32;
-        self.struct_members.extend(members);
-        let len = self.struct_members.len() as u32 - start;
-        PStructMemberRange { start, len }
-    }
-
-    /// Allocate enum constants and return the range
-    pub(crate) fn alloc_enum_constants(&mut self, enumerators: Vec<PEnumConstant>) -> PEnumRange {
-        let start = self.enum_constants.len() as u32;
-        self.enum_constants.extend(enumerators);
-        let len = self.enum_constants.len() as u32 - start;
-        PEnumRange { start, len }
-    }
-
     /// Get a base type by reference
     pub(crate) fn get_base_type(&self, base: PBaseTypeRef) -> &PBaseType {
         let index = (base.get() - 1) as usize;
@@ -196,20 +131,6 @@ impl PTypeArena {
         let start = range.start as usize;
         let end = start + range.len as usize;
         &self.params[start..end]
-    }
-
-    /// Get struct members by range
-    pub(crate) fn get_struct_members(&self, range: PStructMemberRange) -> &[PStructMember] {
-        let start = range.start as usize;
-        let end = start + range.len as usize;
-        &self.struct_members[start..end]
-    }
-
-    /// Get enum constants by range
-    pub(crate) fn get_enum_constants(&self, range: PEnumRange) -> &[PEnumConstant] {
-        let start = range.start as usize;
-        let end = start + range.len as usize;
-        &self.enum_constants[start..end]
     }
 
     /// Get the scope ID associated with a function declarator (traversing pointers, arrays, etc.)

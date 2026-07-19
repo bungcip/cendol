@@ -8,7 +8,7 @@ use crate::{
     diagnostic::{DiagnosticEngine, DiagnosticLevel},
     lang_options::{CStandard, LangOptions, PedanticMode},
     semantic::{
-        ArraySize, BuiltinFunctionKind, BuiltinType, FunctionParam, QualType, RecordMember, TypeKind, TypeQualifiers,
+        ArraySize, BuiltinFunctionKind, BuiltinType, FunctionParam, QualType, RecordMember, TypeKind, TypeQuals,
         TypeRef, TypeRegistry,
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
@@ -124,7 +124,7 @@ pub enum Conversion {
     PointerCast { from: TypeRef, to: TypeRef },
 
     /// add/remove const/volatile
-    QualifierAdjust { from: TypeQualifiers, to: TypeQualifiers },
+    QualifierAdjust { from: TypeQuals, to: TypeQuals },
 
     /// 0 / NULL → T*
     NullPointerConstant,
@@ -592,7 +592,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.report_error(node, SemanticError::AddressOfRegister);
             }
 
-            let decayed = self.registry.decay(qt, TypeQualifiers::empty());
+            let decayed = self.registry.decay(qt, TypeQuals::empty());
             self.push_conversion(node, Conversion::PointerDecay { to: decayed.ty() });
             decayed
         } else {
@@ -846,7 +846,7 @@ impl<'a> SemanticAnalyzer<'a> {
             );
             self.record_implicit_conversions(lhs_qt, rhs_qt, rhs_node, is_npc);
             true
-        } else if self.is_discarding_pointer_qualifiers(lhs_qt, rhs_qt) {
+        } else if self.is_discarding_pointer_quals(lhs_qt, rhs_qt) {
             self.report_warning(
                 report_node,
                 SemanticError::PointerAssignmentDiscardsQualifiers {
@@ -889,7 +889,7 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     /// Check if the assignment is between pointers where target qualifiers are discarded
-    fn is_discarding_pointer_qualifiers(&self, lhs: QualType, rhs: QualType) -> bool {
+    fn is_discarding_pointer_quals(&self, lhs: QualType, rhs: QualType) -> bool {
         let lhs = self.registry.canonical_qual_type(lhs);
         let rhs = self.registry.canonical_qual_type(rhs);
         // Both must be pointers (or array/function that decay to pointers)
@@ -902,7 +902,7 @@ impl<'a> SemanticAnalyzer<'a> {
             // Array qualifiers apply to the element type
             self.registry
                 .get_array_element(rhs.ty())
-                .map(|elem| QualType::new(elem, rhs.qualifiers()))
+                .map(|elem| QualType::new(elem, rhs.quals()))
         } else if rhs.is_function() {
             Some(rhs) // Function decays to pointer to function (unqualified)
         } else if rhs.is_pointer() {
@@ -923,7 +923,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
             if compatible_ignoring_quals {
                 // Return true if qualifiers are DISCARDED (rhs has something lhs doesn't)
-                return !lhs_base.qualifiers().contains(rhs_base.qualifiers());
+                return !lhs_base.quals().contains(rhs_base.quals());
             }
         }
 
@@ -992,7 +992,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let rhs_pointee = if rhs.is_array() {
             self.registry
                 .get_array_element(rhs.ty())
-                .map(|elem| QualType::new(elem, rhs.qualifiers()))
+                .map(|elem| QualType::new(elem, rhs.quals()))
         } else if rhs.is_function() {
             Some(rhs)
         } else if rhs.is_pointer() {
@@ -1191,7 +1191,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     if self.semantic_info.value_categories[expr.index()] == ValueCategory::LValue {
                         self.semantic_info.value_categories[node.index()] = ValueCategory::LValue;
                     }
-                    Some(QualType::new(*base_type, operand_qt.qualifiers()))
+                    Some(QualType::new(*base_type, operand_qt.quals()))
                 } else if self.require_arithmetic(node, operand_qt) {
                     if op == UnaryOp::Real {
                         // Bolt ⚡: Eagerly set value category to LValue for __real__ on real LValue.
@@ -1224,12 +1224,12 @@ impl<'a> SemanticAnalyzer<'a> {
 
                     // Strip all qualifiers for unary plus/minus operations
                     let stripped = promoted.strip_all();
-                    if stripped.qualifiers() != promoted.qualifiers() {
+                    if stripped.quals() != promoted.quals() {
                         self.push_conversion(
                             expr,
                             Conversion::QualifierAdjust {
-                                from: promoted.qualifiers(),
-                                to: stripped.qualifiers(),
+                                from: promoted.quals(),
+                                to: stripped.quals(),
                             },
                         );
                     }
@@ -1533,7 +1533,7 @@ impl<'a> SemanticAnalyzer<'a> {
             self.apply_lvalue_conversion(lhs);
             let mut rhs_decayed = rhs_ty;
             if rhs_ty.is_array() || rhs_ty.is_function() {
-                rhs_decayed = self.registry.decay(rhs_ty, TypeQualifiers::empty());
+                rhs_decayed = self.registry.decay(rhs_ty, TypeQuals::empty());
                 self.push_conversion(rhs, Conversion::PointerDecay { to: rhs_decayed.ty() });
             }
             return Some(rhs_decayed);
@@ -1695,7 +1695,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 // Array qualifiers apply to the element type
                 self.registry
                     .get_array_element(rhs_ty_canon.ty())
-                    .map(|elem| QualType::new(elem, rhs_ty_canon.qualifiers()))
+                    .map(|elem| QualType::new(elem, rhs_ty_canon.quals()))
             } else if rhs_ty_canon.is_function() {
                 Some(rhs_ty_canon) // Function decays to pointer to function (unqualified)
             } else if rhs_ty_canon.is_pointer() {
@@ -1710,7 +1710,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
                 // void* wildcard
                 if lhs_base.is_void() || rhs_base.is_void() {
-                    return lhs_base.qualifiers().contains(rhs_base.qualifiers());
+                    return lhs_base.quals().contains(rhs_base.quals());
                 }
 
                 // Check compatibility ignoring top-level qualifiers of the pointed-to type
@@ -1722,7 +1722,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     return false;
                 }
 
-                return lhs_base.qualifiers().contains(rhs_base.qualifiers());
+                return lhs_base.quals().contains(rhs_base.quals());
             }
 
             return false;
@@ -1765,12 +1765,12 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         // 3. Qualifier adjustment
-        if lhs_qt.ty() == rhs_qt.ty() && lhs_qt.qualifiers() != rhs_qt.qualifiers() {
+        if lhs_qt.ty() == rhs_qt.ty() && lhs_qt.quals() != rhs_qt.quals() {
             self.push_conversion(
                 rhs,
                 Conversion::QualifierAdjust {
-                    from: rhs_qt.qualifiers(),
-                    to: lhs_qt.qualifiers(),
+                    from: rhs_qt.quals(),
+                    to: lhs_qt.quals(),
                 },
             );
         }
@@ -2047,7 +2047,7 @@ impl<'a> SemanticAnalyzer<'a> {
         element_type: TypeRef,
         array_size: &ArraySize,
     ) {
-        let element_qt = QualType::new(element_type, target_qt.qualifiers());
+        let element_qt = QualType::new(element_type, target_qt.quals());
 
         // Special case for char array initialized by string literal (C11 §6.7.9p14)
         if (element_qt.is_char() || element_qt.is_wchar_t() || element_qt.is_char16() || element_qt.is_char32())
@@ -2188,18 +2188,14 @@ impl<'a> SemanticAnalyzer<'a> {
                     self.report_error(node, SemanticError::ArrayIndexExceedsBounds(end_idx, len as i64));
                 }
 
-                self.consume_inits(
-                    QualType::new(element_type, target_qt.qualifiers()),
-                    iter,
-                    designator_idx + 1,
-                );
+                self.consume_inits(QualType::new(element_type, target_qt.quals()), iter, designator_idx + 1);
 
                 let mut current_idx = end_idx + 1;
                 while max_len.is_none() || current_idx < max_len.unwrap() as i64 {
                     if iter.peek().is_none() || self.unwrap_init_item(*iter.peek().unwrap()).2 > 0 {
                         break;
                     }
-                    self.consume_inits(QualType::new(element_type, target_qt.qualifiers()), iter, 0);
+                    self.consume_inits(QualType::new(element_type, target_qt.quals()), iter, 0);
                     current_idx += 1;
                 }
                 true
@@ -2224,7 +2220,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             TypeAnalysisTask::Array(element_type, size) => {
-                let element_qt = QualType::new(element_type, target_qt.qualifiers());
+                let element_qt = QualType::new(element_type, target_qt.quals());
                 let max_len = if let ArraySize::Constant(len) = size {
                     Some(len)
                 } else {
@@ -2404,7 +2400,7 @@ impl<'a> SemanticAnalyzer<'a> {
     fn handle_variadic_argument(&mut self, arg_node: NodeRef, arg_qt: QualType) {
         let mut actual_arg_qt = arg_qt;
         if arg_qt.is_array() || arg_qt.is_function() {
-            actual_arg_qt = self.registry.decay(arg_qt, TypeQualifiers::empty());
+            actual_arg_qt = self.registry.decay(arg_qt, TypeQuals::empty());
             self.push_conversion(arg_node, Conversion::PointerDecay { to: actual_arg_qt.ty() });
         }
 
@@ -2426,7 +2422,7 @@ impl<'a> SemanticAnalyzer<'a> {
     ) {
         if kind.is_bitwise() && i == 0 {
             let check_qt = if arg_qt.is_array() || arg_qt.is_function() {
-                self.registry.decay(arg_qt, TypeQualifiers::empty())
+                self.registry.decay(arg_qt, TypeQuals::empty())
             } else {
                 arg_qt
             };
@@ -2435,7 +2431,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
         } else if kind.is_fabs() && i == 0 {
             let check_qt = if arg_qt.is_array() || arg_qt.is_function() {
-                self.registry.decay(arg_qt, TypeQualifiers::empty())
+                self.registry.decay(arg_qt, TypeQuals::empty())
             } else {
                 arg_qt
             };
@@ -2447,7 +2443,7 @@ impl<'a> SemanticAnalyzer<'a> {
         match kind {
             BuiltinFunctionKind::Memcpy | BuiltinFunctionKind::Memmove | BuiltinFunctionKind::Memcmp => {
                 let void_ptr = QualType::unqualified(self.registry.type_void_ptr);
-                let const_void = QualType::new(self.registry.type_void, TypeQualifiers::CONST);
+                let const_void = QualType::new(self.registry.type_void, TypeQuals::CONST);
                 let const_void_ptr = QualType::unqualified(self.registry.pointer_to(const_void));
                 let size_t = QualType::unqualified(self.registry.type_long_unsigned);
 
@@ -2661,14 +2657,14 @@ impl<'a> SemanticAnalyzer<'a> {
             let pointee = self.registry.get_pointee(actual_qt.ty());
 
             match pointee {
-                Some(p) => (p.ty(), p.qualifiers()),
+                Some(p) => (p.ty(), p.quals()),
                 None => {
                     self.report_error(node, SemanticError::MemberAccessOnNonRecord { ty: actual_qt });
                     return None;
                 }
             }
         } else {
-            (obj_qt.ty(), obj_qt.qualifiers())
+            (obj_qt.ty(), obj_qt.quals())
         };
 
         // Ensure layout is computed for the record type
@@ -2704,7 +2700,7 @@ impl<'a> SemanticAnalyzer<'a> {
             // C11 6.5.2.3p4: if the first expression has qualified type, the result has the so-qualified
             // version of the type of the designated member.
             if !base_quals.is_empty() {
-                ty = ty.merge_qualifiers(base_quals);
+                ty = ty.merge_quals(base_quals);
             }
 
             // Bolt ⚡: Eagerly set value category to LValue if arrow or base is LValue.
@@ -3236,7 +3232,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::CompoundLiteral(qt, init) => self.visit_compound_literal(node, *qt, *init),
             NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs, node),
-            NodeKind::GenericAssociation(ga) => {
+            NodeKind::GenericAssoc(ga) => {
                 if let Some(ty) = ga.ty {
                     self.visit_type_exprs(ty);
                 }
@@ -3311,12 +3307,12 @@ impl<'a> SemanticAnalyzer<'a> {
         if qt.is_array() || qt.is_function() {
             let decayed = self.decay(node, qt);
             qt = decayed;
-        } else if !qt.qualifiers().is_empty() {
+        } else if !qt.quals().is_empty() {
             self.push_conversion(
                 node,
                 Conversion::QualifierAdjust {
-                    from: qt.qualifiers(),
-                    to: TypeQualifiers::empty(),
+                    from: qt.quals(),
+                    to: TypeQuals::empty(),
                 },
             );
             qt = qt.strip_all();
@@ -3333,13 +3329,13 @@ impl<'a> SemanticAnalyzer<'a> {
         let p_e = self.registry.get_pointee(e.ty())?;
 
         if p_t.is_void() || p_e.is_void() {
-            let res_quals = p_t.qualifiers() | p_e.qualifiers();
+            let res_quals = p_t.quals() | p_e.quals();
             let void_ptr = self
                 .registry
                 .pointer_to(QualType::new(self.registry.type_void, res_quals));
             Some(QualType::unqualified(void_ptr))
         } else if self.registry.is_compatible(p_t.strip_all(), p_e.strip_all()) {
-            let res_p_quals = p_t.qualifiers() | p_e.qualifiers();
+            let res_p_quals = p_t.quals() | p_e.quals();
             let p_composite = self.registry.composite_type(p_t.strip_all(), p_e.strip_all())?;
             let res_p_ty = QualType::new(p_composite.ty(), res_p_quals);
             Some(QualType::unqualified(self.registry.pointer_to(res_p_ty)))
@@ -3452,7 +3448,7 @@ impl<'a> SemanticAnalyzer<'a> {
             // Bolt ⚡: Eagerly set value category to LValue for string literals.
             self.semantic_info.value_categories[node.index()] = ValueCategory::LValue;
 
-            return Some(QualType::new(array_type, TypeQualifiers::empty()));
+            return Some(QualType::new(array_type, TypeQuals::empty()));
         }
 
         lid.with_val(|val| match val {
@@ -3603,7 +3599,7 @@ impl<'a> SemanticAnalyzer<'a> {
             let span = self.ast.get_span(assoc_node);
             self.visit_node(assoc_node);
 
-            let NodeKind::GenericAssociation(ga) = *self.ast.get_kind(assoc_node) else {
+            let NodeKind::GenericAssoc(ga) = *self.ast.get_kind(assoc_node) else {
                 continue;
             };
 

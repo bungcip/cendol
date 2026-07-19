@@ -239,11 +239,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
 fn parse_unary_operator(parser: &mut Parser, mut token: Token) -> Result<PNodeRef, ParseDiag> {
     let mut ops = smallvec::SmallVec::<[(UnaryOp, SourceSpan); 8]>::new();
 
-    loop {
-        let Some(op) = token.kind.as_prefix_unary_op() else {
-            break;
-        };
-
+    while let Some(op) = token.kind.as_prefix_unary_op() {
         ops.push((op, token.span));
         parser.advance();
 
@@ -360,7 +356,7 @@ fn parse_generic_selection(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
 
         p.expect(TokenKind::Colon)?;
         let result_expr = p.parse_expression(BindingPower::COMMA)?;
-        Ok(PGenericAssociation { type_name, result_expr })
+        Ok(PGenericAssoc { type_name, result_expr })
     })?;
 
     let end = parser.expect(TokenKind::RightParen)?.span.end();

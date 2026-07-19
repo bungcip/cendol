@@ -7,13 +7,12 @@
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 use std::num::NonZeroU32;
-use std::sync::Arc;
 use thiserror::Error;
 
 use crate::{
     ast::*,
     lang_options::Visibility,
-    semantic::{QualType, RecordMember, TypeRef},
+    semantic::{QualType, TypeRef},
 };
 
 /// Defines the kind of builtin function for efficient identification in later phases.
@@ -293,8 +292,8 @@ impl SymbolClass {
             SymbolKind::Typedef(_) => SymbolClass::Typedef,
             SymbolKind::EnumConstant { .. } => SymbolClass::EnumConstant,
             SymbolKind::Label => SymbolClass::Label,
-            SymbolKind::Record { .. } => SymbolClass::Record,
-            SymbolKind::EnumTag { .. } => SymbolClass::EnumTag,
+            SymbolKind::Record => SymbolClass::Record,
+            SymbolKind::EnumTag => SymbolClass::EnumTag,
         }
     }
 }
@@ -355,7 +354,7 @@ pub enum DefinitionState {
 /// Symbol are stored in a separate Vec<Symbol> with SymbolRef references.
 /// invariant:
 /// - Variable / Typedef / Function: type_info is meaningful
-/// - EnumConstant: type_info = int (unqualified)
+/// - EnumConstant: type_info = int (unqualified) / underlying type in C23
 /// - Label / RecordTag / EnumTag: type_info = TypeKind::Error
 #[derive(Debug, Clone)]
 pub struct Symbol {
@@ -371,10 +370,12 @@ pub struct Symbol {
 }
 
 impl Symbol {
+    #[inline]
     pub(crate) fn is_const(&self) -> bool {
         self.type_info.is_const()
     }
 
+    #[inline]
     pub(crate) fn has_linkage(&self) -> bool {
         match &self.kind {
             SymbolKind::Function(_) => true,
@@ -383,6 +384,7 @@ impl Symbol {
         }
     }
 
+    #[inline]
     pub(crate) fn has_static_duration(&self) -> bool {
         match &self.kind {
             SymbolKind::Variable(v) => {
@@ -393,6 +395,7 @@ impl Symbol {
         }
     }
 
+    #[inline]
     pub(crate) fn get_function_storage(&self) -> StorageClass {
         match &self.kind {
             SymbolKind::Function(f) => f.storage,
@@ -400,6 +403,7 @@ impl Symbol {
         }
     }
 
+    #[inline]
     pub(crate) fn is_function(&self) -> bool {
         matches!(self.kind, SymbolKind::Function(_))
     }
@@ -415,13 +419,8 @@ pub enum SymbolKind {
         value: i64, // Resolved constant value
     },
     Label,
-    Record {
-        is_complete: bool,
-        members: Arc<[RecordMember]>,
-    },
-    EnumTag {
-        is_complete: bool,
-    },
+    Record,
+    EnumTag,
     // Add other symbol kinds as needed (e.g., Macro, BlockScope)
 }
 
@@ -535,7 +534,7 @@ impl SymbolTable {
             def_span: SourceSpan::empty(),
             def_state: DefinitionState::DeclaredOnly,
             is_completed: false,
-            visibility: crate::lang_options::Visibility::Default,
+            visibility: Visibility::Default,
             has_explicit_visibility: false,
         });
         table
@@ -545,7 +544,7 @@ impl SymbolTable {
         let new_scope_id = ScopeId::new(self.next_scope_id).unwrap();
         self.next_scope_id += 1;
 
-        let level = self.scopes[self.current_scope_id.get() as usize - 1].level + 1;
+        let level = self.get_scope(self.current_scope_id).level + 1;
         let parent = Some(self.current_scope_id);
 
         let idx = new_scope_id.get() as usize - 1;
@@ -567,8 +566,7 @@ impl SymbolTable {
     }
 
     pub(crate) fn pop_scope(&mut self) -> Option<ScopeId> {
-        let current_scope_id_before_pop = self.current_scope_id;
-        let current_scope = &self.scopes[current_scope_id_before_pop.get() as usize - 1];
+        let current_scope = self.get_scope(self.current_scope_id);
         if let Some(parent) = current_scope.parent {
             self.current_scope_id = parent;
             Some(parent)
@@ -577,20 +575,28 @@ impl SymbolTable {
         }
     }
 
+    #[inline]
     pub(crate) fn current_scope(&self) -> ScopeId {
         self.current_scope_id
     }
 
+    #[inline]
     pub(crate) fn set_current_scope(&mut self, scope_id: ScopeId) {
         self.current_scope_id = scope_id;
     }
 
+    #[inline]
     pub(crate) fn get_scope(&self, scope_id: ScopeId) -> &Scope {
-        &self.scopes[scope_id.get() as usize - 1]
+        let idx = (scope_id.get() - 1) as usize;
+        debug_assert!(idx < self.scopes.len());
+        unsafe { self.scopes.get_unchecked(idx) }
     }
 
+    #[inline]
     pub(crate) fn get_scope_mut(&mut self, scope_id: ScopeId) -> &mut Scope {
-        &mut self.scopes[scope_id.get() as usize - 1]
+        let idx = (scope_id.get() - 1) as usize;
+        debug_assert!(idx < self.scopes.len());
+        unsafe { self.scopes.get_unchecked_mut(idx) }
     }
 
     fn record_map_insertion(&mut self, scope_id: ScopeId, ns: Namespace, name: NameId, prev: Option<SymbolRef>) {
@@ -627,19 +633,23 @@ impl SymbolTable {
         sym
     }
 
+    #[inline]
     pub(crate) fn lookup_symbol_and_scope(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
         self.lookup(name, self.current_scope_id, Namespace::Ordinary)
     }
 
+    #[inline]
     pub(crate) fn lookup_symbol(&self, name: NameId) -> Option<SymbolRef> {
         self.lookup(name, self.current_scope_id, Namespace::Ordinary)
             .map(|(s, _)| s)
     }
 
+    #[inline]
     pub(super) fn lookup_tag(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
         self.lookup(name, self.current_scope_id, Namespace::Tag)
     }
 
+    #[inline]
     pub(crate) fn lookup(&self, name: NameId, start_scope: ScopeId, ns: Namespace) -> Option<(SymbolRef, ScopeId)> {
         let mut scope_id = start_scope;
         // Bolt ⚡: Hoist Namespace match out of the loop to reduce branching in this hot path.
@@ -669,6 +679,7 @@ impl SymbolTable {
     }
 
     /// find a symbol in exact scope without looking to parent scope if not exist
+    #[inline]
     pub(crate) fn fetch(&self, name: NameId, scope_id: ScopeId, ns: Namespace) -> Option<SymbolRef> {
         let scope = self.get_scope(scope_id);
         match ns {
@@ -679,6 +690,7 @@ impl SymbolTable {
     }
 
     /// fetch a symbol in exact current scope without looking to parent scope if not exist
+    #[inline]
     pub(crate) fn fetch_current(&self, name: NameId, ns: Namespace) -> Option<SymbolRef> {
         self.fetch(name, self.current_scope_id, ns)
     }
@@ -690,12 +702,18 @@ impl SymbolTable {
         SymbolRef::new_with_class(index, class).expect("SymbolEntryRef overflow")
     }
 
+    #[inline]
     pub(crate) fn get_symbol(&self, index: SymbolRef) -> &Symbol {
-        &self.entries[(index.get() - 1) as usize]
+        let idx = (index.get() - 1) as usize;
+        debug_assert!(idx < self.entries.len());
+        unsafe { self.entries.get_unchecked(idx) }
     }
 
+    #[inline]
     pub(crate) fn get_symbol_mut(&mut self, index: SymbolRef) -> &mut Symbol {
-        &mut self.entries[(index.get() - 1) as usize]
+        let idx = (index.get() - 1) as usize;
+        debug_assert!(idx < self.entries.len());
+        unsafe { self.entries.get_unchecked_mut(idx) }
     }
 
     /// define builtin function in Global scope
@@ -903,34 +921,15 @@ impl SymbolTable {
     }
 
     /// Define a record (struct/union) tag in the current scope.
-    pub(crate) fn define_record(
-        &mut self,
-        name: NameId,
-        ty: TypeRef,
-        is_complete: bool,
-        span: SourceSpan,
-    ) -> SymbolRef {
-        let mut symbol = self.create_symbol(
-            name,
-            SymbolKind::Record {
-                is_complete,
-                members: Arc::new([]),
-            },
-            QualType::unqualified(ty),
-            span,
-        );
+    pub(crate) fn define_record(&mut self, name: NameId, ty: TypeRef, span: SourceSpan) -> SymbolRef {
+        let mut symbol = self.create_symbol(name, SymbolKind::Record, QualType::unqualified(ty), span);
         symbol.is_completed = false;
         self.add_symbol_in_namespace(name, symbol, Namespace::Tag)
     }
 
     /// Define an enum tag in the current scope.
     pub(crate) fn define_enum(&mut self, name: NameId, ty: TypeRef, span: SourceSpan) -> SymbolRef {
-        let mut symbol = self.create_symbol(
-            name,
-            SymbolKind::EnumTag { is_complete: false },
-            QualType::unqualified(ty),
-            span,
-        );
+        let mut symbol = self.create_symbol(name, SymbolKind::EnumTag, QualType::unqualified(ty), span);
         symbol.is_completed = false;
         self.add_symbol_in_namespace(name, symbol, Namespace::Tag)
     }
@@ -1040,7 +1039,7 @@ impl SymbolTable {
                     }
                 }
                 UndoOp::SymbolModified { index, old_symbol } => {
-                    self.entries[(index.get() - 1) as usize] = *old_symbol;
+                    *self.get_symbol_mut(index) = *old_symbol;
                 }
             }
         }

@@ -17,8 +17,7 @@ use target_lexicon::{PointerWidth, Triple};
 use super::types::TypeClass;
 use super::types::{FieldLayout, LayoutKind};
 use super::{
-    ArraySize, BuiltinType, EnumConstant, FunctionParam, RecordMember, Type, TypeKind, TypeLayout, TypeQualifiers,
-    TypeRef,
+    ArraySize, BuiltinType, EnumConstant, FunctionParam, RecordMember, Type, TypeKind, TypeLayout, TypeQuals, TypeRef,
 };
 use crate::ast::StorageClass;
 use crate::semantic::BuiltinFunctionKind;
@@ -656,7 +655,7 @@ impl TypeRegistry {
     // Canonical type constructors
     // ============================================================
     pub(crate) fn find_pointer_to(&self, base: QualType) -> Option<TypeRef> {
-        if base.qualifiers().is_empty() {
+        if base.quals().is_empty() {
             let base_ty = base.ty();
             if base_ty.is_inline_pointer() {
                 let depth = base_ty.pointer_depth();
@@ -689,7 +688,7 @@ impl TypeRegistry {
             return Some(a);
         }
 
-        if a.qualifiers() != b.qualifiers() {
+        if a.quals() != b.quals() {
             return None;
         }
 
@@ -703,7 +702,7 @@ impl TypeRegistry {
         if let (Some(pa), Some(pb)) = (self.get_pointee(ty_a), self.get_pointee(ty_b)) {
             let composite_pointee = self.find_composite_type(pa, pb)?;
             let res_ty = self.find_pointer_to(composite_pointee)?;
-            return Some(QualType::new(res_ty, a.qualifiers()));
+            return Some(QualType::new(res_ty, a.quals()));
         }
 
         if let (Some(ea), Some(eb)) = (self.get_array_element(ty_a), self.get_array_element(ty_b)) {
@@ -735,7 +734,7 @@ impl TypeRegistry {
             };
 
             let res_ty = self.find_array_type(composite_elem.ty(), composite_size)?;
-            return Some(QualType::new(res_ty, a.qualifiers()));
+            return Some(QualType::new(res_ty, a.quals()));
         }
 
         let type_a = self.get(ty_a);
@@ -799,7 +798,7 @@ impl TypeRegistry {
                     is_noreturn: *nor_a,
                 };
                 let f = self.function_cache.get(&key).copied()?;
-                Some(QualType::new(f, a.qualifiers()))
+                Some(QualType::new(f, a.quals()))
             }
             _ => None,
         }
@@ -807,7 +806,7 @@ impl TypeRegistry {
 
     pub(crate) fn pointer_to(&mut self, base: QualType) -> TypeRef {
         // Try inline if unqualified
-        if base.qualifiers().is_empty() {
+        if base.quals().is_empty() {
             let base_ty = base.ty();
             // 1. If base is Inline Pointer (depth 1..2), we can increment depth (max 3).
             if base_ty.is_inline_pointer() {
@@ -910,7 +909,7 @@ impl TypeRegistry {
 
         let (params, ret_ty, is_variadic, is_noreturn) = match name {
             BuiltinFunctionKind::Nanf | BuiltinFunctionKind::Nan => {
-                let char_const = QualType::new(self.type_char, TypeQualifiers::CONST);
+                let char_const = QualType::new(self.type_char, TypeQuals::CONST);
                 let char_ptr = q(self.pointer_to(char_const));
                 let ret = if name == BuiltinFunctionKind::Nanf {
                     self.type_float
@@ -995,7 +994,7 @@ impl TypeRegistry {
             BuiltinFunctionKind::Pause => (vec![], self.type_void, false, false),
             BuiltinFunctionKind::Memcpy | BuiltinFunctionKind::Memmove => {
                 let void_ptr = self.type_void_ptr;
-                let const_void = QualType::new(self.type_void, TypeQualifiers::CONST);
+                let const_void = QualType::new(self.type_void, TypeQuals::CONST);
                 let const_void_ptr = q(self.pointer_to(const_void));
                 let size_t = self.type_long_unsigned;
 
@@ -1017,7 +1016,7 @@ impl TypeRegistry {
                 )
             }
             BuiltinFunctionKind::Memcmp => {
-                let const_void = QualType::new(self.type_void, TypeQualifiers::CONST);
+                let const_void = QualType::new(self.type_void, TypeQuals::CONST);
                 let const_void_ptr = q(self.pointer_to(const_void));
                 let size_t = self.type_long_unsigned;
                 (
@@ -1899,7 +1898,7 @@ impl TypeRegistry {
         })
     }
 
-    pub(crate) fn decay(&mut self, qt: QualType, ptr_qualifiers: TypeQualifiers) -> QualType {
+    pub(crate) fn decay(&mut self, qt: QualType, quals: TypeQuals) -> QualType {
         let ty = qt.ty();
 
         // Bolt ⚡: Optimization: use fast-path helpers to check for array/function types.
@@ -1907,15 +1906,15 @@ impl TypeRegistry {
         if let Some(element_type) = self.get_array_element(ty) {
             // Correct logic: Array of T decays to Pointer to T.
             // Qualifiers on Array apply to the element in the resulting pointer type.
-            let elem_qt = QualType::new(element_type, qt.qualifiers());
+            let elem_qt = QualType::new(element_type, qt.quals());
             let ptr = self.pointer_to(elem_qt);
             // Apply the extracted pointer qualifiers (e.g. from static/const inside [])
-            return QualType::new(ptr, ptr_qualifiers);
+            return QualType::new(ptr, quals);
         }
 
         if self.is_function_type(ty) {
             let ptr = self.pointer_to(qt);
-            return QualType::new(ptr, ptr_qualifiers);
+            return QualType::new(ptr, quals);
         }
 
         qt
@@ -1937,7 +1936,7 @@ impl TypeRegistry {
         while let TypeKind::Alias(inner) = &self.types[ty.index()].kind {
             ty = *inner;
         }
-        QualType::new(ty, qt.qualifiers())
+        QualType::new(ty, qt.quals())
     }
 
     pub(crate) fn canonical_type(&self, ty: TypeRef) -> TypeRef {
@@ -1957,7 +1956,7 @@ impl TypeRegistry {
             return true;
         }
 
-        if a.qualifiers() != b.qualifiers() {
+        if a.quals() != b.quals() {
             return false;
         }
 
@@ -2067,7 +2066,7 @@ impl TypeRegistry {
             return Some(a);
         }
 
-        if a.qualifiers() != b.qualifiers() {
+        if a.quals() != b.quals() {
             return None;
         }
 
@@ -2109,7 +2108,7 @@ impl TypeRegistry {
     fn composite_pointer_type(&mut self, a: QualType, pa: QualType, pb: QualType) -> Option<QualType> {
         let composite_pointee = self.composite_type(pa, pb)?;
         let res_ty = self.pointer_to(composite_pointee);
-        Some(QualType::new(res_ty, a.qualifiers()))
+        Some(QualType::new(res_ty, a.quals()))
     }
 
     fn composite_array_type(
@@ -2150,7 +2149,7 @@ impl TypeRegistry {
         };
 
         let res_ty = self.array_of(composite_elem.ty(), composite_size);
-        Some(QualType::new(res_ty, a.qualifiers()))
+        Some(QualType::new(res_ty, a.quals()))
     }
 
     fn composite_function_type(&mut self, a: QualType, type_a: &Type, type_b: &Type) -> Option<QualType> {
@@ -2214,7 +2213,7 @@ impl TypeRegistry {
             composite_proto,
             noreturn_a || noreturn_b,
         );
-        Some(QualType::new(res_ty, a.qualifiers()))
+        Some(QualType::new(res_ty, a.quals()))
     }
 
     pub(crate) fn is_complete(&self, mut ty: TypeRef) -> bool {
@@ -2290,7 +2289,7 @@ impl TypeRegistry {
             // Bolt ⚡: Direct registry access avoids Cow<Type> allocations.
             match &self.types[ty.index()].kind {
                 TypeKind::Alias(inner) => {
-                    qt = QualType::new(*inner, qt.qualifiers());
+                    qt = QualType::new(*inner, qt.quals());
                 }
                 TypeKind::Record { members, .. } => {
                     return members.iter().any(|m| self.is_const_recursive(m.member_type));
@@ -2389,7 +2388,7 @@ impl TypeRegistry {
     }
 
     pub(crate) fn display_qual_type(&self, qt: QualType) -> String {
-        let quals = qt.qualifiers();
+        let quals = qt.quals();
         let ty_str = self.display_type(qt.ty());
         if quals.is_empty() {
             ty_str

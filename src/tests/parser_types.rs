@@ -32,7 +32,7 @@ fn test_typeof_type() {
     insta::assert_yaml_snapshot!(decl, @r#"
     Declaration:
       specifiers:
-        - "Typeof(PType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) })"
+        - "Typeof(PType { base: 1, declarator: 1, quals: TypeQuals(0x0) })"
       init_declarators:
         - name: x
     "#);

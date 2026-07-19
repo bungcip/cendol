@@ -182,3 +182,4 @@ pub mod semantic_cleanup_coverage;
 pub mod semantic_conversions_uncovered;
 pub mod semantic_types_compatible;
 pub mod test_utils;
+mod guardian_lvalue_assignment;

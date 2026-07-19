@@ -171,6 +171,13 @@ impl<'src> Preprocessor<'src> {
             }
             _ => {}
         }
+
+        let user_label_prefix = match self.target.operating_system {
+            OperatingSystem::Darwin(_) => "_",
+            OperatingSystem::Windows if self.target.pointer_width().ok().map(|w| w.bits()).unwrap_or(32) == 32 => "_",
+            _ => "",
+        };
+        self.define_builtin_macro_lexed("__USER_LABEL_PREFIX__", user_label_prefix);
     }
 
     fn init_builtin_macros_compiler_compat(&mut self) {

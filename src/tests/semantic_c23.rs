@@ -81,6 +81,53 @@ fn test_c23_constexpr() {
         "conflicting storage class",
         CStandard::C23,
     );
+
+    // constexpr conflicting with static/auto/register
+    run_fail_with_message_and_std(
+        r#"
+        int main() {
+            constexpr register int x = 5;
+        }
+        "#,
+        "conflicting storage class",
+        CStandard::C23,
+    );
+
+    run_fail_with_message_and_std(
+        r#"
+        int main() {
+            constexpr auto int y = 5;
+        }
+        "#,
+        "conflicting storage class",
+        CStandard::C23,
+    );
+
+    // File scope conflicts
+    run_fail_with_message_and_std(
+        r#"
+        constexpr auto int y = 5;
+        "#,
+        "conflicting storage class",
+        CStandard::C23,
+    );
+
+    run_fail_with_message_and_std(
+        r#"
+        constexpr register int y = 5;
+        "#,
+        "conflicting storage class",
+        CStandard::C23,
+    );
+
+    // Test thread_local + constexpr
+    run_fail_with_message_and_std(
+        r#"
+        constexpr _Thread_local int z = 5;
+        "#,
+        "conflicting storage class",
+        CStandard::C23,
+    );
 }
 
 #[test]

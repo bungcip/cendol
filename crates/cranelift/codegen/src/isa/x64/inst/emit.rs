@@ -435,10 +435,11 @@ pub(crate) fn emit(
 
                 if !cc_res.status.success() {
                     // Assemble failed (e.g. GCC syntax not expanded)
-                    // We emit a trap instruction instead of panicking, since we can't emit an error here easily.
-                    sink.put1(0x0f);
-                    sink.put1(0x0b); // ud2
-                    return;
+                    eprintln!(
+                        "cendol: error: inline assembly failed to assemble:\n{}",
+                        String::from_utf8_lossy(&cc_res.stderr)
+                    );
+                    std::process::exit(1);
                 }
 
                 Command::new("objcopy")

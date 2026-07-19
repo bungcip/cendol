@@ -20,6 +20,7 @@ use super::{
     ArraySize, BuiltinType, EnumConstant, FunctionParam, RecordMember, Type, TypeKind, TypeLayout, TypeQualifiers,
     TypeRef,
 };
+use crate::ast::StorageClass;
 use crate::semantic::BuiltinFunctionKind;
 
 /// Errors that can occur during type layout computation in the TypeRegistry.
@@ -899,12 +900,12 @@ impl TypeRegistry {
         let p = |ty: TypeRef| FunctionParam {
             param_type: QualType::unqualified(ty),
             name: None,
-            storage: None,
+            storage: StorageClass::None,
         };
         let pq = |qty: QualType| FunctionParam {
             param_type: qty,
             name: None,
-            storage: None,
+            storage: StorageClass::None,
         };
 
         let (params, ret_ty, is_variadic, is_noreturn) = match name {
@@ -2196,7 +2197,11 @@ impl TypeRegistry {
                 composite_params.push(FunctionParam {
                     param_type: cp,
                     name: p_b.name.or(p_a.name),
-                    storage: p_b.storage.or(p_a.storage),
+                    storage: if p_b.storage != StorageClass::None {
+                        p_b.storage
+                    } else {
+                        p_a.storage
+                    },
                 });
             }
             (composite_params, var_a, true)

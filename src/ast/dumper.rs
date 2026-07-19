@@ -184,7 +184,7 @@ impl AstDumper {
             LitVal::Float { suffix, .. } => {
                 write!(f, "LiteralFloat({}, {:?})", literal.as_f64(), suffix)
             }
-            LitVal::String { value, .. } => write!(f, "LiteralString(\"{}\")", value),
+            LitVal::String { value, .. } => write!(f, "LiteralString(\"{}\")", String::from_utf8_lossy(value)),
             LitVal::Char(c, prefix) => {
                 write!(f, "LiteralChar({}, {:?})", c, prefix)
             }
@@ -306,7 +306,7 @@ impl AstDumper {
             PNK::StaticAssert(cond, msg) => {
                 let message_str = match msg.map(|m| &ast.get_node(m).kind) {
                     Some(PNK::Literal(lit)) => match lit.get_val() {
-                        LitVal::String { value, .. } => value,
+                        LitVal::String { value, .. } => String::from_utf8_lossy(&value).into_owned(),
                         _ => "<invalid>".to_string(),
                     },
                     Some(_) => "<invalid>".to_string(),
@@ -441,7 +441,7 @@ impl AstDumper {
             NodeKind::StaticAssert(cond, msg) => {
                 let message_str = match msg.map(|m| ast.get_kind(m)) {
                     Some(NodeKind::Literal(lit)) => match lit.get_val() {
-                        LitVal::String { value, .. } => value,
+                        LitVal::String { value, .. } => String::from_utf8_lossy(&value).into_owned(),
                         _ => "<not-a-string-literal>".to_string(),
                     },
                     Some(_) => "<invalid>".to_string(),

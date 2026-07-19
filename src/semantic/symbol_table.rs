@@ -378,7 +378,7 @@ impl Symbol {
     pub(crate) fn has_linkage(&self) -> bool {
         match &self.kind {
             SymbolKind::Function(_) => true,
-            SymbolKind::Variable(v) => v.is_global || v.storage == Some(StorageClass::Extern) || v.is_thread_local,
+            SymbolKind::Variable(v) => v.is_global || v.storage == StorageClass::Extern || v.is_thread_local,
             _ => false,
         }
     }
@@ -386,17 +386,17 @@ impl Symbol {
     pub(crate) fn has_static_duration(&self) -> bool {
         match &self.kind {
             SymbolKind::Variable(v) => {
-                v.is_global || v.storage == Some(StorageClass::Static) || v.storage == Some(StorageClass::Extern)
+                v.is_global || v.storage == StorageClass::Static || v.storage == StorageClass::Extern
             }
             SymbolKind::Function(_) => true,
             _ => false,
         }
     }
 
-    pub(crate) fn get_function_storage(&self) -> Option<StorageClass> {
+    pub(crate) fn get_function_storage(&self) -> StorageClass {
         match &self.kind {
             SymbolKind::Function(f) => f.storage,
-            _ => None,
+            _ => StorageClass::None,
         }
     }
 
@@ -468,10 +468,10 @@ pub struct Scope {
 
 /// Represents a variable in the symbol table.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Variable {
+pub struct Variable {
     pub is_global: bool,
     pub is_thread_local: bool,
-    pub storage: Option<StorageClass>,
+    pub storage: StorageClass,
     pub initializer: Option<NodeRef>,
     pub alignment: Option<u16>,
     pub cleanup_func: Option<SymbolRef>,
@@ -481,7 +481,7 @@ pub(crate) struct Variable {
 /// Represents a function in the symbol table.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Function {
-    pub storage: Option<StorageClass>,
+    pub storage: StorageClass,
     pub is_noreturn: bool,
     pub param_len: u16,
     pub builtin_kind: Option<BuiltinFunctionKind>,
@@ -750,7 +750,7 @@ impl SymbolTable {
         let var = Variable {
             is_global: self.current_scope_id == ScopeId::GLOBAL,
             is_thread_local: false,
-            storage: None,
+            storage: StorageClass::None,
             initializer: None,
             alignment: None,
             cleanup_func: None,
@@ -776,7 +776,7 @@ impl SymbolTable {
 
         symbol.def_state = match var {
             v if v.initializer.is_some() => DefinitionState::Defined,
-            v if v.storage == Some(StorageClass::Extern) => DefinitionState::DeclaredOnly,
+            v if v.storage == StorageClass::Extern => DefinitionState::DeclaredOnly,
             _ => DefinitionState::Tentative,
         };
 

@@ -5,6 +5,7 @@
 //! and translation units.
 
 use crate::ast::*;
+use crate::lang_options::Visibility;
 use crate::parser::{ParseDiag, ParseError, Token, TokenKind};
 use crate::semantic::ScopeId;
 use crate::source_manager::{SourceLoc, SourceSpan};
@@ -225,7 +226,7 @@ pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Re
         .accept(TokenKind::Comma)
         .map(|_| -> Result<PNodeRef, ParseDiag> {
             let (lit, span) = parser.expect_string_literal()?;
-            Ok(parser.push_node(PNodeKind::Literal(lit), span))
+            Ok(parser.push_node(PNodeKind::Literal(lit.into()), span))
         })
         .transpose()?;
 
@@ -485,17 +486,17 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
                     parser.advance();
                     parser.expect(TokenKind::LeftParen)?;
                     let (lit, _span) = parser.expect_string_literal()?;
-                    let val = match lit.get_val() {
-                        crate::ast::literal::LitVal::String { value, .. } => value,
-                        _ => String::new(),
+                    let val = {
+                        let (value, _) = lit.get_val();
+                        String::from_utf8_lossy(&value).into_owned()
                     };
                     parser.expect(TokenKind::RightParen)?;
                     let vis = match val.as_str() {
-                        "default" => crate::lang_options::Visibility::Default,
-                        "hidden" => crate::lang_options::Visibility::Hidden,
-                        "protected" => crate::lang_options::Visibility::Protected,
-                        "internal" => crate::lang_options::Visibility::Internal,
-                        _ => crate::lang_options::Visibility::Default,
+                        "default" => Visibility::Default,
+                        "hidden" => Visibility::Hidden,
+                        "protected" => Visibility::Protected,
+                        "internal" => Visibility::Internal,
+                        _ => Visibility::Default,
                     };
                     specs.push(DeclSpec::AttributeVisibility(vis));
                 } else if name == parser.keywords.attr_alias || name == parser.keywords.attr_alias_underscore {
@@ -611,7 +612,7 @@ pub(crate) fn parse_c23_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, 
 }
 
 /// Parse GCC __asm__ syntax: __asm__ ( string-literal )
-pub(crate) fn parse_asm(parser: &mut Parser) -> Result<Option<crate::ast::literal::LitRef>, ParseDiag> {
+pub(crate) fn parse_asm(parser: &mut Parser) -> Result<Option<crate::ast::literal::StringLitRef>, ParseDiag> {
     parser.expect(TokenKind::Asm)?;
     parser.expect(TokenKind::LeftParen)?;
     let mut lit_out = None;

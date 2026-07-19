@@ -1,5 +1,5 @@
 use crate::ast::NameId;
-use crate::ast::literal::{CharPrefix, FloatSuffix, IntSuffix, LitRef, LitVal, StrPrefix};
+use crate::ast::literal::{CharPrefix, FloatSuffix, IntSuffix, LitRef, LitVal, StrPrefix, StringLitRef};
 use crate::lang_options::CStandard;
 use crate::parser::Lexer;
 use crate::parser::lexer::TokenKind;
@@ -226,29 +226,36 @@ fn test_string_literals() {
         (
             r#""hello""#,
             LitVal::String {
-                value: "hello".into(),
+                value: b"hello".to_vec(),
                 prefix: StrPrefix::None,
             },
         ),
         (
             r#"L"world""#,
             LitVal::String {
-                value: "world".into(),
+                value: b"world".to_vec(),
                 prefix: StrPrefix::Wide,
             },
         ),
         (
             r#"u8"utf8""#,
             LitVal::String {
-                value: "utf8".into(),
+                value: b"utf8".to_vec(),
                 prefix: StrPrefix::Utf8,
             },
         ),
         (
             r#"u"utf16""#,
             LitVal::String {
-                value: "utf16".into(),
+                value: b"utf16".to_vec(),
                 prefix: StrPrefix::Utf16,
+            },
+        ),
+        (
+            r#""\x80\xFF""#,
+            LitVal::String {
+                value: vec![0x80, 0xFF],
+                prefix: StrPrefix::None,
             },
         ),
     ];
@@ -265,7 +272,7 @@ fn test_lexer_display() {
         Literal(LitRef::from_int(1, IntSuffix::None, 10)),
         Literal(LitRef::from_f64(1.0, FloatSuffix::None)),
         Literal(LitRef::from_char(97, CharPrefix::None)),
-        Literal(LitRef::from_string(std::borrow::Cow::Borrowed("test"), StrPrefix::None)),
+        Literal(StringLitRef::from_bytes(std::borrow::Cow::Borrowed(b"test"), StrPrefix::None).into()),
         Identifier(NameId::new("test")),
         Int,
         Return,

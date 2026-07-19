@@ -218,88 +218,88 @@ fn parse_hex_float_literal(text: &str) -> Option<f64> {
 }
 
 /// Unescape C11 string literal content
-pub(crate) fn unescape<'a>(s: &'a str) -> std::borrow::Cow<'a, str> {
+pub(crate) fn unescape<'a>(s: &'a str) -> std::borrow::Cow<'a, [u8]> {
     if !s.contains('\\') {
-        return std::borrow::Cow::Borrowed(s);
+        return std::borrow::Cow::Borrowed(s.as_bytes());
     }
-    let mut result = String::with_capacity(s.len());
+    let mut result = Vec::with_capacity(s.len());
     unescape_into(s, &mut result);
     std::borrow::Cow::Owned(result)
 }
 
 /// Unescape C11 string literal content into a buffer
-fn unescape_into(s: &str, result: &mut String) {
+fn unescape_into(s: &str, result: &mut Vec<u8>) {
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\\' {
             parse_escape_sequence(&mut chars, result);
         } else {
-            result.push(c);
+            result.extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes());
         }
     }
 }
 
-fn parse_escape_sequence(chars: &mut Peekable<Chars>, result: &mut String) {
+fn parse_escape_sequence(chars: &mut Peekable<Chars>, result: &mut Vec<u8>) {
     match chars.peek() {
         Some('n') => {
             chars.next();
-            result.push('\n');
+            result.push(b'\n');
         }
         Some('t') => {
             chars.next();
-            result.push('\t');
+            result.push(b'\t');
         }
         Some('r') => {
             chars.next();
-            result.push('\r');
+            result.push(b'\r');
         }
         Some('b') => {
             chars.next();
-            result.push('\x08');
+            result.push(0x08);
         }
         Some('f') => {
             chars.next();
-            result.push('\x0C');
+            result.push(0x0C);
         }
         Some('v') => {
             chars.next();
-            result.push('\x0B');
+            result.push(0x0B);
         }
         Some('a') => {
             chars.next();
-            result.push('\x07');
+            result.push(0x07);
         }
         Some('\\') => {
             chars.next();
-            result.push('\\');
+            result.push(b'\\');
         }
         Some('\'') => {
             chars.next();
-            result.push('\'');
+            result.push(b'\'');
         }
         Some('"') => {
             chars.next();
-            result.push('"');
+            result.push(b'"');
         }
         Some('?') => {
             chars.next();
-            result.push('?');
+            result.push(b'?');
         }
         Some('x') => parse_hex_escape(chars, result),
         Some('u') | Some('U') => parse_ucn_escape(chars, result),
         Some(c) if c.is_digit(8) => parse_octal_escape(chars, result),
         Some(c) => {
             // Unknown escape, keep char
-            result.push(*c);
+            result.extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes());
             chars.next();
         }
         None => {
-            result.push('\\');
+            result.push(b'\\');
         }
     }
 }
 
-fn parse_hex_escape(chars: &mut Peekable<Chars>, result: &mut String) {
+fn parse_hex_escape(chars: &mut Peekable<Chars>, result: &mut Vec<u8>) {
     chars.next(); // consume 'x'
     let mut val: u64 = 0;
     let mut has_digits = false;
@@ -316,14 +316,23 @@ fn parse_hex_escape(chars: &mut Peekable<Chars>, result: &mut String) {
 
     if has_digits {
         let char_val = if val > 0x10FFFF { 0xFFFD } else { val as u32 };
-        result.push(char::from_u32(char_val).unwrap_or(char::REPLACEMENT_CHARACTER));
+        if char_val <= 0xFF {
+            result.push(char_val as u8);
+        } else {
+            result.extend_from_slice(
+                char::from_u32(char_val)
+                    .unwrap_or(char::REPLACEMENT_CHARACTER)
+                    .encode_utf8(&mut [0; 4])
+                    .as_bytes(),
+            );
+        }
     } else {
-        result.push('\\');
-        result.push('x');
+        result.push(b'\\');
+        result.push(b'x');
     }
 }
 
-fn parse_octal_escape(chars: &mut Peekable<Chars>, result: &mut String) {
+fn parse_octal_escape(chars: &mut Peekable<Chars>, result: &mut Vec<u8>) {
     let mut val = 0u32;
     for _ in 0..3 {
         if let Some(&ch) = chars.peek() {
@@ -337,10 +346,19 @@ fn parse_octal_escape(chars: &mut Peekable<Chars>, result: &mut String) {
             break;
         }
     }
-    result.push(char::from_u32(val).unwrap_or(char::REPLACEMENT_CHARACTER));
+    if val <= 0xFF {
+        result.push(val as u8);
+    } else {
+        result.extend_from_slice(
+            char::from_u32(val)
+                .unwrap_or(char::REPLACEMENT_CHARACTER)
+                .encode_utf8(&mut [0; 4])
+                .as_bytes(),
+        );
+    }
 }
 
-fn parse_ucn_escape(chars: &mut Peekable<Chars>, result: &mut String) {
+fn parse_ucn_escape(chars: &mut Peekable<Chars>, result: &mut Vec<u8>) {
     let is_u = chars.next() == Some('u'); // consume u/U
     let digits_needed = if is_u { 4 } else { 8 };
     let mut hex_str = String::new();
@@ -360,19 +378,19 @@ fn parse_ucn_escape(chars: &mut Peekable<Chars>, result: &mut String) {
 
     if hex_str.len() != digits_needed {
         // Invalid, preserve as raw
-        result.push('\\');
-        result.push(if is_u { 'u' } else { 'U' });
-        result.push_str(&hex_str);
+        result.push(b'\\');
+        result.push(if is_u { b'u' } else { b'U' });
+        result.extend_from_slice(hex_str.as_bytes());
         return;
     }
 
     if let Some(c) = u32::from_str_radix(&hex_str, 16).ok().and_then(char::from_u32) {
-        result.push(c);
+        result.extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes());
         return;
     }
 
     // Invalid codepoint
-    result.push(char::REPLACEMENT_CHARACTER);
+    result.extend_from_slice(char::REPLACEMENT_CHARACTER.encode_utf8(&mut [0; 4]).as_bytes());
 }
 
 /// Parse a character literal content (e.g. "a", "\n", "\x41") into a codepoint
@@ -388,7 +406,11 @@ pub(crate) fn parse_char_literal(s: &str) -> Option<u32> {
     }
 
     let unescaped = unescape(s);
-    unescaped.chars().next().map(|c| c as u32)
+    if let Ok(s) = std::str::from_utf8(&unescaped) {
+        s.chars().next().map(|c| c as u32)
+    } else {
+        Some(unescaped[0] as u32)
+    }
 }
 
 #[cfg(test)]
@@ -439,43 +461,43 @@ mod tests {
     #[test]
     fn test_escape_sequences() {
         // Test various C escape sequences
-        assert_eq!(unescape(r"\n"), "\n");
-        assert_eq!(unescape(r"\t"), "\t");
-        assert_eq!(unescape(r"\r"), "\r");
-        assert_eq!(unescape(r"\b"), "\x08"); // BS
-        assert_eq!(unescape(r"\f"), "\x0C"); // FF
-        assert_eq!(unescape(r"\v"), "\x0B"); // VT
-        assert_eq!(unescape(r"\a"), "\x07"); // BEL
-        assert_eq!(unescape(r"\\"), "\\");
-        assert_eq!(unescape(r"\'"), "\'");
-        assert_eq!(unescape(r#"\""#), "\"");
-        assert_eq!(unescape(r"\?"), "?");
+        assert_eq!(unescape(r"\n").as_ref(), b"\n");
+        assert_eq!(unescape(r"\t").as_ref(), b"\t");
+        assert_eq!(unescape(r"\r").as_ref(), b"\r");
+        assert_eq!(unescape(r"\b").as_ref(), b"\x08"); // BS
+        assert_eq!(unescape(r"\f").as_ref(), b"\x0C"); // FF
+        assert_eq!(unescape(r"\v").as_ref(), b"\x0B"); // VT
+        assert_eq!(unescape(r"\a").as_ref(), b"\x07"); // BEL
+        assert_eq!(unescape(r"\\").as_ref(), b"\\");
+        assert_eq!(unescape(r"\'").as_ref(), b"\'");
+        assert_eq!(unescape(r#"\""#).as_ref(), b"\"");
+        assert_eq!(unescape(r"\?").as_ref(), b"?");
 
         // Mixed content
-        assert_eq!(unescape(r"Hello\nWorld"), "Hello\nWorld");
+        assert_eq!(unescape(r"Hello\nWorld").as_ref(), b"Hello\nWorld");
     }
 
     #[test]
     fn test_escape_edge_cases() {
         // Unknown escape -> keep char (e.g., \q -> q)
-        assert_eq!(unescape(r"\q"), "q");
+        assert_eq!(unescape(r"\q").as_ref(), b"q");
 
         // Trailing backslash -> keep backslash
-        assert_eq!(unescape(r"foo\"), r"foo\");
+        assert_eq!(unescape(r"foo\").as_ref(), b"foo\\");
 
         // Incomplete UCN -> keep raw
-        assert_eq!(unescape(r"\u123"), r"\u123");
-        assert_eq!(unescape(r"\U12345"), r"\U12345"); // too short for U
+        assert_eq!(unescape(r"\u123").as_ref(), b"\\u123");
+        assert_eq!(unescape(r"\U12345").as_ref(), b"\\U12345"); // too short for U
 
         // Invalid hex digits in UCN -> keep partial raw
-        assert_eq!(unescape(r"\u12z"), r"\u12z");
+        assert_eq!(unescape(r"\u12z").as_ref(), b"\\u12z");
 
         // Invalid codepoint in UCN -> replacement char (U+FFFD)
         // U+D800 is a surrogate, which is invalid in scalar value
-        assert_eq!(unescape(r"\uD800"), "\u{FFFD}");
+        assert_eq!(unescape(r"\uD800").as_ref(), "\u{FFFD}".as_bytes());
 
         // Empty hex escape -> \x
-        assert_eq!(unescape(r"\xz"), r"\xz");
+        assert_eq!(unescape(r"\xz").as_ref(), b"\\xz");
     }
 
     #[test]

@@ -86,6 +86,13 @@ PROJECTS = {
         "build_cmd": ["make", "-j4", "CC={CC}", "MALLOC=libc"],
         "test_cmd": ["src/redis-server", "--version"],
         "clean_cmd": ["make", "clean"],
+    },
+    "cpython": {
+        "download_url": "https://github.com/python/cpython/archive/refs/tags/v3.12.3.zip",
+        "patch_cmd": ["true"],
+        "build_cmd": ["sh", "-c", "CC={CC} ./configure --without-gcc && make CC={CC} -j4"],
+        "test_cmd": ["./python", "-c", "print('hello from cpython built with cendol')"],
+        "clean_cmd": ["make", "clean"],
     }
 }
 

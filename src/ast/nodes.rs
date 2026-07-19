@@ -526,9 +526,11 @@ pub enum TypeQualifier {
 }
 
 // Storage classes
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 #[repr(u8)]
 pub enum StorageClass {
+    #[default]
+    None,
     Typedef,
     Extern,
     Static,
@@ -548,6 +550,7 @@ impl StorageClass {
             StorageClass::Register => "register",
             StorageClass::ThreadLocal => "_Thread_local",
             StorageClass::Constexpr => "constexpr",
+            StorageClass::None => "",
         }
     }
 }

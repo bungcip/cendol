@@ -1084,7 +1084,7 @@ impl Display for TypeQualifiers {
 pub struct FunctionParam {
     pub param_type: QualType,
     pub name: Option<NameId>,
-    pub storage: Option<StorageClass>,
+    pub storage: StorageClass,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]

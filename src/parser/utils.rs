@@ -17,14 +17,14 @@ pub(crate) fn parse_parenthesized_expr(parser: &mut Parser) -> Result<PNodeRef, 
 }
 
 /// Parse a comma-separated list of expressions with specified binding power
-pub(crate) fn parse_expr_list(parser: &mut Parser, binding_power: BindingPower) -> Result<Vec<PNodeRef>, ParseDiag> {
+pub(crate) fn parse_expr_list(parser: &mut Parser, bp: BindingPower) -> Result<Vec<PNodeRef>, ParseDiag> {
     let mut args = Vec::new();
     if parser.is_token(TokenKind::RightParen) {
         return Ok(args);
     }
 
     loop {
-        args.push(parser.parse_expression(binding_power)?);
+        args.push(parser.parse_expression(bp)?);
         if parser.accept(TokenKind::Comma).is_none() {
             break;
         }

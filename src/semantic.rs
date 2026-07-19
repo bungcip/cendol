@@ -21,8 +21,9 @@ pub mod type_registry;
 pub mod types;
 
 pub use analyzer::{Conversion, SemanticInfo, ValueCategory};
-pub(crate) use symbol_table::Variable;
-pub use symbol_table::{BuiltinFunctionKind, DefinitionState, Namespace, ScopeId, SymbolKind, SymbolRef, SymbolTable};
+pub use symbol_table::{
+    BuiltinFunctionKind, DefinitionState, Namespace, ScopeId, SymbolClass, SymbolKind, SymbolRef, SymbolTable, Variable,
+};
 
 pub use type_registry::TypeRegistry;
 pub use types::{

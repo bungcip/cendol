@@ -326,13 +326,13 @@ fn parse_function_parameters(
         let name = declarator.and_then(|d| get_declarator_name(&parser.ast.parsed_types, d));
         let param_parsed_type = build_type(parser, &specifiers, declarator)?;
 
-        let mut storage = None;
+        let mut storage = StorageClass::None;
         let mut is_inline = false;
         let mut is_noreturn = false;
         let mut alignment = None;
         for spec in &specifiers {
             match spec {
-                DeclSpec::StorageClass(sc) => storage = Some(*sc),
+                DeclSpec::StorageClass(sc) => storage = *sc,
                 DeclSpec::FunctionSpec(fs) => match fs {
                     FunctionSpec::Inline => is_inline = true,
                     FunctionSpec::Noreturn => is_noreturn = true,
@@ -408,7 +408,7 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser, allow_bitfield: boo
                 if next.kind == TokenKind::Attribute {
                     peek_past_attribute(parser, 0).is_some_and(|t| t.kind != TokenKind::Star)
                 } else {
-                    parser.is_type_name_start_token(next) || next.kind == TokenKind::RightParen
+                    parser.is_type_name_start_token(&next.kind) || next.kind == TokenKind::RightParen
                 }
             });
 

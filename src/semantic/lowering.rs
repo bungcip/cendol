@@ -13,7 +13,6 @@
 use hashbrown::HashMap;
 use smallvec::{SmallVec, smallvec};
 
-use crate::ast::literal::{LitKind, LitRef, LitVal, StrPrefix};
 use crate::ast::parsed::{PDecl, PFunctionDef, PNodeKind, PNodeRef, TypeSpec};
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, DiagnosticLevel};
@@ -23,10 +22,9 @@ use crate::semantic::errors::{SemanticDiag, SemanticError};
 use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
 use crate::semantic::symbol_table::{DefinitionState, SymbolClass, SymbolTableError};
 use crate::semantic::{
-    ArraySize, BuiltinFunctionKind, BuiltinType, EnumConstant, Namespace, RecordMember, ScopeId, SymbolKind, SymbolRef,
-    SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry, Variable,
+    ArraySize, BuiltinFunctionKind, BuiltinType, EnumConstant, FunctionParam, Namespace, QualType, RecordMember,
+    ScopeId, SymbolKind, SymbolRef, SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry, Variable,
 };
-use crate::semantic::{FunctionParam, QualType};
 use crate::source_manager::{SourceManager, SourceSpan};
 use std::sync::Arc;
 
@@ -582,7 +580,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 /// Information about declaration specifiers after processing
 #[derive(Debug, Clone, Default)]
 pub(crate) struct DeclSpecInfo {
-    pub(crate) storage: Option<StorageClass>,
+    pub(crate) storage: StorageClass,
     pub(crate) is_thread_local: bool,
     pub(crate) is_constexpr: bool,
     pub(crate) qualifiers: TypeQualifiers,
@@ -967,7 +965,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let input_len = e.inputs.len() as u16;
                 let clobber_len = e.clobbers.len() as u16;
 
-                self.ast.push_node(NodeKind::Literal(e.template), span);
+                self.ast.push_node(NodeKind::Literal(e.template.into()), span);
                 for _ in 0..(output_len + input_len + clobber_len) {
                     self.push_dummy(span);
                 }
@@ -977,13 +975,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     let expr = self.visit_expression(op.expr);
                     self.ast.set_kind(
                         NodeRef::new(current_idx).unwrap(),
-                        NodeKind::AsmConstraint(op.constraint, expr),
+                        NodeKind::AsmConstraint(op.constraint.into(), expr),
                     );
                     current_idx += 1;
                 }
                 for &clobber in &e.clobbers {
                     self.ast
-                        .set_kind(NodeRef::new(current_idx).unwrap(), NodeKind::AsmClobber(clobber));
+                        .set_kind(NodeRef::new(current_idx).unwrap(), NodeKind::AsmClobber(clobber.into()));
                     current_idx += 1;
                 }
 
@@ -1212,7 +1210,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         name: NameId,
         new_ty: QualType,
         span: SourceSpan,
-        storage: Option<StorageClass>,
+        storage: StorageClass,
     ) -> QualType {
         let Some((sym, existing_scope)) = self.symbol_table.lookup_symbol_and_scope(name) else {
             return new_ty;
@@ -1226,7 +1224,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let is_global = current_scope == ScopeId::GLOBAL;
         let is_func = new_ty.is_function();
-        let new_has_linkage = is_global || storage == Some(StorageClass::Extern) || is_func;
+        let new_has_linkage = is_global || storage == StorageClass::Extern || is_func;
 
         // Skip if not in same scope and no linkage conflict
         if existing_scope != current_scope && !(new_has_linkage && symbol_has_linkage) {
@@ -1236,11 +1234,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         // Check for linkage conflict (C11 6.2.2)
         if matches!(&symbol.kind, SymbolKind::Variable(_) | SymbolKind::Function { .. }) {
             let existing_is_static = match &symbol.kind {
-                SymbolKind::Variable(v) => v.storage == Some(StorageClass::Static),
-                SymbolKind::Function(f) => f.storage == Some(StorageClass::Static),
+                SymbolKind::Variable(v) => v.storage == StorageClass::Static,
+                SymbolKind::Function(f) => f.storage == StorageClass::Static,
                 _ => false,
             };
-            let new_is_static = storage == Some(StorageClass::Static);
+            let new_is_static = storage == StorageClass::Static;
 
             // static followed by extern/plain is OK and inherits internal linkage.
             // extern/plain followed by static is an error.
@@ -1309,10 +1307,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
         is_global: bool,
     ) {
-        if let Some(specifier) = spec_info.storage.filter(|s| {
-            matches!(s, StorageClass::Auto | StorageClass::Register) || (*s == StorageClass::Static && !is_global)
-        }) {
-            self.report_error(span, SemanticError::InvalidStorageClassForFunction { name, specifier });
+        if matches!(spec_info.storage, StorageClass::Auto | StorageClass::Register)
+            || (spec_info.storage == StorageClass::Static && !is_global)
+        {
+            self.report_error(
+                span,
+                SemanticError::InvalidStorageClassForFunction {
+                    name,
+                    specifier: spec_info.storage,
+                },
+            );
         }
 
         if spec_info.is_thread_local {
@@ -1328,7 +1332,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let name_len = func_name.as_str().len();
 
         // Create string literal for initializer
-        let init_literal = LitRef::from_string(std::borrow::Cow::Borrowed(func_name.as_str()), StrPrefix::None);
+        let init_literal = StringLitRef::from_bytes(
+            std::borrow::Cow::Borrowed(func_name.as_str().as_bytes()),
+            StrPrefix::None,
+        )
+        .into();
         let init_node = self.push_dummy(span);
         self.ast.set_kind(init_node, NodeKind::Literal(init_literal));
 
@@ -1340,7 +1348,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let qt = QualType::new(array_type, TypeQualifiers::CONST);
         let _ = self.registry.ensure_layout(array_type);
 
-        let storage = Some(StorageClass::Static);
+        let storage = StorageClass::Static;
         let is_global = self.symbol_table.current_scope() == ScopeId::GLOBAL;
 
         let magic_names = ["__func__", "__FUNCTION__", "__PRETTY_FUNCTION__"];
@@ -1746,7 +1754,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if spec_info.alias.is_some() {
             let is_global = self.symbol_table.current_scope() == ScopeId::GLOBAL;
             let is_definition = !final_ty.is_function()
-                && (init.initializer.is_some() || (spec_info.storage != Some(StorageClass::Extern) && is_global));
+                && (init.initializer.is_some() || (spec_info.storage != StorageClass::Extern && is_global));
 
             if is_definition {
                 self.report_error(span, SemanticError::AliasIsDefinition { name });
@@ -1884,7 +1892,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             && (is_global
                 || matches!(
                     storage,
-                    Some(StorageClass::Extern | StorageClass::Static | StorageClass::ThreadLocal)
+                    StorageClass::Extern | StorageClass::Static | StorageClass::ThreadLocal
                 ))
         {
             self.report_warning(span, SemanticError::AttributeCleanupOnNonLocal);
@@ -1926,7 +1934,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         if is_global {
-            if let Some(st @ (StorageClass::Auto | StorageClass::Register)) = storage {
+            if let st @ (StorageClass::Auto | StorageClass::Register) = storage {
                 self.report_error(
                     span,
                     SemanticError::FileScopeSpecifiesStorageClass {
@@ -1935,25 +1943,23 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     },
                 );
             }
-        } else if spec_info.is_thread_local && !matches!(storage, Some(StorageClass::Static | StorageClass::Extern)) {
+        } else if spec_info.is_thread_local && !matches!(storage, StorageClass::Static | StorageClass::Extern) {
             self.report_error(span, SemanticError::ThreadLocalBlockScopeRequiresStaticOrExtern);
         }
 
         if self.registry.is_variably_modified(qt.ty()) {
             if spec_info.is_thread_local {
                 self.report_error(span, SemanticError::VmThreadStorage);
-            } else if (is_global || storage == Some(StorageClass::Static)) && qt.is_array() {
+            } else if (is_global || storage == StorageClass::Static) && qt.is_array() {
                 self.report_error(span, SemanticError::VmStaticStorage);
             }
 
-            if (is_global && storage != Some(StorageClass::Static))
-                || (!is_global && storage == Some(StorageClass::Extern))
-            {
+            if (is_global && storage != StorageClass::Static) || (!is_global && storage == StorageClass::Extern) {
                 self.report_error(span, SemanticError::VmHasLinkage);
             }
         }
 
-        if storage == Some(StorageClass::Register) && spec_info.alignment.is_some() {
+        if storage == StorageClass::Register && spec_info.alignment.is_some() {
             self.report_error(
                 span,
                 SemanticError::AlignmentNotAllowed {
@@ -2018,7 +2024,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let init_expr = init.map(|n| {
             let ie = self.visit_expression(n);
-            if (is_global || storage == Some(StorageClass::Static)) && !self.is_constant_expr(ie) {
+            if (is_global || storage == StorageClass::Static) && !self.is_constant_expr(ie) {
                 self.report_error(self.ast.get_span(ie), SemanticError::NonConstantInitializer);
             }
             if is_new_or_redecl {
@@ -2062,7 +2068,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
         }
 
-        let has_no_linkage = !is_global && storage != Some(StorageClass::Extern);
+        let has_no_linkage = !is_global && storage != StorageClass::Extern;
         if has_no_linkage && !self.registry.is_complete(qt.ty()) {
             self.report_error(span, SemanticError::IncompleteType { ty: qt });
         }
@@ -2379,7 +2385,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 name,
                 func_ty,
                 crate::semantic::symbol_table::Function {
-                    storage: Some(StorageClass::Extern),
+                    storage: StorageClass::Extern,
                     is_noreturn: false,
                     param_len,
                     builtin_kind: Some(kind),
@@ -3074,14 +3080,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         DeclSpec::FunctionSpec(FunctionSpec::Inline) => info.is_inline = true,
                         DeclSpec::AttributeVisibility(vis) => info.visibility = Some(*vis),
                         DeclSpec::AttributeAlias(lit) => {
-                            if let crate::ast::literal::LitVal::String { value, .. } = lit.get_val() {
-                                info.alias = Some(NameId::new(&value));
-                            }
+                            let (value, _) = lit.get_val();
+                            info.alias = Some(NameId::new(&String::from_utf8_lossy(&value)));
                         }
                         DeclSpec::AttributeAsm(lit) => {
-                            if let crate::ast::literal::LitVal::String { value, .. } = lit.get_val() {
-                                info.asm_label = Some(NameId::new(&value));
-                            }
+                            let (value, _) = lit.get_val();
+                            info.asm_label = Some(NameId::new(&String::from_utf8_lossy(&value)));
                         }
                         DeclSpec::AttributeMode(mode) => {
                             info.mode = Some(*mode);
@@ -3505,13 +3509,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn validate_specifier_combinations(&mut self, info: &DeclSpecInfo, span: SourceSpan) {
         let storage_conflict = if info.is_typedef {
-            info.storage.is_some_and(|s| s != StorageClass::Typedef) || info.is_thread_local || info.is_constexpr
+            (info.storage != StorageClass::None && info.storage != StorageClass::Typedef)
+                || info.is_thread_local
+                || info.is_constexpr
         } else if info.is_thread_local {
-            info.storage
-                .is_some_and(|s| s != StorageClass::Static && s != StorageClass::Extern)
+            info.storage != StorageClass::None
+                && info.storage != StorageClass::Static
+                && info.storage != StorageClass::Extern
         } else if info.is_constexpr {
-            info.storage
-                .is_some_and(|s| s != StorageClass::Static && s != StorageClass::Auto && s != StorageClass::Register)
+            info.storage != StorageClass::None
+                && info.storage != StorageClass::Static
+                && info.storage != StorageClass::Auto
+                && info.storage != StorageClass::Register
                 || info.is_thread_local
         } else {
             false
@@ -3525,7 +3534,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(span, SemanticError::ConflictingStorageClasses);
         }
 
-        if info.alignment.is_some() && info.storage == Some(StorageClass::Register) {
+        if info.alignment.is_some() && info.storage == StorageClass::Register {
             self.report_error(
                 span,
                 SemanticError::AlignmentNotAllowed {
@@ -3581,15 +3590,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
                 DeclSpec::StorageClass(StorageClass::Auto) => {
                     info.has_auto = true;
-                    if self.lang_opts.c_standard < CStandard::C23 && info.storage.replace(StorageClass::Auto).is_some()
-                    {
+                    if self.lang_opts.c_standard < CStandard::C23 && info.storage != StorageClass::None {
                         self.report_error(span, SemanticError::ConflictingStorageClasses);
                     }
+                    info.storage = StorageClass::Auto;
                 }
                 DeclSpec::StorageClass(sc) => {
-                    if info.storage.replace(*sc).is_some() {
+                    if info.storage != StorageClass::None {
                         self.report_error(span, SemanticError::ConflictingStorageClasses);
                     }
+                    info.storage = *sc;
                     info.is_typedef |= *sc == StorageClass::Typedef;
                 }
                 DeclSpec::TypeQualifier(tq) => {
@@ -3621,14 +3631,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 DeclSpec::AttributeCleanup(node_ref) => info.cleanup_func = Some(*node_ref),
                 DeclSpec::AttributeVisibility(vis) => info.visibility = Some(*vis),
                 DeclSpec::AttributeAlias(lit) => {
-                    if let crate::ast::literal::LitVal::String { value, .. } = lit.get_val() {
-                        info.alias = Some(NameId::new(&value));
-                    }
+                    let (value, _) = lit.get_val();
+                    info.alias = Some(NameId::new(&String::from_utf8_lossy(&value)));
                 }
                 DeclSpec::AttributeAsm(lit) => {
-                    if let crate::ast::literal::LitVal::String { value, .. } = lit.get_val() {
-                        info.asm_label = Some(NameId::new(&value));
-                    }
+                    let (value, _) = lit.get_val();
+                    info.asm_label = Some(NameId::new(&String::from_utf8_lossy(&value)));
                 }
             }
         }
@@ -3724,8 +3732,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
 
             match param.storage {
-                Some(StorageClass::ThreadLocal) => self.report_error(span, SemanticError::ThreadLocalNotAllowed),
-                Some(sc) if sc != StorageClass::Register => {
+                StorageClass::ThreadLocal => self.report_error(span, SemanticError::ThreadLocalNotAllowed),
+                sc if sc != StorageClass::None && sc != StorageClass::Register => {
                     self.report_error(span, SemanticError::InvalidStorageClassForParameter)
                 }
                 _ => {}
@@ -3814,7 +3822,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             );
         }
 
-        if spec_info.storage.is_some() {
+        if spec_info.storage != StorageClass::None {
             self.report_error(span, SemanticError::ConflictingStorageClasses);
         }
 

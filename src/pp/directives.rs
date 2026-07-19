@@ -119,7 +119,10 @@ impl<'src> Preprocessor<'src> {
 
     /// Destringize a string literal (remove quotes and handle escapes)
     pub(crate) fn destringize<'a>(&self, full_str: &'a str) -> std::borrow::Cow<'a, str> {
-        crate::ast::literal_parsing::unescape(&full_str[1..full_str.len() - 1])
+        std::borrow::Cow::Owned(
+            String::from_utf8_lossy(&crate::ast::literal_parsing::unescape(&full_str[1..full_str.len() - 1]))
+                .into_owned(),
+        )
     }
 
     /// Tokenize the content of a pragma directive

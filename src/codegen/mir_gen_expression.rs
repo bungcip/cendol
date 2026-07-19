@@ -522,7 +522,9 @@ impl<'a> MirGen<'a> {
                     ConstValueKind::StructLiteral(vec![(0, zero), (1, imag)])
                 }
                 lit @ LitVal::Float { .. } => ConstValueKind::Float(lit.as_f64()),
-                LitVal::String { value, prefix } => return Some(self.visit_literal_string(value, *prefix, ty)),
+                LitVal::String { value, prefix } => {
+                    return Some(self.visit_literal_string(value.as_slice(), *prefix, ty));
+                }
             };
 
             Some(Operand::Constant(self.create_constant(mir_ty, const_kind)))
@@ -620,7 +622,7 @@ impl<'a> MirGen<'a> {
 
         match &entry.kind {
             SymbolKind::Variable(v) => {
-                let is_static_local = v.storage == Some(StorageClass::Static);
+                let is_static_local = v.storage == StorageClass::Static;
                 if v.is_global || is_static_local {
                     let global_id = self.get_or_lower_global(sym);
                     Operand::Copy(Box::new(Place::Global(global_id)))
@@ -1121,7 +1123,7 @@ impl<'a> MirGen<'a> {
     fn visit_function_call(&mut self, call_expr: &ast::nodes::CallExpr, dest_place: Option<Place>) {
         let callee = self.visit_expression(call_expr.callee, true);
 
-        let arg_operands = self.visit_function_call_args(call_expr);
+        let mut arg_operands = self.visit_function_call_args(call_expr);
 
         let call_target = if let Operand::Constant(const_id) = callee {
             if let ConstValue {
@@ -1135,8 +1137,39 @@ impl<'a> MirGen<'a> {
                 CallTarget::Indirect(Operand::Constant(const_id))
             }
         } else {
-            CallTarget::Indirect(callee)
+            CallTarget::Indirect(callee.clone())
         };
+
+        let expected_types = match &call_target {
+            CallTarget::Direct(func_id) => {
+                let func = self.mb.get_function(*func_id);
+                let param_types: Vec<TypeId> = func.params.iter().map(|p| self.mb.get_local(*p).type_id).collect();
+                Some(param_types)
+            }
+            CallTarget::Indirect(op) => {
+                let op_ty = self.get_operand_type(op);
+                if let MirType::Pointer { pointee } = self.mb.get_type(op_ty) {
+                    if let MirType::Function { params, .. } = self.mb.get_type(*pointee) {
+                        Some(params.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+        };
+
+        if let Some(expected) = expected_types {
+            for (i, arg) in arg_operands.iter_mut().enumerate() {
+                if let Some(&expected_ty) = expected.get(i) {
+                    let actual_ty = self.get_operand_type(arg);
+                    if actual_ty != expected_ty {
+                        *arg = Operand::Cast(expected_ty, Box::new(arg.clone()));
+                    }
+                }
+            }
+        }
 
         let stmt = MirStmt::Call {
             target: call_target,

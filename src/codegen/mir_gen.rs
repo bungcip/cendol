@@ -653,7 +653,7 @@ impl<'a> MirGen<'a> {
         };
 
         // Treat static locals as globals for MIR generation purposes (lifetime/storage)
-        let is_global = self.func_state.is_none() || is_global_sym || storage == Some(StorageClass::Static);
+        let is_global = self.func_state.is_none() || is_global_sym || storage == StorageClass::Static;
 
         if is_global {
             self.visit_global_symbol(sym, mir_type_id);
@@ -2429,12 +2429,12 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn calculate_linkage(&self, storage: Option<StorageClass>, def_state: DefinitionState) -> MirLinkage {
+    fn calculate_linkage(&self, storage: StorageClass, def_state: DefinitionState) -> MirLinkage {
         if def_state == DefinitionState::DeclaredOnly {
             return MirLinkage::Import;
         }
         match storage {
-            Some(StorageClass::Static) => MirLinkage::Internal,
+            StorageClass::Static => MirLinkage::Internal,
             _ => MirLinkage::External,
         }
     }

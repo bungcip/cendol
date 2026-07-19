@@ -2140,24 +2140,29 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     let va_arg_type_size = lower_type_size(mir_type, ctx.mir);
                     let align = lower_type_alignment(mir_type, ctx.mir);
 
-                    // GP arg check: if gp_offset < 48, fetch from reg_save_area + gp_offset
-                    //               else fetch from overflow_arg_area
+                    let fp_offset = ctx.builder.ins().load(types::I32, MemFlagsData::new(), ap_addr, 4);
+
                     let gp_block = ctx.builder.create_block();
+                    let fp_block = ctx.builder.create_block();
                     let overflow_block = ctx.builder.create_block();
                     let join_block = ctx.builder.create_block();
 
-                    // Temporary stack slot to store the resulting address (avoiding BlockArg issues)
                     let addr_slot =
                         ctx.builder
                             .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 8));
-                    // Check if the type can EVER be in the GP area (SysV rules)
-                    // Memory class (large aggregates or long double) - MUST match lower_abi_param
-                    // For internal hack, everything is in I64 slots (which we treat as GP area here)
+
                     let is_memory_class = va_arg_type_size > 16 || matches!(mir_type, MirType::F80 | MirType::F128);
                     let can_be_in_gp = !is_memory_class && (!mir_type.is_aggregate() || va_arg_type_size <= 16);
                     let is_fp = matches!(mir_type, MirType::F32 | MirType::F64);
 
-                    if can_be_in_gp && !is_fp {
+                    if is_fp {
+                        let fp_threshold = ctx.builder.ins().iconst(types::I32, 176); // 48 + 8*16
+                        let is_overflow =
+                            ctx.builder
+                                .ins()
+                                .icmp(IntCC::UnsignedGreaterThanOrEqual, fp_offset, fp_threshold);
+                        ctx.builder.ins().brif(is_overflow, overflow_block, &[], fp_block, &[]);
+                    } else if can_be_in_gp {
                         let gp_threshold = ctx.builder.ins().iconst(types::I32, 48);
                         let is_overflow =
                             ctx.builder
@@ -2168,9 +2173,8 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                         ctx.builder.ins().jump(overflow_block, &[]);
                     }
 
-                    // Path A: GP registers (through spill slot)
+                    // Path A1: GP registers
                     ctx.builder.switch_to_block(gp_block);
-                    // Align GP offset if needed (though usually 8 is enough for GPRs)
                     let aligned_gp = if align > 8 {
                         let align_mask = ctx.builder.ins().iconst(types::I32, align as i64 - 1);
                         let added = ctx.builder.ins().iadd(gp_offset, align_mask);
@@ -2188,12 +2192,17 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     let next_gp_increment = ctx.builder.ins().iconst(types::I32, needed_gp as i64);
                     let next_gp = ctx.builder.ins().iadd(aligned_gp, next_gp_increment);
                     ctx.builder.ins().store(MemFlagsData::new(), next_gp, ap_addr, 0);
+                    ctx.builder.ins().jump(join_block, &[]);
 
-                    // Sync overflow_area to point to the next slot (just in case)
-                    let next_gp_64 = ctx.builder.ins().uextend(types::I64, next_gp);
-                    let overflow_ptr = ctx.builder.ins().iadd(reg_save_area, next_gp_64);
-                    ctx.builder.ins().store(MemFlagsData::new(), overflow_ptr, ap_addr, 8);
+                    // Path A2: FP registers
+                    ctx.builder.switch_to_block(fp_block);
+                    let offset_64_fp = ctx.builder.ins().uextend(types::I64, fp_offset);
+                    let fp_addr = ctx.builder.ins().iadd(reg_save_area, offset_64_fp);
+                    ctx.builder.ins().stack_store(fp_addr, addr_slot, 0);
 
+                    let next_fp_increment = ctx.builder.ins().iconst(types::I32, 16);
+                    let next_fp = ctx.builder.ins().iadd(fp_offset, next_fp_increment);
+                    ctx.builder.ins().store(MemFlagsData::new(), next_fp, ap_addr, 4);
                     ctx.builder.ins().jump(join_block, &[]);
 
                     // Path B: overflow area
@@ -2219,6 +2228,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     ctx.builder.ins().jump(join_block, &[]);
 
                     ctx.builder.seal_block(gp_block);
+                    ctx.builder.seal_block(fp_block);
                     ctx.builder.seal_block(overflow_block);
                     ctx.builder.switch_to_block(join_block);
                     ctx.builder.seal_block(join_block);
@@ -2379,7 +2389,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             let mut output_values = Vec::new();
             for (constraint, place) in outputs {
                 let constraint_str = match constraint.get_val() {
-                    LitVal::String { value, .. } => value,
+                    LitVal::String { value, .. } => String::from_utf8_lossy(&value).into_owned(),
                     _ => unimplemented!(),
                 };
                 let asm_constraint = match constraint_str.as_str() {
@@ -2403,7 +2413,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             let mut input_values = Vec::new();
             for (constraint, operand) in inputs {
                 let constraint_str = match constraint.get_val() {
-                    LitVal::String { value, .. } => value,
+                    LitVal::String { value, .. } => String::from_utf8_lossy(&value).into_owned(),
                     _ => unimplemented!(),
                 };
                 let asm_constraint = match constraint_str.as_str() {
@@ -2428,14 +2438,14 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             let mut clobber_strings = Vec::new();
             for clobber in clobbers {
                 let clobber_str = match clobber.get_val() {
-                    LitVal::String { value, .. } => value,
+                    LitVal::String { value, .. } => String::from_utf8_lossy(&value).into_owned(),
                     _ => unimplemented!(),
                 };
                 clobber_strings.push(clobber_str);
             }
 
             let template_str = match template.get_val() {
-                LitVal::String { value, .. } => value,
+                LitVal::String { value, .. } => String::from_utf8_lossy(&value).into_owned(),
                 _ => unimplemented!("Non-string asm template"),
             };
 

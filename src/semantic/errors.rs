@@ -32,7 +32,7 @@ impl SemanticDiag {
             | SemanticError::PointerAssignmentDiscardsQualifiers { .. }
             | SemanticError::ReturnLocalAddress { .. }
             | SemanticError::ImplicitConstantConversion { .. }
-            | SemanticError::SwitchCaseOverflow { .. }
+            | SemanticError::SwitchCaseOverflow(..)
             | SemanticError::AddressOfArrayAlwaysTrue { .. }
             | SemanticError::EnumeratorValueNotRepresentable { target_ty: None, .. }
             | SemanticError::AlignOfExpression
@@ -292,10 +292,7 @@ pub enum SemanticError {
     },
     FieldNameNotInStructOrUnionInitializer,
     ArrayIndexInNonArrayInitializer,
-    ArrayIndexExceedsBounds {
-        index: i64,
-        bounds: i64,
-    },
+    ArrayIndexExceedsBounds(i64 /*index */, i64 /*bounds */),
     NonConstantCaseValue,
     NonConstantDesignator,
     InvalidSwitchCondition {
@@ -358,10 +355,7 @@ pub enum SemanticError {
         from_val: i64,
         to_val: i64,
     },
-    SwitchCaseOverflow {
-        from_val: i64,
-        to_val: i64,
-    },
+    SwitchCaseOverflow(/*from_val: */ i64, /*to_val: */ i64),
     ExpectedScalarType {
         found: QualType,
     },
@@ -552,7 +546,7 @@ impl DiagDisplay for SemanticError {
             SemanticError::ArrayIndexInNonArrayInitializer => {
                 write!(f, "array index in non-array initializer")
             }
-            SemanticError::ArrayIndexExceedsBounds { index, bounds } => {
+            SemanticError::ArrayIndexExceedsBounds(index, bounds) => {
                 write!(
                     f,
                     "array index in initializer exceeds array bounds (index {} >= bounds {})",
@@ -923,7 +917,7 @@ impl DiagDisplay for SemanticError {
                 from_val,
                 to_val
             ),
-            SemanticError::SwitchCaseOverflow { from_val, to_val } => write!(
+            SemanticError::SwitchCaseOverflow(from_val, to_val) => write!(
                 f,
                 "overflow converting case value to switch condition type ({} to {})",
                 from_val, to_val

@@ -4,11 +4,9 @@
 //! It orchestrates the parsing process by delegating to specialized sub-modules for
 //! different language constructs.
 
-use crate::ast::literal::{LitKind, LitRef};
 use crate::ast::*;
 use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::{CStandard, LangOptions};
-
 use crate::source_manager::SourceSpan;
 
 pub mod declarations;
@@ -29,7 +27,7 @@ pub(crate) use expressions::BindingPower;
 use expressions::parse_expression;
 pub(crate) use lexer::{Lexer, Token, TokenKind};
 
-use crate::semantic::{ScopeId, SymbolTable};
+use crate::semantic::{ScopeId, SymbolClass, SymbolTable};
 
 #[derive(Clone)]
 pub(crate) struct ParserState {
@@ -335,11 +333,8 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     }
 
     /// Main expression parsing using Pratt algorithm
-    pub(super) fn parse_expression(
-        &mut self,
-        min_binding_power: expressions::BindingPower,
-    ) -> Result<PNodeRef, ParseDiag> {
-        parse_expression(self, min_binding_power)
+    pub(super) fn parse_expression(&mut self, min_bp: BindingPower) -> Result<PNodeRef, ParseDiag> {
+        parse_expression(self, min_bp)
     }
 
     /// Parse expression with minimum binding power
@@ -366,19 +361,19 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     }
 
     fn is_type_name(&self, symbol: NameId) -> bool {
-        if let Some(sym_ref) = self.symbol_table.lookup_symbol(symbol) {
-            sym_ref.class() == crate::semantic::symbol_table::SymbolClass::Typedef
+        if let Some(sym) = self.symbol_table.lookup_symbol(symbol) {
+            sym.class() == SymbolClass::Typedef
         } else {
             false
         }
     }
 
     /// Check if the given token can start a type name.
-    pub(super) fn is_type_name_start_token(&self, token: Token) -> bool {
-        match token.kind {
+    pub(super) fn is_type_name_start_token(&self, kind: &TokenKind) -> bool {
+        match kind {
             TokenKind::Attribute => true,
-            TokenKind::Identifier(symbol) => self.is_type_name(symbol),
-            kind => kind.is_type_specifier() || kind.is_type_qualifier(),
+            TokenKind::Identifier(symbol) => self.is_type_name(*symbol),
+            _ => kind.is_type_specifier() || kind.is_type_qualifier(),
         }
     }
 
@@ -389,7 +384,7 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
             return true;
         }
         self.try_current_token()
-            .is_some_and(|token| self.is_type_name_start_token(token))
+            .is_some_and(|token| self.is_type_name_start_token(&token.kind))
     }
 
     /// parse and accept an identifier name
@@ -419,13 +414,13 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     }
 
     /// expect and accept a string literal, returning the literal or error
-    fn expect_string_literal(&mut self) -> Result<(LitRef, SourceSpan), ParseDiag> {
+    fn expect_string_literal(&mut self) -> Result<(StringLitRef, SourceSpan), ParseDiag> {
         let token = self.current_token()?;
         if let TokenKind::Literal(lit) = token.kind
             && lit.kind() == LitKind::String
         {
             self.advance();
-            Ok((lit, token.span))
+            Ok((StringLitRef::new(lit), token.span))
         } else {
             Err(ParseDiag {
                 span: token.span,

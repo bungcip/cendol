@@ -22,7 +22,7 @@ pub(crate) fn get_string_builtin_type(prefix: StrPrefix) -> BuiltinType {
 
 pub use crate::ast::literal::get_string_literal_size;
 
-pub(crate) fn lower_string_literal(content: &str, prefix: StrPrefix) -> StringLiteralValue {
+pub(crate) fn lower_string_literal(content: &[u8], prefix: StrPrefix) -> StringLiteralValue {
     let builtin_type = get_string_builtin_type(prefix);
     let size = get_string_literal_size(content, prefix);
 
@@ -30,13 +30,15 @@ pub(crate) fn lower_string_literal(content: &str, prefix: StrPrefix) -> StringLi
     let mut values = Vec::with_capacity(size);
     match prefix {
         StrPrefix::None | StrPrefix::Utf8 => {
-            values.extend(content.bytes().map(|b| b as i64));
+            values.extend(content.iter().map(|&b| b as i64));
         }
         StrPrefix::Wide | StrPrefix::Utf32 => {
-            values.extend(content.chars().map(|c| c as u32 as i64));
+            let s = String::from_utf8_lossy(content);
+            values.extend(s.chars().map(|c| c as u32 as i64));
         }
         StrPrefix::Utf16 => {
-            for c in content.chars() {
+            let s = String::from_utf8_lossy(content);
+            for c in s.chars() {
                 let mut buf = [0; 2];
                 values.extend(c.encode_utf16(&mut buf).iter().map(|&u| u as i64));
             }

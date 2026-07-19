@@ -5,7 +5,6 @@
 //! These functions ensure that no semantic types (TypeRef) are created
 //! during parsing, only syntactic types (ParsedType).
 
-use crate::ast::literal::LitVal;
 use crate::ast::*;
 use crate::parser::declarations::parse_decl_specs;
 use crate::parser::declarator::{get_declarator_name, is_abstract_declarator_start, parse_abstract_declarator};

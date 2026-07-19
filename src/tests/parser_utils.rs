@@ -168,18 +168,12 @@ fn resolve_specs(ast: &PAst, specifiers: &[DeclSpec]) -> Vec<String> {
             DeclSpec::AttributeTransparentUnion => "transparent_union".to_string(),
             DeclSpec::AttributeVisibility(vis) => format!("visibility({:?})", vis),
             DeclSpec::AttributeAlias(lit) => {
-                if let crate::ast::literal::LitVal::String { value, .. } = lit.get_val() {
-                    format!("alias(\"{}\")", value)
-                } else {
-                    "alias(...)".to_string()
-                }
+                let (value, _) = lit.get_val();
+                format!("alias(\"{}\")", String::from_utf8_lossy(&value))
             }
             DeclSpec::AttributeAsm(lit) => {
-                if let crate::ast::literal::LitVal::String { value, .. } = lit.get_val() {
-                    format!("asm(\"{}\")", value)
-                } else {
-                    "asm(...)".to_string()
-                }
+                let (value, _) = lit.get_val();
+                format!("asm(\"{}\")", String::from_utf8_lossy(&value))
             }
             DeclSpec::AttributeMode(mode) => {
                 format!("mode({})", mode.as_str())
@@ -195,7 +189,9 @@ pub(crate) fn resolve_node(ast: &PAst, node: PNodeRef) -> ResolvedNodeKind {
         PNodeKind::Literal(lit) => match lit.get_val() {
             LitVal::Int { value, .. } => ResolvedNodeKind::LiteralInt(value),
             lit @ LitVal::Float { .. } => ResolvedNodeKind::LiteralFloat(lit.as_f64()),
-            LitVal::String { value, .. } => ResolvedNodeKind::LiteralString(value),
+            LitVal::String { value, .. } => {
+                ResolvedNodeKind::LiteralString(String::from_utf8_lossy(&value).to_string())
+            }
             LitVal::Char(c, prefix) => ResolvedNodeKind::LiteralChar(c as u64, prefix),
             LitVal::Nullptr => ResolvedNodeKind::LiteralNullptr,
             LitVal::True => ResolvedNodeKind::LiteralTrue,
@@ -379,7 +375,7 @@ pub(crate) fn resolve_node(ast: &PAst, node: PNodeRef) -> ResolvedNodeKind {
             let message = msg.map(|m| {
                 if let PNodeKind::Literal(lit) = &ast.get_node(m).kind {
                     if let LitVal::String { value, .. } = lit.get_val() {
-                        value.clone()
+                        String::from_utf8_lossy(&value).to_string()
                     } else {
                         "<invalid>".to_string()
                     }

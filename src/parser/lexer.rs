@@ -1,6 +1,8 @@
-use crate::ast::literal::{CharPrefix, FloatSuffix, IntSuffix, LitRef, LitVal, StrPrefix};
+use crate::ast::literal::{CharPrefix, FloatSuffix, IntSuffix, LitRef, LitVal, StrPrefix, StringLitRef};
 use crate::ast::literal_parsing;
-use crate::ast::{FunctionSpec, PragmaPackKind, PragmaVisibilityKind, StorageClass, StringId, TypeQualifier};
+use crate::ast::{
+    BinaryOp, FunctionSpec, PragmaPackKind, PragmaVisibilityKind, StorageClass, StringId, TypeQualifier, UnaryOp,
+};
 use crate::lang_options::CStandard;
 use crate::pp::error::PPDiag;
 use crate::pp::{PPToken, PPTokenKind, Preprocessor};
@@ -243,6 +245,62 @@ impl TokenKind {
         }
     }
 
+    /// Convert a token to its prefix unary operator, if applicable.
+    pub(crate) fn as_prefix_unary_op(&self) -> Option<UnaryOp> {
+        use TokenKind::*;
+        match self {
+            Plus => Some(UnaryOp::Plus),
+            Minus => Some(UnaryOp::Minus),
+            Not => Some(UnaryOp::LogicNot),
+            Tilde => Some(UnaryOp::BitNot),
+            Increment => Some(UnaryOp::PreIncrement),
+            Decrement => Some(UnaryOp::PreDecrement),
+            Star => Some(UnaryOp::Deref),
+            And => Some(UnaryOp::AddrOf),
+            Real => Some(UnaryOp::Real),
+            Imag => Some(UnaryOp::Imag),
+            _ => None,
+        }
+    }
+
+    /// Convert a token to its binary/assignment operator, if applicable.
+    pub(crate) fn as_binary_op(&self) -> Option<BinaryOp> {
+        use TokenKind::*;
+        match self {
+            Plus => Some(BinaryOp::Add),
+            Minus => Some(BinaryOp::Sub),
+            Star => Some(BinaryOp::Mul),
+            Slash => Some(BinaryOp::Div),
+            Percent => Some(BinaryOp::Mod),
+            Equal => Some(BinaryOp::Equal),
+            NotEqual => Some(BinaryOp::NotEqual),
+            Less => Some(BinaryOp::Less),
+            Greater => Some(BinaryOp::Greater),
+            LessEqual => Some(BinaryOp::LessEqual),
+            GreaterEqual => Some(BinaryOp::GreaterEqual),
+            And => Some(BinaryOp::BitAnd),
+            Or => Some(BinaryOp::BitOr),
+            Xor => Some(BinaryOp::BitXor),
+            LeftShift => Some(BinaryOp::LShift),
+            RightShift => Some(BinaryOp::RShift),
+            LogicAnd => Some(BinaryOp::LogicAnd),
+            LogicOr => Some(BinaryOp::LogicOr),
+            Assign => Some(BinaryOp::Assign),
+            PlusAssign => Some(BinaryOp::AssignAdd),
+            MinusAssign => Some(BinaryOp::AssignSub),
+            StarAssign => Some(BinaryOp::AssignMul),
+            DivAssign => Some(BinaryOp::AssignDiv),
+            ModAssign => Some(BinaryOp::AssignMod),
+            AndAssign => Some(BinaryOp::AssignBitAnd),
+            OrAssign => Some(BinaryOp::AssignBitOr),
+            XorAssign => Some(BinaryOp::AssignBitXor),
+            LeftShiftAssign => Some(BinaryOp::AssignLShift),
+            RightShiftAssign => Some(BinaryOp::AssignRShift),
+            Comma => Some(BinaryOp::Comma),
+            _ => None,
+        }
+    }
+
     fn is_alignment_specifier(&self) -> bool {
         matches!(self, TokenKind::Alignas)
     }
@@ -390,7 +448,7 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Literal(lit) => match lit.get_val() {
                 LitVal::Int { value, .. } => write!(f, "{}", value),
                 LitVal::Float { bits, .. } => write!(f, "{}", f64::from_bits(bits)),
-                LitVal::String { value, .. } => write!(f, "\"{}\"", value),
+                LitVal::String { value, .. } => write!(f, "\"{}\"", String::from_utf8_lossy(&value)),
                 LitVal::Char(c, ..) => {
                     if let Some(ch) = char::from_u32(c) {
                         write!(f, "'{}'", ch)
@@ -501,13 +559,13 @@ fn classify_punctuation(pp_token_kind: PPTokenKind) -> TokenKind {
 // pre-interns all keywords and stores them in a lazily-initialized `HashMap`.
 /// Subsequent lookups use the `StringId` directly, resulting in a much faster
 /// integer comparison instead of a string comparison.
-fn is_keyword(symbol: StringId, std: crate::lang_options::CStandard) -> Option<TokenKind> {
+fn is_keyword(symbol: StringId, std: CStandard) -> Option<TokenKind> {
     let kind = keyword_map().get(&symbol).copied()?;
 
     // C23 keywords: block certain spellings if standard is older than C23.
     // e.g. 'static_assert' is a keyword in C23, but in C11 it is only a keyword
     // when spelled as '_Static_assert'.
-    if std < crate::lang_options::CStandard::C23 {
+    if std < CStandard::C23 {
         let sk = special_keywords();
         match kind {
             TokenKind::StaticAssert if symbol == sk.static_assert => return None,
@@ -801,7 +859,7 @@ impl<'src> Lexer<'src> {
 
             let unescaped = literal_parsing::unescape(&content);
             return Ok(Some(Token {
-                kind: TokenKind::Literal(LitRef::from_string(unescaped, StrPrefix::from_str(prefix))),
+                kind: TokenKind::Literal(StringLitRef::from_bytes(unescaped, StrPrefix::from_str(prefix)).into()),
                 span: merged_span,
             }));
         }

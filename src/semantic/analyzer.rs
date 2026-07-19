@@ -21,6 +21,7 @@ use crate::{
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
+use std::iter::Peekable;
 use std::sync::Arc;
 
 struct CaseRangeInterval {
@@ -647,7 +648,7 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::Ident(_, sym) => {
                 let symbol = self.symbol_table.get_symbol(*sym);
                 if let SymbolKind::Variable(v) = &symbol.kind {
-                    return v.storage == Some(StorageClass::Register);
+                    return v.storage == StorageClass::Register;
                 }
                 false
             }
@@ -1137,9 +1138,9 @@ impl<'a> SemanticAnalyzer<'a> {
                 if let SymbolKind::Variable(v) = &symbol.kind {
                     // Check if it's a local variable (not static/extern)
                     let is_local = symbol.scope_id != crate::semantic::ScopeId::GLOBAL
-                        && v.storage != Some(StorageClass::Static)
-                        && v.storage != Some(StorageClass::Extern)
-                        && v.storage != Some(StorageClass::ThreadLocal);
+                        && v.storage != StorageClass::Static
+                        && v.storage != StorageClass::Extern
+                        && v.storage != StorageClass::ThreadLocal;
 
                     if is_local
                         && (symbol.type_info.is_array() || matches!(kind, NodeKind::UnaryOp(UnaryOp::AddrOf, _)))
@@ -2100,13 +2101,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 && current_idx >= max as i64
             {
                 if has_designator {
-                    self.report_error(
-                        item,
-                        SemanticError::ArrayIndexExceedsBounds {
-                            index: current_idx,
-                            bounds: max as i64,
-                        },
-                    );
+                    self.report_error(item, SemanticError::ArrayIndexExceedsBounds(current_idx, max as i64));
                 } else {
                     self.report_warning(item, SemanticError::ExcessElements { kind: "array" });
                 }
@@ -2120,9 +2115,9 @@ impl<'a> SemanticAnalyzer<'a> {
     fn handle_designated_init<I>(
         &mut self,
         target_qt: QualType,
-        iter: &mut std::iter::Peekable<I>,
+        iter: &mut Peekable<I>,
         designator_idx: usize,
-        designator_node: NodeRef,
+        node: NodeRef,
         designator: Designator,
     ) -> bool
     where
@@ -2134,13 +2129,13 @@ impl<'a> SemanticAnalyzer<'a> {
         match designator {
             Designator::FieldName(name) => {
                 let TypeAnalysisTask::Record(members, is_union) = task else {
-                    self.report_error(designator_node, SemanticError::FieldNameNotInStructOrUnionInitializer);
+                    self.report_error(node, SemanticError::FieldNameNotInStructOrUnionInitializer);
                     iter.next();
                     return true;
                 };
 
                 let Some(idx) = self.find_member_index(&members, name) else {
-                    self.report_error(designator_node, SemanticError::MemberNotFound { name, ty: target_qt });
+                    self.report_error(node, SemanticError::MemberNotFound { name, ty: target_qt });
                     iter.next();
                     return true;
                 };
@@ -2163,7 +2158,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             Designator::ArrayIndex(e) | Designator::ArrayRange(e, _) => {
                 let TypeAnalysisTask::Array(element_type, size) = task else {
-                    self.report_error(designator_node, SemanticError::ArrayIndexInNonArrayInitializer);
+                    self.report_error(node, SemanticError::ArrayIndexInNonArrayInitializer);
                     iter.next();
                     return true;
                 };
@@ -2190,13 +2185,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 if let Some(len) = max_len
                     && end_idx >= len as i64
                 {
-                    self.report_error(
-                        designator_node,
-                        SemanticError::ArrayIndexExceedsBounds {
-                            index: end_idx,
-                            bounds: len as i64,
-                        },
-                    );
+                    self.report_error(node, SemanticError::ArrayIndexExceedsBounds(end_idx, len as i64));
                 }
 
                 self.consume_inits(
@@ -2218,12 +2207,8 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn handle_brace_elision_or_assignment<I>(
-        &mut self,
-        target_qt: QualType,
-        iter: &mut std::iter::Peekable<I>,
-        expr: NodeRef,
-    ) where
+    fn handle_brace_elision_or_assignment<I>(&mut self, target_qt: QualType, iter: &mut Peekable<I>, expr: NodeRef)
+    where
         I: Iterator<Item = NodeRef>,
     {
         // Bolt ⚡: Optimized to avoid cloning TypeKind.
@@ -2264,7 +2249,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn consume_inits<I>(&mut self, target_qt: QualType, iter: &mut std::iter::Peekable<I>, designator_idx: usize)
+    fn consume_inits<I>(&mut self, target_qt: QualType, iter: &mut Peekable<I>, designator_idx: usize)
     where
         I: Iterator<Item = NodeRef>,
     {
@@ -2400,11 +2385,10 @@ impl<'a> SemanticAnalyzer<'a> {
     fn identify_builtin(&self, callee: NodeRef) -> (Option<BuiltinFunctionKind>, Option<AtomicOp>) {
         if let NodeKind::Ident(_, sym_ref) = self.ast.get_kind(callee)
             && sym_ref.class() == SymbolClass::Function
+            && let sym = self.symbol_table.get_symbol(*sym_ref)
+            && let SymbolKind::Function(f) = &sym.kind
         {
-            let sym = self.symbol_table.get_symbol(*sym_ref);
-            if let SymbolKind::Function(f) = &sym.kind {
-                return (f.builtin_kind, f.builtin_kind.and_then(|k| k.to_atomic_op()));
-            }
+            return (f.builtin_kind, f.builtin_kind.and_then(|k| k.to_atomic_op()));
         }
         (None, None)
     }
@@ -2914,7 +2898,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let storage = if let SymbolKind::Variable(v) = &sym.kind {
             v.storage
         } else {
-            None
+            StorageClass::None
         };
 
         if self.registry.is_variably_modified(qt.ty()) {
@@ -2925,7 +2909,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
         self.visit_type_exprs(qt);
         let _ = self.registry.ensure_layout(qt.ty());
-        if data.init.is_some() && matches!(storage, Some(StorageClass::Extern)) && self.current_function.is_some() {
+        if data.init.is_some() && storage == StorageClass::Extern && self.current_function.is_some() {
             self.report_error(node, SemanticError::InvalidInitializer);
         }
 
@@ -3108,13 +3092,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         let orig_truncated = self.registry.get(ctx.orig_cond_type.ty()).truncate_int(val);
         if orig_truncated != val {
-            self.report_warning(
-                node,
-                SemanticError::SwitchCaseOverflow {
-                    from_val: val,
-                    to_val: orig_truncated,
-                },
-            );
+            self.report_warning(node, SemanticError::SwitchCaseOverflow(val, orig_truncated));
         }
         truncated
     }

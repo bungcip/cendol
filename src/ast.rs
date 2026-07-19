@@ -27,8 +27,8 @@ pub type NameId = symbol_table::GlobalSymbol;
 pub type StringId = NameId;
 
 pub use crate::source_manager::{SourceId, SourceSpan};
-use crate::{
-    ast::literal::LitVal,
+pub use crate::{
+    ast::literal::{LitKind, LitRef, LitVal, StrPrefix, StringLitRef},
     semantic::{QualType, ScopeId, SemanticInfo, SymbolRef, ValueCategory},
 };
 
@@ -282,7 +282,7 @@ impl Ast {
         match self.get_kind(node) {
             NodeKind::Literal(literal_id) => {
                 if let LitVal::String { value, .. } = &literal_id.get_val() {
-                    Some(value.as_str().to_string())
+                    Some(String::from_utf8_lossy(value).to_string())
                 } else {
                     None
                 }

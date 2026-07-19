@@ -243,7 +243,7 @@ pub enum LitVal {
     Int { value: i64, suffix: IntSuffix, radix: u8 },
     Float { bits: u64, suffix: FloatSuffix },
     Char(u32, CharPrefix),
-    String { value: String, prefix: StrPrefix },
+    String { value: Vec<u8>, prefix: StrPrefix },
     Nullptr,
     True,
     False,
@@ -262,6 +262,49 @@ impl LitVal {
             Self::Float { bits, .. } => f64::from_bits(*bits),
             _ => panic!("Not a float literal"),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[repr(transparent)]
+pub struct StringLitRef(LitRef);
+
+impl StringLitRef {
+    pub fn new(lit: LitRef) -> Self {
+        assert_eq!(lit.kind(), LitKind::String);
+        Self(lit)
+    }
+
+    pub fn get_val(self) -> (Vec<u8>, StrPrefix) {
+        if let LitVal::String { value, prefix } = self.0.get_val() {
+            (value, prefix)
+        } else {
+            unreachable!("StringLitRef must contain a string literal")
+        }
+    }
+
+    pub(crate) fn from_bytes<'a>(s: std::borrow::Cow<'a, [u8]>, prefix: StrPrefix) -> Self {
+        let bytes = s.as_ref();
+        if bytes.len() <= STR_MAX_SMALL_LEN && bytes.is_ascii() {
+            let mut packed = 0u64;
+            for (i, b) in bytes.iter().enumerate() {
+                packed |= (*b as u64) << (i * 8);
+            }
+            let payload = packed | ((prefix as u64) << STR_PREFIX_SHIFT) | ((bytes.len() as u64) << STR_LEN_SHIFT);
+            Self(LitRef((TAG_SMALL_STR << TAG_SHIFT) | payload))
+        } else {
+            Self(LitRef::intern(LitVal::String {
+                value: s.into_owned(),
+                prefix,
+            }))
+        }
+    }
+}
+
+impl From<StringLitRef> for LitRef {
+    #[inline]
+    fn from(val: StringLitRef) -> Self {
+        val.0
     }
 }
 
@@ -316,23 +359,6 @@ impl LitRef {
         }
     }
 
-    pub(crate) fn from_string<'a>(s: std::borrow::Cow<'a, str>, prefix: StrPrefix) -> Self {
-        let bytes = s.as_bytes();
-        if bytes.len() <= STR_MAX_SMALL_LEN && bytes.is_ascii() {
-            let mut packed = 0u64;
-            for (i, b) in bytes.iter().enumerate() {
-                packed |= (*b as u64) << (i * 8);
-            }
-            let payload = packed | ((prefix as u64) << STR_PREFIX_SHIFT) | ((bytes.len() as u64) << STR_LEN_SHIFT);
-            Self((TAG_SMALL_STR << TAG_SHIFT) | payload)
-        } else {
-            Self::intern(LitVal::String {
-                value: s.into_owned(),
-                prefix,
-            })
-        }
-    }
-
     pub(crate) fn from_f64(value: f64, suffix: FloatSuffix) -> Self {
         match suffix {
             FloatSuffix::F => {
@@ -377,10 +403,7 @@ impl LitRef {
                 for i in 0..len {
                     bytes.push(((p >> (i * 8)) & 0xFF) as u8);
                 }
-                LitVal::String {
-                    value: String::from_utf8(bytes).unwrap(),
-                    prefix,
-                }
+                LitVal::String { value: bytes, prefix }
             }
             TAG_FLOAT32 => {
                 let p = self.payload();
@@ -419,7 +442,7 @@ impl LitRef {
             }
             TAG_INTERNED => self.with_val(|val| {
                 if let LitVal::String { value, prefix } = val {
-                    Some((get_string_literal_size(value, *prefix), *prefix))
+                    Some((get_string_literal_size(value.as_slice(), *prefix), *prefix))
                 } else {
                     None
                 }
@@ -461,13 +484,14 @@ impl LitRef {
 /// Calculate the number of elements in the string literal, including the null terminator.
 /// Bolt ⚡: Optimized metadata-only calculation to avoid full literal lowering.
 /// Standard string literals (None/Utf8) provide O(1) size via content.len().
-pub fn get_string_literal_size(content: &str, prefix: StrPrefix) -> usize {
+pub fn get_string_literal_size(content: &[u8], prefix: StrPrefix) -> usize {
     match prefix {
         StrPrefix::None | StrPrefix::Utf8 => content.len() + 1,
-        StrPrefix::Wide | StrPrefix::Utf32 => content.chars().count() + 1,
+        StrPrefix::Wide | StrPrefix::Utf32 => String::from_utf8_lossy(content).chars().count() + 1,
         StrPrefix::Utf16 => {
             let mut len = 0;
-            for c in content.chars() {
+            let s = String::from_utf8_lossy(content);
+            for c in s.chars() {
                 len += c.len_utf16();
             }
             len + 1

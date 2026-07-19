@@ -638,7 +638,7 @@ impl<'a> MirGen<'a> {
 
     fn create_array_const_from_string(
         &mut self,
-        content: &str,
+        content: &[u8],
         prefix: StrPrefix,
         fixed_size: Option<usize>,
         elem_ty: Option<QualType>,
@@ -677,7 +677,7 @@ impl<'a> MirGen<'a> {
         self.create_constant(array_ty, ConstValueKind::ArrayLiteral(constants))
     }
 
-    pub(super) fn visit_literal_string(&mut self, content: &str, prefix: StrPrefix, qt: QualType) -> Operand {
+    pub(super) fn visit_literal_string(&mut self, content: &[u8], prefix: StrPrefix, qt: QualType) -> Operand {
         let mir_ty = self.lower_qual_type(qt);
         let elem_ty = self
             .registry

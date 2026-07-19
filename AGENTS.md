@@ -419,3 +419,15 @@ Since Cendol maintains a fork of Cranelift (`crates/cranelift`), adhere to the f
    - **Instead**: Load the value into a Virtual Register (`VReg`) using the `VRegAllocator`. To constrain the value to a physical register for a function call, add it to the `uses` array (e.g., passing a `CallArgPair { vreg, preg: regs::rax().into() }`).
 2. **Formatting**: 
    - Upstream Cranelift formatting must be preserved. Avoid running `cargo fmt` on `crates/cranelift` using Cendol's root `rustfmt.toml`. Ensure that any `rustfmt.toml` configuration inside `crates/cranelift` exactly mirrors upstream to prevent excessive diffs.
+
+## Critical Architectural Constraints
+
+1. **C String Literals as Binary Data**: 
+   - **Never** represent parsed C string literals internally as Rust's `String` or `&str`. 
+   - C string literals can contain arbitrary non-UTF-8 byte sequences (e.g., `\x80`, binary data).
+   - Always use `Vec<u8>` or `&[u8]` for literal storage (`LitVal::String`) to guarantee binary safety.
+
+2. **Compiler Exit Codes & Configure Scripts**:
+   - **Never** allow the compiler to silently swallow errors and emit trap instructions (e.g., `ud2`) for unsupported features (like uncompilable inline assembly).
+   - C ecosystem `configure` scripts rely on the compiler returning a non-zero exit code to detect if a feature (like specific inline assembly) is unsupported. 
+   - If an operation fails, the compiler must explicitly fail or panic so that `configure` scripts fall back to portable implementations correctly.

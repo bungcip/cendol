@@ -164,6 +164,11 @@ pub(crate) fn parse_expression(parser: &mut Parser, min_bp: BindingPower) -> Res
 fn parse_prefix(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let token = parser.current_token()?;
 
+    // Check for unary prefix operators first
+    if token.kind.as_prefix_unary_op().is_some() {
+        return parse_unary_operator(parser, token);
+    }
+
     match token.kind {
         TokenKind::Identifier(symbol) => {
             parser.advance();
@@ -193,16 +198,6 @@ fn parse_prefix(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
                 Ok(expr)
             }
         }
-        TokenKind::Plus
-        | TokenKind::Minus
-        | TokenKind::Not
-        | TokenKind::Tilde
-        | TokenKind::Increment
-        | TokenKind::Decrement
-        | TokenKind::Star
-        | TokenKind::And
-        | TokenKind::Real
-        | TokenKind::Imag => parse_unary_operator(parser, token),
 
         TokenKind::LogicAnd => {
             parser.advance();
@@ -212,15 +207,23 @@ fn parse_prefix(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
         }
 
         TokenKind::Generic => parse_generic_selection(parser),
-        TokenKind::Alignof => parse_alignof(parser),
-        TokenKind::Sizeof => parse_sizeof(parser),
+        TokenKind::Alignof => parse_sizeof_or_alignof(parser, true),
+        TokenKind::Sizeof => parse_sizeof_or_alignof(parser, false),
 
         TokenKind::BuiltinVaArg => parse_builtin_va_arg(parser),
         TokenKind::BuiltinOffsetof => parse_builtin_offsetof(parser),
         TokenKind::BuiltinChooseExpr => parse_builtin_choose_expr(parser),
-        TokenKind::BuiltinComplex => parse_builtin_complex(parser),
-        TokenKind::BuiltinBitCast => parse_builtin_bit_cast(parser),
-        TokenKind::BuiltinConvertVector => parse_builtin_convertvector(parser),
+        TokenKind::BuiltinComplex => {
+            parse_builtin_two_expr(parser, TokenKind::BuiltinComplex, PNodeKind::BuiltinComplex)
+        }
+        TokenKind::BuiltinBitCast => parse_builtin_type_and_expr(parser, TokenKind::BuiltinBitCast, |ty, expr| {
+            PNodeKind::BuiltinBitCast(ty, expr)
+        }),
+        TokenKind::BuiltinConvertVector => {
+            parse_builtin_type_and_expr(parser, TokenKind::BuiltinConvertVector, |ty, expr| {
+                PNodeKind::BuiltinConvertVector(expr, ty)
+            })
+        }
         TokenKind::BuiltinTypesCompatibleP => parse_builtin_types_compatible_p(parser),
 
         _ => Err(ParseDiag {
@@ -237,41 +240,16 @@ fn parse_unary_operator(parser: &mut Parser, mut token: Token) -> Result<PNodeRe
     let mut ops = smallvec::SmallVec::<[(UnaryOp, SourceSpan); 8]>::new();
 
     loop {
-        let op = match token.kind {
-            TokenKind::Plus => UnaryOp::Plus,
-            TokenKind::Minus => UnaryOp::Minus,
-            TokenKind::Not => UnaryOp::LogicNot,
-            TokenKind::Tilde => UnaryOp::BitNot,
-            TokenKind::Increment => UnaryOp::PreIncrement,
-            TokenKind::Decrement => UnaryOp::PreDecrement,
-            TokenKind::Star => UnaryOp::Deref,
-            TokenKind::And => UnaryOp::AddrOf,
-            TokenKind::Real => UnaryOp::Real,
-            TokenKind::Imag => UnaryOp::Imag,
-            _ => break,
+        let Some(op) = token.kind.as_prefix_unary_op() else {
+            break;
         };
 
         ops.push((op, token.span));
         parser.advance();
 
-        if let Some(next_token) = parser.try_current_token() {
-            match next_token.kind {
-                TokenKind::Plus
-                | TokenKind::Minus
-                | TokenKind::Not
-                | TokenKind::Tilde
-                | TokenKind::Increment
-                | TokenKind::Decrement
-                | TokenKind::Star
-                | TokenKind::And
-                | TokenKind::Real
-                | TokenKind::Imag => {
-                    token = next_token;
-                }
-                _ => break,
-            }
-        } else {
-            break;
+        match parser.try_current_token() {
+            Some(next) if next.kind.as_prefix_unary_op().is_some() => token = next,
+            _ => break,
         }
     }
 
@@ -287,40 +265,10 @@ fn parse_unary_operator(parser: &mut Parser, mut token: Token) -> Result<PNodeRe
 
 fn parse_infix(parser: &mut Parser, left: PNodeRef, token: Token, min_bp: BindingPower) -> Result<PNodeRef, ParseDiag> {
     let right = parser.parse_expression(min_bp)?;
-
-    let op = match token.kind {
-        TokenKind::Plus => BinaryOp::Add,
-        TokenKind::Minus => BinaryOp::Sub,
-        TokenKind::Star => BinaryOp::Mul,
-        TokenKind::Slash => BinaryOp::Div,
-        TokenKind::Percent => BinaryOp::Mod,
-        TokenKind::Equal => BinaryOp::Equal,
-        TokenKind::NotEqual => BinaryOp::NotEqual,
-        TokenKind::Less => BinaryOp::Less,
-        TokenKind::Greater => BinaryOp::Greater,
-        TokenKind::LessEqual => BinaryOp::LessEqual,
-        TokenKind::GreaterEqual => BinaryOp::GreaterEqual,
-        TokenKind::And => BinaryOp::BitAnd,
-        TokenKind::Or => BinaryOp::BitOr,
-        TokenKind::Xor => BinaryOp::BitXor,
-        TokenKind::LeftShift => BinaryOp::LShift,
-        TokenKind::RightShift => BinaryOp::RShift,
-        TokenKind::LogicAnd => BinaryOp::LogicAnd,
-        TokenKind::LogicOr => BinaryOp::LogicOr,
-        TokenKind::Assign => BinaryOp::Assign,
-        TokenKind::PlusAssign => BinaryOp::AssignAdd,
-        TokenKind::MinusAssign => BinaryOp::AssignSub,
-        TokenKind::StarAssign => BinaryOp::AssignMul,
-        TokenKind::DivAssign => BinaryOp::AssignDiv,
-        TokenKind::ModAssign => BinaryOp::AssignMod,
-        TokenKind::AndAssign => BinaryOp::AssignBitAnd,
-        TokenKind::OrAssign => BinaryOp::AssignBitOr,
-        TokenKind::XorAssign => BinaryOp::AssignBitXor,
-        TokenKind::LeftShiftAssign => BinaryOp::AssignLShift,
-        TokenKind::RightShiftAssign => BinaryOp::AssignRShift,
-        TokenKind::Comma => BinaryOp::Comma,
-        _ => unreachable!(),
-    };
+    let op = token
+        .kind
+        .as_binary_op()
+        .expect("ICE: parse_infix called with non-binary-op token");
 
     let span = parser.ast.get_node(left).span.merge(parser.ast.get_node(right).span);
     let kind = if op.is_assignment() {
@@ -438,7 +386,9 @@ pub(crate) fn parse_compound_literal(
 
 fn is_type_name_in_parens(parser: &mut Parser) -> bool {
     if !parser.is_token(TokenKind::LeftParen)
-        || !parser.peek_token(0).is_some_and(|t| parser.is_type_name_start_token(t))
+        || !parser
+            .peek_token(0)
+            .is_some_and(|t| parser.is_type_name_start_token(&t.kind))
     {
         return false;
     }
@@ -470,38 +420,37 @@ fn is_type_name_in_parens(parser: &mut Parser) -> bool {
     }
 }
 
-fn parse_sizeof(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
-    let start = parser.expect(TokenKind::Sizeof)?.span;
+/// Shared parser for `sizeof` and `_Alignof` — both accept either `(type-name)` or expression.
+fn parse_sizeof_or_alignof(parser: &mut Parser, is_alignof: bool) -> Result<PNodeRef, ParseDiag> {
+    let keyword = if is_alignof {
+        TokenKind::Alignof
+    } else {
+        TokenKind::Sizeof
+    };
+    let start = parser.expect(keyword)?.span;
 
-    let (kind, end) = if is_type_name_in_parens(parser) {
+    let (kind, end_span) = if is_type_name_in_parens(parser) {
         parser.expect(TokenKind::LeftParen)?;
         let ty = parse_type_name(parser)?;
-        let right_paren_end = parser.expect(TokenKind::RightParen)?.span;
-        (PNodeKind::SizeOfType(ty), right_paren_end)
+        let end = parser.expect(TokenKind::RightParen)?.span;
+        let kind = if is_alignof {
+            PNodeKind::AlignOfType(ty)
+        } else {
+            PNodeKind::SizeOfType(ty)
+        };
+        (kind, end)
     } else {
         let expr = parser.parse_expression(BindingPower::UNARY)?;
         let end = parser.ast.get_node(expr).span;
-        (PNodeKind::SizeOfExpr(expr), end)
+        let kind = if is_alignof {
+            PNodeKind::AlignOfExpr(expr)
+        } else {
+            PNodeKind::SizeOfExpr(expr)
+        };
+        (kind, end)
     };
 
-    Ok(parser.push_node(kind, start.merge(end)))
-}
-
-fn parse_alignof(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
-    let start = parser.expect(TokenKind::Alignof)?.span.start();
-
-    let (kind, end) = if is_type_name_in_parens(parser) {
-        parser.expect(TokenKind::LeftParen)?;
-        let ty = parse_type_name(parser)?;
-        let end = parser.expect(TokenKind::RightParen)?.span.end();
-        (PNodeKind::AlignOfType(ty), end)
-    } else {
-        let expr = parser.parse_expression(BindingPower::UNARY)?;
-        let end = parser.ast.get_node(expr).span.end();
-        (PNodeKind::AlignOfExpr(expr), end)
-    };
-
-    Ok(parser.push_node(kind, SourceSpan::new(start, end)))
+    Ok(parser.push_node(kind, start.merge(end_span)))
 }
 
 pub(crate) fn parse_cast(parser: &mut Parser, ty: PType, span: SourceSpan) -> Result<PNodeRef, ParseDiag> {
@@ -535,34 +484,46 @@ fn parse_builtin_choose_expr(parser: &mut Parser) -> Result<PNodeRef, ParseDiag>
     ))
 }
 
-fn parse_builtin_complex(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
-    let start = parser.expect(TokenKind::BuiltinComplex)?.span.start();
+/// Parse builtins of the form `__builtin_xxx(expr, expr)` → constructor(expr1, expr2).
+fn parse_builtin_two_expr(
+    parser: &mut Parser,
+    keyword: TokenKind,
+    constructor: fn(PNodeRef, PNodeRef) -> PNodeKind,
+) -> Result<PNodeRef, ParseDiag> {
+    let start = parser.expect(keyword)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
-    let real = parser.parse_expr_assignment()?;
+    let first = parser.parse_expr_assignment()?;
     parser.expect(TokenKind::Comma)?;
-    let imag = parser.parse_expr_assignment()?;
+    let second = parser.parse_expr_assignment()?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
-    Ok(parser.push_node(PNodeKind::BuiltinComplex(real, imag), SourceSpan::new(start, end)))
+    Ok(parser.push_node(constructor(first, second), SourceSpan::new(start, end)))
 }
 
-fn parse_builtin_bit_cast(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
-    let start = parser.expect(TokenKind::BuiltinBitCast)?.span.start();
+/// Parse builtins of the form `__builtin_xxx(type, expr)` or `__builtin_xxx(expr, type)`.
+/// The `constructor` receives (type, expr) and returns the node kind.
+fn parse_builtin_type_and_expr(
+    parser: &mut Parser,
+    keyword: TokenKind,
+    constructor: fn(PType, PNodeRef) -> PNodeKind,
+) -> Result<PNodeRef, ParseDiag> {
+    let start = parser.expect(keyword)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
-    let ty = parse_type_name(parser)?;
-    parser.expect(TokenKind::Comma)?;
-    let expr = parser.parse_expr_assignment()?;
-    let end = parser.expect(TokenKind::RightParen)?.span.end();
-    Ok(parser.push_node(PNodeKind::BuiltinBitCast(ty, expr), SourceSpan::new(start, end)))
-}
 
-fn parse_builtin_convertvector(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
-    let start = parser.expect(TokenKind::BuiltinConvertVector)?.span.start();
-    parser.expect(TokenKind::LeftParen)?;
-    let expr = parser.parse_expr_assignment()?;
-    parser.expect(TokenKind::Comma)?;
-    let ty = parse_type_name(parser)?;
+    // Determine argument order by peeking: if it starts with a type name, parse type first.
+    let (ty, expr) = if parser.is_type_name_start() {
+        let ty = parse_type_name(parser)?;
+        parser.expect(TokenKind::Comma)?;
+        let expr = parser.parse_expr_assignment()?;
+        (ty, expr)
+    } else {
+        let expr = parser.parse_expr_assignment()?;
+        parser.expect(TokenKind::Comma)?;
+        let ty = parse_type_name(parser)?;
+        (ty, expr)
+    };
+
     let end = parser.expect(TokenKind::RightParen)?.span.end();
-    Ok(parser.push_node(PNodeKind::BuiltinConvertVector(expr, ty), SourceSpan::new(start, end)))
+    Ok(parser.push_node(constructor(ty, expr), SourceSpan::new(start, end)))
 }
 
 fn parse_builtin_offsetof(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {

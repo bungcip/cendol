@@ -1,5 +1,9 @@
 use crate::{
-    ast::{BinaryOp, FunctionSpec, NameId, PType, SourceSpan, StorageClass, TypeQualifier, UnaryOp, literal::LitRef},
+    ast::{
+        BinaryOp, FunctionSpec, NameId, PType, SourceSpan, StorageClass, StringLitRef, TypeQualifier, UnaryOp,
+        literal::LitRef,
+    },
+    lang_options::Visibility,
     semantic::{ScopeId, TypeQualifiers},
 };
 use std::num::NonZeroU32;
@@ -186,16 +190,16 @@ pub struct PInitDeclarator {
 
 #[derive(Debug, Clone)]
 pub struct PAsmOperand {
-    pub constraint: LitRef,
+    pub constraint: StringLitRef,
     pub expr: PNodeRef,
 }
 
 #[derive(Debug, Clone)]
 pub struct PAsmStmt {
-    pub template: LitRef,
+    pub template: StringLitRef,
     pub outputs: Vec<PAsmOperand>,
     pub inputs: Vec<PAsmOperand>,
-    pub clobbers: Vec<LitRef>,
+    pub clobbers: Vec<StringLitRef>,
     pub is_volatile: bool,
 }
 
@@ -224,10 +228,10 @@ pub enum DeclSpec {
     AttributePacked,
     AttributeCleanup(PNodeRef),
     AttributeTransparentUnion,
-    AttributeVisibility(crate::lang_options::Visibility),
-    AttributeAlias(LitRef),
-    AttributeAsm(LitRef),
-    AttributeMode(crate::ast::NameId),
+    AttributeVisibility(Visibility),
+    AttributeAlias(StringLitRef),
+    AttributeAsm(StringLitRef),
+    AttributeMode(NameId),
 }
 
 // Type specifiers
@@ -291,7 +295,7 @@ pub enum PAlignmentSpec {
 pub struct PParam {
     pub name: Option<NameId>,
     pub ty: PType,
-    pub storage: Option<StorageClass>,
+    pub storage: StorageClass,
     pub is_inline: bool,
     pub is_noreturn: bool,
     pub alignment: Option<PAlignmentSpec>,

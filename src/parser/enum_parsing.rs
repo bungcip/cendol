@@ -13,7 +13,9 @@ pub(super) fn parse_enum_spec(parser: &mut Parser) -> Result<TypeSpec, ParseDiag
 
     let original_in_underlying = parser.in_enum_underlying_type;
     let underlying_type = if parser.is_token(TokenKind::Colon)
-        && parser.peek_token(0).is_some_and(|t| parser.is_type_name_start_token(t))
+        && parser
+            .peek_token(0)
+            .is_some_and(|t| parser.is_type_name_start_token(&t.kind))
     {
         parser.advance();
         parser.in_enum_underlying_type = true;

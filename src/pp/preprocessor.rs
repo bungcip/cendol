@@ -57,12 +57,7 @@ impl<'src> Preprocessor<'src> {
         diag: &'src mut DiagnosticEngine,
         config: &PPConfig,
     ) -> Self {
-        let mut header_search = HeaderSearch {
-            system_path: Vec::new(),
-            framework_path: Vec::new(),
-            quoted_includes: Vec::new(),
-            angled_includes: Vec::new(),
-        };
+        let mut header_search = HeaderSearch::new();
 
         // Populate the new fields
         for path in &config.system_include_paths {

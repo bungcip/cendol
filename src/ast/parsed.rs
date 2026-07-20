@@ -266,15 +266,15 @@ pub enum TypeSpec {
     Complex,
     Atomic(PType), // _Bool, _Complex, _Atomic
     Record(
-        bool,                  /* is_union */
-        Option<NameId>,        /* tag */
-        Option<Vec<PNodeRef>>, /* field members */
-        Vec<DeclSpec>,         /* attributes */
+        bool,                      /* is_union */
+        Option<NameId>,            /* tag */
+        Option<ThinVec<PNodeRef>>, /* field members */
+        ThinVec<DeclSpec>,         /* attributes */
     ),
     Enum(
-        Option<NameId>,        /* tag */
-        Option<Vec<PNodeRef>>, /* enumerators */
-        Option<PType>,         /* underlying type */
+        Option<NameId>,            /* tag */
+        Option<ThinVec<PNodeRef>>, /* enumerators */
+        Option<PType>,             /* underlying type */
     ),
     TypedefName(NameId),
     VaList,

@@ -14,7 +14,7 @@ use crate::ast::{NameId, PNodeRef, PParam};
 use crate::semantic::TypeQuals;
 
 /// Type reference for parsed base types
-pub type PBaseTypeRef = NonZeroU32;
+pub type PTypeSpecRef = NonZeroU32;
 
 /// Type reference for parsed declarators
 pub type DeclaratorRef = NonZeroU32;
@@ -22,7 +22,7 @@ pub type DeclaratorRef = NonZeroU32;
 /// A parsed type that represents the syntactic structure of a type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct PType {
-    pub base: PBaseTypeRef,        // NonZeroU32
+    pub base: PTypeSpecRef,        // NonZeroU32
     pub declarator: DeclaratorRef, // NonZeroU32
     pub quals: TypeQuals,
 }
@@ -39,17 +39,6 @@ pub struct PParamRange {
 pub struct FunctionFlags {
     pub is_variadic: bool,
     pub has_prototype: bool,
-}
-
-/// Parsed base type (the fundamental type specifier)
-#[derive(Clone, Debug)]
-pub enum PBaseType {
-    Builtin(TypeSpec),
-    Typedef(NameId),
-    Typeof(PType),
-    TypeofExpr(PNodeRef),
-    TypeofUnqual(PType),
-    TypeofUnqualExpr(PNodeRef),
 }
 
 #[derive(Debug, Clone)]
@@ -86,17 +75,17 @@ pub enum PDeclarator {
 /// This provides efficient allocation and referencing for parsed types
 #[derive(Clone, Debug, Default)]
 pub struct PTypeArena {
-    base_types: Vec<PBaseType>,
+    type_specs: Vec<TypeSpec>,
     declarators: Vec<PDeclarator>,
     params: Vec<PParam>,
 }
 
 impl PTypeArena {
     /// Allocate a new base type and return its reference
-    pub(crate) fn alloc_base_type(&mut self, base_type: PBaseType) -> PBaseTypeRef {
-        let index = self.base_types.len() as u32 + 1; // Start from 1 for NonZeroU32
-        self.base_types.push(base_type);
-        PBaseTypeRef::new(index).expect("ParsedBaseTypeRef overflow")
+    pub(crate) fn alloc_type_spec(&mut self, base_type: TypeSpec) -> PTypeSpecRef {
+        let index = self.type_specs.len() as u32 + 1; // Start from 1 for NonZeroU32
+        self.type_specs.push(base_type);
+        PTypeSpecRef::new(index).expect("PTypeSpecRef overflow")
     }
 
     /// Allocate a new declarator and return its reference
@@ -115,9 +104,9 @@ impl PTypeArena {
     }
 
     /// Get a base type by reference
-    pub(crate) fn get_base_type(&self, base: PBaseTypeRef) -> &PBaseType {
+    pub(crate) fn get_type_spec(&self, base: PTypeSpecRef) -> &TypeSpec {
         let index = (base.get() - 1) as usize;
-        &self.base_types[index]
+        &self.type_specs[index]
     }
 
     /// Get a declarator by reference

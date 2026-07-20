@@ -30,12 +30,12 @@ pub(super) fn parse_record_spec(parser: &mut Parser, is_union: bool) -> Result<T
         None
     };
 
-    Ok(TypeSpec::Record(is_union, tag, definition, attributes))
+    Ok(TypeSpec::Record(is_union, tag, definition, attributes.into()))
 }
 
 /// Parse struct declaration list
-fn parse_struct_decl_list(parser: &mut Parser) -> Result<Vec<PNodeRef>, ParseDiag> {
-    let mut declarations = Vec::new();
+fn parse_struct_decl_list(parser: &mut Parser) -> Result<ThinVec<PNodeRef>, ParseDiag> {
+    let mut declarations = ThinVec::new();
 
     while !parser.at_eof() && !parser.is_token(TokenKind::RightBrace) {
         if let Some(token) = parser.try_current_token()

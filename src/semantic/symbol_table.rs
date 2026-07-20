@@ -466,7 +466,7 @@ pub struct Scope {
 }
 
 /// Represents a variable in the symbol table.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Variable {
     pub is_global: bool,
     pub is_thread_local: bool,
@@ -767,12 +767,7 @@ impl SymbolTable {
         let ty = QualType::unqualified(TypeRef::dummy());
         let var = Variable {
             is_global: self.current_scope_id == ScopeId::GLOBAL,
-            is_thread_local: false,
-            storage: StorageClass::None,
-            initializer: None,
-            alignment: None,
-            cleanup_func: None,
-            linkage_name: None,
+            ..Default::default()
         };
         let symbol = self.create_symbol(name, SymbolKind::Variable(var), ty, span);
         let sym_ref = self.push_symbol(symbol);
@@ -841,12 +836,12 @@ impl SymbolTable {
         ty: TypeRef,
         span: SourceSpan,
         func: Function,
-        is_definition: bool,
+        is_def: bool,
     ) -> Result<SymbolRef, SymbolTableError> {
         let mut symbol = self.create_symbol(name, SymbolKind::Function(func), QualType::unqualified(ty), span);
 
         // Function declarations are "DeclaredOnly" by default, or "Defined" if it's a function definition
-        symbol.def_state = if is_definition {
+        symbol.def_state = if is_def {
             DefinitionState::Defined
         } else {
             DefinitionState::DeclaredOnly
@@ -856,20 +851,20 @@ impl SymbolTable {
             self.merge_global_symbol(name, symbol)
         } else {
             // Function declarations in local scope always have linkage
-            if let Some(existing) = self.lookup_symbol(name) {
-                let existing_sym = self.get_symbol(existing);
-                if existing_sym.has_linkage() {
-                    self.get_scope_mut(self.current_scope_id).symbols.insert(name, existing);
-                    return Ok(existing);
-                }
+            if let Some(existing) = self.lookup_symbol(name)
+                && let existing_sym = self.get_symbol(existing)
+                && existing_sym.has_linkage()
+            {
+                self.get_scope_mut(self.current_scope_id).symbols.insert(name, existing);
+                return Ok(existing);
             }
 
-            if let Some(global) = self.fetch(name, ScopeId::GLOBAL, Namespace::Ordinary) {
-                let global_sym = self.get_symbol(global);
-                if global_sym.has_linkage() {
-                    self.get_scope_mut(self.current_scope_id).symbols.insert(name, global);
-                    return Ok(global);
-                }
+            if let Some(global) = self.fetch(name, ScopeId::GLOBAL, Namespace::Ordinary)
+                && let global_sym = self.get_symbol(global)
+                && global_sym.has_linkage()
+            {
+                self.get_scope_mut(self.current_scope_id).symbols.insert(name, global);
+                return Ok(global);
             }
 
             // Create global entry for the function

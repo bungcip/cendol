@@ -34,7 +34,7 @@ pub(super) fn parse_enum_spec(parser: &mut Parser) -> Result<TypeSpec, ParseDiag
         None
     };
 
-    Ok(TypeSpec::Enum(tag, enumerators, underlying_type))
+    Ok(TypeSpec::Enum(tag, enumerators.map(|e| e.into()), underlying_type))
 }
 
 /// Parse enumerator

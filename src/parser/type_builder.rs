@@ -111,7 +111,7 @@ fn merge_type_specs(current: TypeSpec, new: TypeSpec) -> Result<TypeSpec, ParseD
 fn parse_base_type_and_quals(
     parser: &mut Parser,
     specifiers: &ThinVec<DeclSpec>,
-) -> Result<(PBaseTypeRef, TypeQuals), ParseDiag> {
+) -> Result<(crate::ast::parsed_types::PTypeSpecRef, TypeQuals), ParseDiag> {
     let mut quals = TypeQuals::empty();
     let mut base_type_spec: Option<TypeSpec> = None;
     let mut other_base_type = None;
@@ -172,66 +172,45 @@ fn parse_base_type_and_quals(
     } else if let Some(node) = other_base_type {
         node
     } else {
-        parser.alloc_base_type(PBaseType::Builtin(TypeSpec::Int))
+        parser.alloc_type_spec(TypeSpec::Int)
     };
 
     Ok((base_type, quals))
 }
 
-/// Convert a TypeSpec to a ParsedBaseType
-fn parse_base_type(parser: &mut Parser, ts: &TypeSpec) -> Result<PBaseTypeRef, ParseDiag> {
+/// Convert a TypeSpec to a ParsedTypeSpecRef (verifying constraints)
+fn parse_base_type(parser: &mut Parser, ts: &TypeSpec) -> Result<crate::ast::parsed_types::PTypeSpecRef, ParseDiag> {
     use TypeSpec::*;
-    match ts {
-        Void | Char | Char8 | Short | Int | Long | LongLong | UnsignedLong | UnsignedLongLong | UnsignedShort
-        | UnsignedChar | SignedChar | SignedShort | SignedLong | SignedLongLong | Float | Double | LongDouble
-        | ComplexFloat | ComplexDouble | ComplexLongDouble | Signed | Unsigned | Bool | Complex | VaList => {
-            Ok(parser.alloc_base_type(PBaseType::Builtin(ts.clone())))
-        }
-        Atomic(parsed_type) => {
-            // C11 6.7.2.4p3: "The type name in an atomic type specifier shall not designate
-            // an array type, a function type, an atomic type, or an incomplete type."
-            let decl = parser.ast.parsed_types.get_decl(parsed_type.declarator);
-            match decl {
-                PDeclarator::Array { .. } => {
-                    return Err(ParseDiag {
-                        span: parser.previous_token_span(),
-                        kind: ParseError::InvalidAtomicSpec("array"),
-                    });
-                }
-                PDeclarator::Function { .. } => {
-                    return Err(ParseDiag {
-                        span: parser.previous_token_span(),
-                        kind: ParseError::InvalidAtomicSpec("function"),
-                    });
-                }
-                _ => {}
-            }
-
-            let base = parser.ast.parsed_types.get_base_type(parsed_type.base);
-            if let PBaseType::Builtin(Atomic(_)) = base {
+    if let Atomic(parsed_type) = ts {
+        // C11 6.7.2.4p3: "The type name in an atomic type specifier shall not designate
+        // an array type, a function type, an atomic type, or an incomplete type."
+        let decl = parser.ast.parsed_types.get_decl(parsed_type.declarator);
+        match decl {
+            PDeclarator::Array { .. } => {
                 return Err(ParseDiag {
                     span: parser.previous_token_span(),
-                    kind: ParseError::InvalidAtomicSpec("atomic"),
+                    kind: ParseError::InvalidAtomicSpec("array"),
                 });
             }
-
-            Ok(parser.alloc_base_type(PBaseType::Builtin(Atomic(*parsed_type))))
+            PDeclarator::Function { .. } => {
+                return Err(ParseDiag {
+                    span: parser.previous_token_span(),
+                    kind: ParseError::InvalidAtomicSpec("function"),
+                });
+            }
+            _ => {}
         }
-        Record(is_union, tag, definition, attributes) => Ok(parser.alloc_base_type(PBaseType::Builtin(
-            TypeSpec::Record(*is_union, *tag, definition.clone(), attributes.clone()),
-        ))),
-        Enum(tag, enumerators, underlying_type) => Ok(parser.alloc_base_type(PBaseType::Builtin(TypeSpec::Enum(
-            *tag,
-            enumerators.clone(),
-            *underlying_type,
-        )))),
-        TypedefName(name) => Ok(parser.alloc_base_type(PBaseType::Typedef(*name))),
-        AutoType => Ok(parser.alloc_base_type(PBaseType::Builtin(AutoType))),
-        Typeof(ty) => Ok(parser.alloc_base_type(PBaseType::Typeof(*ty))),
-        TypeofExpr(expr) => Ok(parser.alloc_base_type(PBaseType::TypeofExpr(*expr))),
-        TypeofUnqual(ty) => Ok(parser.alloc_base_type(PBaseType::TypeofUnqual(*ty))),
-        TypeofUnqualExpr(expr) => Ok(parser.alloc_base_type(PBaseType::TypeofUnqualExpr(*expr))),
+
+        let base = parser.ast.parsed_types.get_type_spec(parsed_type.base);
+        if let Atomic(_) = base {
+            return Err(ParseDiag {
+                span: parser.previous_token_span(),
+                kind: ParseError::InvalidAtomicSpec("atomic"),
+            });
+        }
     }
+
+    Ok(parser.alloc_type_spec(ts.clone()))
 }
 
 /// Parse a type name and return ParsedType (for casts, sizeof, etc.)

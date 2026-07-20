@@ -561,13 +561,13 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
 
     /// Push BaseType node to AST arena
     #[inline]
-    pub(super) fn alloc_base_type(&mut self, base_type: PBaseType) -> PBaseTypeRef {
-        self.ast.parsed_types.alloc_base_type(base_type)
+    pub(super) fn alloc_type_spec(&mut self, type_spec: TypeSpec) -> PTypeSpecRef {
+        self.ast.parsed_types.alloc_type_spec(type_spec)
     }
 
     /// Allocate function parameters and return the range
     #[inline]
-    pub(super) fn alloc_params(&mut self, params: Vec<crate::ast::PParam>) -> PParamRange {
+    pub(super) fn alloc_params(&mut self, params: Vec<PParam>) -> PParamRange {
         self.ast.parsed_types.alloc_params(params)
     }
 }

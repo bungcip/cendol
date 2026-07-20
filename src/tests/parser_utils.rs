@@ -1,5 +1,5 @@
 use crate::ast::literal::LitVal;
-use crate::ast::{BinaryOp, PBaseType, PBaseTypeRef, UnaryOp};
+use crate::ast::{BinaryOp, UnaryOp};
 use crate::ast::{DeclSpec, DeclaratorRef, PAst, PDeclarator, PNodeKind, PNodeRef, TypeSpec};
 use crate::driver::CompilerDriver;
 use crate::driver::artifact::CompilePhase;
@@ -502,10 +502,10 @@ fn extract_declarator_kind(ast: &PAst, declarator: DeclaratorRef) -> String {
     }
 }
 
-fn extract_base_kind(ast: &PAst, base: PBaseTypeRef) -> String {
-    let base = ast.parsed_types.get_base_type(base);
+fn extract_base_kind(ast: &PAst, base: crate::ast::parsed_types::PTypeSpecRef) -> String {
+    let base = ast.parsed_types.get_type_spec(base);
     match base {
-        PBaseType::Builtin(TypeSpec::Record(is_union, tag, _, _)) => {
+        TypeSpec::Record(is_union, tag, _, _) => {
             let kind = if *is_union { "union" } else { "struct" };
             if let Some(tag) = tag {
                 format!("{} {}", kind, tag)
@@ -513,7 +513,7 @@ fn extract_base_kind(ast: &PAst, base: PBaseTypeRef) -> String {
                 "struct { ... }".to_string()
             }
         }
-        PBaseType::Builtin(TypeSpec::Enum(tag, _, underlying_type)) => {
+        TypeSpec::Enum(tag, _, underlying_type) => {
             let mut s = if let Some(tag) = tag {
                 format!("enum {}", tag)
             } else {
@@ -525,7 +525,12 @@ fn extract_base_kind(ast: &PAst, base: PBaseTypeRef) -> String {
             }
             s
         }
-        PBaseType::Builtin(spec) => {
+        TypeSpec::TypedefName(name) => name.to_string(),
+        TypeSpec::Typeof(..) => "typeof(...)".to_string(),
+        TypeSpec::TypeofExpr(..) => "typeof(...)".to_string(),
+        TypeSpec::TypeofUnqual(..) => "typeof_unqual(...)".to_string(),
+        TypeSpec::TypeofUnqualExpr(..) => "typeof_unqual(...)".to_string(),
+        spec => {
             let s = format!("{:?}", spec);
             let mut result = String::new();
             for (i, c) in s.chars().enumerate() {
@@ -536,11 +541,6 @@ fn extract_base_kind(ast: &PAst, base: PBaseTypeRef) -> String {
             }
             result
         }
-        PBaseType::Typedef(name) => name.to_string(),
-        PBaseType::Typeof(..) => "typeof(...)".to_string(),
-        PBaseType::TypeofExpr(..) => "typeof(...)".to_string(),
-        PBaseType::TypeofUnqual(..) => "typeof_unqual(...)".to_string(),
-        PBaseType::TypeofUnqualExpr(..) => "typeof_unqual(...)".to_string(),
     }
 }
 

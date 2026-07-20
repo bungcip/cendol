@@ -313,3 +313,8 @@ Action: Protect compiler invariants by validating that semantic errors for inval
 2024-05-18 - [Return Local Array Address]
 Learning: The compiler was correctly identifying returning the address of a local variable (e.g., `return &x`) but missed the case where `x` is a local array. Local arrays decay to pointers (e.g., `return x` is equivalent to `return &x[0]`). Thus, we should also emit the `ReturnLocalAddress` warning when returning a local array directly.
 Action: Extend `SemanticAnalyzer::visit_return_stmt` to check if the returned variable is a local array, not just an explicit `&x`. Added tests for both cases.
+
+2026-07-20 - [Lvalue Constraints for Operators]
+
+Learning: In C11 (unlike C++), expressions resulting from cast, ternary conditional (`?:`), comma (`,`), and assignment (`=`) operators do not yield modifiable lvalues. Arrays and functions are also not modifiable lvalues. Without tests covering these precise expressions, the compiler might implicitly allow assignments to them (like `(a = b) = c;`), which breaks fundamental C language constraints and causes invalid codegen or crashes downstream.
+Action: Add `guardian_lvalue_assignment.rs` to validate that these constructs are strictly rejected with `SemanticError::NotAnLvalue` at `CompilePhase::Mir`, and ensure the diagnostic spans are accurately tested.

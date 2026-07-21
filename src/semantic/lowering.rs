@@ -10,7 +10,8 @@
 //! grammar-oriented parser AST and the type-resolved semantic AST (HIR). The lowering
 //! phase handles all C-style declaration forms
 
-use hashbrown::HashMap;
+// Bolt ⚡: Use `FxHashMap` (aliased as `HashMap`) to eliminate hashing overhead for integer-like keys.
+use rustc_hash::FxHashMap as HashMap;
 use smallvec::{SmallVec, smallvec};
 use thin_vec::ThinVec;
 
@@ -56,7 +57,9 @@ pub(crate) struct LoweringKeywords {
 
 impl LoweringKeywords {
     fn new() -> Self {
-        let mut builtins = HashMap::with_capacity(BuiltinFunctionKind::ALL_VARIANTS.len());
+        // Bolt ⚡: Instantiate with custom hasher for integer-like keys
+        let mut builtins =
+            HashMap::with_capacity_and_hasher(BuiltinFunctionKind::ALL_VARIANTS.len(), Default::default());
         for &kind in BuiltinFunctionKind::ALL_VARIANTS {
             builtins.insert(NameId::new(kind.name()), kind);
         }
@@ -97,7 +100,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             in_prototype: false,
             lang_opts,
             anon_counter: 0,
-            type_to_tag_sym: HashMap::new(),
+            type_to_tag_sym: HashMap::default(),
             keywords: LoweringKeywords::new(),
             in_tag_decl: false,
             sm,
@@ -3258,7 +3261,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
     ) -> Result<(), SemanticDiag> {
         // Validation for name conflicts across anonymous members
-        let mut seen_names = HashMap::new();
+        let mut seen_names = HashMap::default();
         let mut validation_errors = Vec::new();
         validate_record_members_helper(self.registry, &members, &mut seen_names, &mut validation_errors);
         for error in validation_errors {
@@ -3586,7 +3589,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         is_definition: bool,
         scope_id: ScopeId,
     ) -> Vec<FunctionParam> {
-        let mut seen_names = HashMap::new();
+        let mut seen_names = HashMap::default();
         let mut processed_params = Vec::with_capacity(params.len());
 
         let old_in_prototype = self.in_prototype;

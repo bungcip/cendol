@@ -19,8 +19,8 @@ use cranelift::prelude::{
 use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use hashbrown::HashMap;
-use hashbrown::HashSet;
+// Bolt ⚡: Use `FxHashMap` and `FxHashSet` (aliased as HashMap/HashSet) to eliminate hashing overhead for integer-like keys.
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use target_lexicon::Triple;
 
 /// emitted from codegen
@@ -2709,11 +2709,11 @@ impl ClifGen {
             builder_context: FunctionBuilderContext::new(),
             // ctx: module.make_context(),
             module,
-            clif_stack_slots: HashMap::new(),
-            compiled_functions: HashMap::new(),
+            clif_stack_slots: HashMap::default(),
+            compiled_functions: HashMap::default(),
             emit_kind: EmitKind::Object,
-            func_id_map: HashMap::new(),
-            data_id_map: HashMap::new(),
+            func_id_map: HashMap::default(),
+            data_id_map: HashMap::default(),
             pointee_to_pointer: mir
                 .types
                 .iter()
@@ -2876,7 +2876,7 @@ impl ClifGen {
         emit_stack_slots(func, &self.mir, &mut builder, &mut self.clif_stack_slots);
 
         // PHASE 1️⃣ — Create all Cranelift blocks first (no instructions)
-        let mut clif_blocks = HashMap::new();
+        let mut clif_blocks = HashMap::default();
 
         for &block_id in &func.blocks {
             clif_blocks.insert(block_id, builder.create_block());
@@ -3010,8 +3010,8 @@ impl ClifGen {
     }
 
     fn analyze_reachability(&self) -> (HashSet<MirFunctionId>, HashSet<GlobalId>) {
-        let mut reachable_functions = HashSet::new();
-        let mut reachable_globals = HashSet::new();
+        let mut reachable_functions = HashSet::default();
+        let mut reachable_globals = HashSet::default();
         let mut worklist_functions = Vec::new();
         let mut worklist_globals = Vec::new();
 

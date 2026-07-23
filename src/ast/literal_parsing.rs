@@ -511,4 +511,19 @@ mod tests {
         // Covers line 196, 197 (digit separator in hex float exponent)
         assert_eq!(super::parse_hex_float_literal("0x1.0p1'0"), Some(1024.0));
     }
+
+    #[test]
+    fn test_float_literal_edge_cases() {
+        assert_eq!(super::parse_float_literal(""), None);
+        assert_eq!(super::parse_float_literal("0x1.0.."), None);
+        assert_eq!(super::parse_float_literal("0x1.0z"), None);
+        assert_eq!(super::parse_float_literal("0x.p1"), None);
+
+        // Also test integer literal edge cases
+        assert_eq!(super::parse_integer_literal(""), None);
+        assert_eq!(super::parse_integer_literal("0x"), None);
+
+        // Also test char literal edge cases
+        assert_eq!(super::parse_char_literal(""), None);
+    }
 }

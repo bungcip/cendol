@@ -1,6 +1,32 @@
-use rustc_hash::FxHashMap;
+use hashbrown::{Equivalent, HashMap};
+use rustc_hash::FxHasher;
 use std::cell::RefCell;
+use std::hash::BuildHasherDefault;
 use std::path::{Path, PathBuf};
+
+type FxBuildHasher = BuildHasherDefault<FxHasher>;
+
+/// A dedicated cache key that owns its data.
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+pub(crate) struct SearchKey {
+    pub(crate) include_path: String,
+    pub(crate) is_angled: bool,
+    pub(crate) current_dir: PathBuf,
+}
+
+/// A borrowed version of `SearchKey` used to query the cache without allocating.
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+pub(crate) struct SearchKeyRef<'a> {
+    pub(crate) include_path: &'a str,
+    pub(crate) is_angled: bool,
+    pub(crate) current_dir: &'a Path,
+}
+
+impl<'a> Equivalent<SearchKey> for SearchKeyRef<'a> {
+    fn equivalent(&self, key: &SearchKey) -> bool {
+        self.include_path == key.include_path && self.is_angled == key.is_angled && self.current_dir == key.current_dir
+    }
+}
 
 /// Manages header search paths and include resolution
 #[derive(Clone)]
@@ -9,10 +35,10 @@ pub(crate) struct HeaderSearch {
     pub(crate) framework_path: Vec<PathBuf>,
     pub(crate) quoted_includes: Vec<PathBuf>,
     pub(crate) angled_includes: Vec<PathBuf>,
-    /// Cache for resolved paths: (include_path, is_angled, current_dir) -> resolved_path
-    pub(crate) resolve_cache: RefCell<FxHashMap<(String, bool, PathBuf), Option<PathBuf>>>,
-    /// Cache for resolved next paths: (include_path, is_angled, current_dir) -> resolved_path
-    pub(crate) resolve_next_cache: RefCell<FxHashMap<(String, bool, PathBuf), Option<PathBuf>>>,
+    /// Cache for resolved paths, optimized to bypass string/path allocations on hits.
+    pub(crate) resolve_cache: RefCell<HashMap<SearchKey, Option<PathBuf>, FxBuildHasher>>,
+    /// Cache for resolved next paths, optimized to bypass string/path allocations on hits.
+    pub(crate) resolve_next_cache: RefCell<HashMap<SearchKey, Option<PathBuf>, FxBuildHasher>>,
 }
 
 impl HeaderSearch {
@@ -22,8 +48,8 @@ impl HeaderSearch {
             framework_path: Vec::new(),
             quoted_includes: Vec::new(),
             angled_includes: Vec::new(),
-            resolve_cache: RefCell::new(FxHashMap::default()),
-            resolve_next_cache: RefCell::new(FxHashMap::default()),
+            resolve_cache: RefCell::new(HashMap::default()),
+            resolve_next_cache: RefCell::new(HashMap::default()),
         }
     }
 
@@ -49,8 +75,12 @@ impl HeaderSearch {
 
     /// Resolve an include path to an absolute path
     pub(crate) fn resolve_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
-        let key = (include_path.to_string(), is_angled, current_dir.to_path_buf());
-        if let Some(cached) = self.resolve_cache.borrow().get(&key) {
+        let query_key = SearchKeyRef {
+            include_path,
+            is_angled,
+            current_dir,
+        };
+        if let Some(cached) = self.resolve_cache.borrow().get(&query_key) {
             return cached.clone();
         }
 
@@ -72,6 +102,11 @@ impl HeaderSearch {
             }
         };
 
+        let key = SearchKey {
+            include_path: include_path.to_string(),
+            is_angled,
+            current_dir: current_dir.to_path_buf(),
+        };
         self.resolve_cache.borrow_mut().insert(key, result.clone());
         result
     }
@@ -89,8 +124,12 @@ impl HeaderSearch {
 
     /// Resolve an include path for #include_next, skipping the search path valid for current_dir
     pub(crate) fn resolve_next_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
-        let key = (include_path.to_string(), is_angled, current_dir.to_path_buf());
-        if let Some(cached) = self.resolve_next_cache.borrow().get(&key) {
+        let query_key = SearchKeyRef {
+            include_path,
+            is_angled,
+            current_dir,
+        };
+        if let Some(cached) = self.resolve_next_cache.borrow().get(&query_key) {
             return cached.clone();
         }
 
@@ -125,6 +164,11 @@ impl HeaderSearch {
             }
         }
 
+        let key = SearchKey {
+            include_path: include_path.to_string(),
+            is_angled,
+            current_dir: current_dir.to_path_buf(),
+        };
         self.resolve_next_cache.borrow_mut().insert(key, result.clone());
         result
     }

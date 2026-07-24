@@ -12,3 +12,8 @@
 
 **Learning:** When using custom hashing in Rust via type aliases (e.g. `use rustc_hash::FxHashMap as HashMap`), calling `HashMap::new()` fallback-resolves to standard library's SipHash-based `RandomState` rather than `FxHasher`, triggering compilation errors on type mismatch. Instead, use `HashMap::default()` to correctly construct maps with the aliased custom hasher. Additionally, swapping standard `hashbrown::HashMap`/`HashSet` to `FxHashMap`/`FxHashSet` in critical passes (e.g. `clif_gen.rs` and `lowering.rs`) where keys are almost exclusively integer-like IDs (e.g. LocalId, TypeId, GlobalId, MirBlockId) drastically reduces hashing overhead.
 **Action:** Always use `HashMap::default()` rather than `HashMap::new()` when utilizing type-aliased custom-hash maps, and prioritize `rustc_hash::FxHashMap` for passes processing integer-like compiler IDs.
+
+## 2025-02-18 - Zero-Allocation Cache Lookup in HeaderSearch
+
+**Learning:** Querying a `HashMap` with keys containing `String` and `PathBuf` typically requires allocating those owned types even for cache lookups, creating significant memory and cpu overhead on hot cache-hit paths. Implementing a custom borrowed query key type (like `SearchKeyRef`) and utilizing `hashbrown`'s `Equivalent` trait allows lookups to be completely allocation-free.
+**Action:** Always prefer `Equivalent` trait-based lookups with custom borrowed key types for `HashMap`s used in compiler search or memoization caches.

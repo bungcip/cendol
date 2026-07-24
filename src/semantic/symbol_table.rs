@@ -1066,3 +1066,31 @@ pub struct SymbolTableState {
     current_scope_id: ScopeId,
     next_scope_id: u32,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*; use super::BuiltinFunctionKind;
+
+    #[test]
+    fn test_symbol_table_coverage() {
+        assert_eq!(BuiltinFunctionKind::AtomicLoadN.to_atomic_op(), Some(crate::ast::nodes::AtomicOp::LoadN));
+        assert_eq!(BuiltinFunctionKind::AtomicStoreN.to_atomic_op(), Some(crate::ast::nodes::AtomicOp::StoreN));
+        assert_eq!(BuiltinFunctionKind::AtomicExchangeN.to_atomic_op(), Some(crate::ast::nodes::AtomicOp::ExchangeN));
+        assert_eq!(BuiltinFunctionKind::AtomicCompareExchangeN.to_atomic_op(), Some(crate::ast::nodes::AtomicOp::CompareExchangeN));
+        assert_eq!(BuiltinFunctionKind::AtomicFetchAdd.to_atomic_op(), Some(crate::ast::nodes::AtomicOp::FetchAdd));
+        assert_eq!(BuiltinFunctionKind::AtomicFetchSub.to_atomic_op(), Some(crate::ast::nodes::AtomicOp::FetchSub));
+        assert_eq!(BuiltinFunctionKind::AtomicFetchAnd.to_atomic_op(), Some(crate::ast::nodes::AtomicOp::FetchAnd));
+        assert_eq!(BuiltinFunctionKind::AtomicFetchOr.to_atomic_op(), Some(crate::ast::nodes::AtomicOp::FetchOr));
+        assert_eq!(BuiltinFunctionKind::AtomicFetchXor.to_atomic_op(), Some(crate::ast::nodes::AtomicOp::FetchXor));
+        assert_eq!(BuiltinFunctionKind::AtomicAddFetch.to_atomic_op(), Some(crate::ast::nodes::AtomicOp::AddFetch));
+        assert_eq!(BuiltinFunctionKind::AtomicSubFetch.to_atomic_op(), Some(crate::ast::nodes::AtomicOp::SubFetch));
+        assert_eq!(BuiltinFunctionKind::AtomicAndFetch.to_atomic_op(), Some(crate::ast::nodes::AtomicOp::AndFetch));
+        assert_eq!(BuiltinFunctionKind::AtomicOrFetch.to_atomic_op(), Some(crate::ast::nodes::AtomicOp::OrFetch));
+        assert_eq!(BuiltinFunctionKind::AtomicXorFetch.to_atomic_op(), Some(crate::ast::nodes::AtomicOp::XorFetch));
+        assert_eq!(BuiltinFunctionKind::AtomicThreadFence.to_atomic_op(), Some(crate::ast::nodes::AtomicOp::ThreadFence));
+        assert_eq!(BuiltinFunctionKind::Popcount.to_atomic_op(), None);
+        assert!(SymbolRef::new_with_class(0, SymbolClass::Variable).is_none());
+        assert!(SymbolRef::new_with_class((1 << 29) + 1, SymbolClass::Variable).is_none());
+        assert!(SymbolRef::new_with_class(1, SymbolClass::Variable).is_some());
+    }
+}

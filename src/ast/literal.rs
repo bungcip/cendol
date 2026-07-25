@@ -1,4 +1,5 @@
-use hashbrown::HashMap;
+// ⚡ Bolt: Use `FxHashMap` (aliased as `HashMap`) to eliminate hashing overhead for lit values.
+use rustc_hash::FxHashMap as HashMap;
 use serde::Serialize;
 use smallvec::SmallVec;
 use std::sync::{OnceLock, RwLock};

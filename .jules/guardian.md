@@ -318,3 +318,8 @@ Action: Extend `SemanticAnalyzer::visit_return_stmt` to check if the returned va
 
 Learning: In C11 (unlike C++), expressions resulting from cast, ternary conditional (`?:`), comma (`,`), and assignment (`=`) operators do not yield modifiable lvalues. Arrays and functions are also not modifiable lvalues. Without tests covering these precise expressions, the compiler might implicitly allow assignments to them (like `(a = b) = c;`), which breaks fundamental C language constraints and causes invalid codegen or crashes downstream.
 Action: Add `guardian_lvalue_assignment.rs` to validate that these constructs are strictly rejected with `SemanticError::NotAnLvalue` at `CompilePhase::Mir`, and ensure the diagnostic spans are accurately tested.
+
+2024-05-18 - [Address of Array Always True Warning]
+
+Learning: When an array decays to a pointer and is used in a boolean context (like `if`, `while`, `for`, `? :`, `!`), its address is always evaluated as true. The compiler should warn about this tautological condition via `SemanticError::AddressOfArrayAlwaysTrue`. We must ensure the diagnostic points to the specific array identifier rather than the parent expression node, and that it correctly applies across all scalar-expecting constructs.
+Action: Ensure `SemanticAnalyzer::check_scalar_condition` correctly propagates the warning for all relevant control flow structures, and that explicit tests validating the correct span are maintained in `guardian_address_of_array_always_true.rs`. Ensure `visit_ternary_op` also calls `check_scalar_condition` instead of manual checking to maintain consistency.

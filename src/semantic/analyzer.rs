@@ -1246,7 +1246,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 if actual_qt.is_array()
                     && let NodeKind::Ident(name, _) = self.ast.get_kind(expr)
                 {
-                    self.report_warning(node, SemanticError::AddressOfArrayAlwaysTrue { name: *name });
+                    self.report_warning(expr, SemanticError::AddressOfArrayAlwaysTrue { name: *name });
                 }
 
                 if actual_qt.is_array() || actual_qt.is_function() {
@@ -3345,7 +3345,8 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_ternary_op(&mut self, cond: NodeRef, then: NodeRef, else_expr: NodeRef) -> Option<QualType> {
-        let cond_qt = self.visit_node(cond)?;
+        self.check_scalar_condition(cond);
+        let cond_qt = self.semantic_info.types[cond.index()].unwrap();
         self.apply_lvalue_conversion(cond);
         self.require_scalar(cond, cond_qt);
         let then_ty = self.visit_node(then);

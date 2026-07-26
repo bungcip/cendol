@@ -183,3 +183,4 @@ pub mod semantic_cleanup_coverage;
 pub mod semantic_conversions_uncovered;
 pub mod semantic_types_compatible;
 pub mod test_utils;
+pub mod guardian_address_of_array_always_true;

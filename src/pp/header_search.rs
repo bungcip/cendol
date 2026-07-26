@@ -1,6 +1,29 @@
-use rustc_hash::FxHashMap;
+use hashbrown::HashMap;
+use rustc_hash::FxBuildHasher;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+pub(crate) struct SearchKey {
+    pub(crate) include_path: String,
+    pub(crate) is_angled: bool,
+    pub(crate) current_dir: PathBuf,
+}
+
+#[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
+pub(crate) struct SearchKeyRef<'a> {
+    pub(crate) include_path: &'a str,
+    pub(crate) is_angled: bool,
+    pub(crate) current_dir: &'a Path,
+}
+
+impl<'a> hashbrown::Equivalent<SearchKey> for SearchKeyRef<'a> {
+    fn equivalent(&self, key: &SearchKey) -> bool {
+        self.include_path == key.include_path
+            && self.is_angled == key.is_angled
+            && self.current_dir == key.current_dir
+    }
+}
 
 /// Manages header search paths and include resolution
 #[derive(Clone)]
@@ -10,9 +33,9 @@ pub(crate) struct HeaderSearch {
     pub(crate) quoted_includes: Vec<PathBuf>,
     pub(crate) angled_includes: Vec<PathBuf>,
     /// Cache for resolved paths: (include_path, is_angled, current_dir) -> resolved_path
-    pub(crate) resolve_cache: RefCell<FxHashMap<(String, bool, PathBuf), Option<PathBuf>>>,
+    pub(crate) resolve_cache: RefCell<HashMap<SearchKey, Option<PathBuf>, FxBuildHasher>>,
     /// Cache for resolved next paths: (include_path, is_angled, current_dir) -> resolved_path
-    pub(crate) resolve_next_cache: RefCell<FxHashMap<(String, bool, PathBuf), Option<PathBuf>>>,
+    pub(crate) resolve_next_cache: RefCell<HashMap<SearchKey, Option<PathBuf>, FxBuildHasher>>,
 }
 
 impl HeaderSearch {
@@ -22,8 +45,8 @@ impl HeaderSearch {
             framework_path: Vec::new(),
             quoted_includes: Vec::new(),
             angled_includes: Vec::new(),
-            resolve_cache: RefCell::new(FxHashMap::default()),
-            resolve_next_cache: RefCell::new(FxHashMap::default()),
+            resolve_cache: RefCell::new(HashMap::with_hasher(FxBuildHasher)),
+            resolve_next_cache: RefCell::new(HashMap::with_hasher(FxBuildHasher)),
         }
     }
 
@@ -49,8 +72,12 @@ impl HeaderSearch {
 
     /// Resolve an include path to an absolute path
     pub(crate) fn resolve_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
-        let key = (include_path.to_string(), is_angled, current_dir.to_path_buf());
-        if let Some(cached) = self.resolve_cache.borrow().get(&key) {
+        let key_ref = SearchKeyRef {
+            include_path,
+            is_angled,
+            current_dir,
+        };
+        if let Some(cached) = self.resolve_cache.borrow().get(&key_ref) {
             return cached.clone();
         }
 
@@ -72,6 +99,11 @@ impl HeaderSearch {
             }
         };
 
+        let key = SearchKey {
+            include_path: include_path.to_string(),
+            is_angled,
+            current_dir: current_dir.to_path_buf(),
+        };
         self.resolve_cache.borrow_mut().insert(key, result.clone());
         result
     }
@@ -89,8 +121,12 @@ impl HeaderSearch {
 
     /// Resolve an include path for #include_next, skipping the search path valid for current_dir
     pub(crate) fn resolve_next_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
-        let key = (include_path.to_string(), is_angled, current_dir.to_path_buf());
-        if let Some(cached) = self.resolve_next_cache.borrow().get(&key) {
+        let key_ref = SearchKeyRef {
+            include_path,
+            is_angled,
+            current_dir,
+        };
+        if let Some(cached) = self.resolve_next_cache.borrow().get(&key_ref) {
             return cached.clone();
         }
 
@@ -125,6 +161,11 @@ impl HeaderSearch {
             }
         }
 
+        let key = SearchKey {
+            include_path: include_path.to_string(),
+            is_angled,
+            current_dir: current_dir.to_path_buf(),
+        };
         self.resolve_next_cache.borrow_mut().insert(key, result.clone());
         result
     }

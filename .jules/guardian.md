@@ -323,3 +323,7 @@ Action: Add `guardian_lvalue_assignment.rs` to validate that these constructs ar
 
 Learning: When an array decays to a pointer and is used in a boolean context (like `if`, `while`, `for`, `? :`, `!`), its address is always evaluated as true. The compiler should warn about this tautological condition via `SemanticError::AddressOfArrayAlwaysTrue`. We must ensure the diagnostic points to the specific array identifier rather than the parent expression node, and that it correctly applies across all scalar-expecting constructs.
 Action: Ensure `SemanticAnalyzer::check_scalar_condition` correctly propagates the warning for all relevant control flow structures, and that explicit tests validating the correct span are maintained in `guardian_address_of_array_always_true.rs`. Ensure `visit_ternary_op` also calls `check_scalar_condition` instead of manual checking to maintain consistency.
+2024-05-24 - [Function Specifier Constraints]
+
+Learning: C11 6.7.4p1 requires that function specifiers ('inline' and '_Noreturn') only be used in the declaration of an identifier that is a function. This means they must be rejected for typedefs, struct/union members, and tag declarations (forward decls or definitions), even if the underlying type is a function pointer.
+Action: Centralize function specifier validation in semantic lowering to ensure all non-function declaration paths (variables, typedefs, members, tags) correctly enforce these constraints.

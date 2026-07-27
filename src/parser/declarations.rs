@@ -296,6 +296,7 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>,
 
             TokenKind::Void
             | TokenKind::Char
+            | TokenKind::Char8
             | TokenKind::Short
             | TokenKind::Int
             | TokenKind::Long

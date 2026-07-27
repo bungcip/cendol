@@ -132,3 +132,15 @@ fn test_type_spec_combinations() {
         check_type(source, expected);
     }
 }
+#[test]
+fn test_char8_type_specifier() {
+    let source = "char8_t x;";
+    let decl = super::parser_utils::setup_declaration_with_std(source, crate::lang_options::CStandard::C23);
+    insta::assert_yaml_snapshot!(decl, @"
+    Declaration:
+      specifiers:
+        - Char8
+      init_declarators:
+        - name: x
+    ");
+}

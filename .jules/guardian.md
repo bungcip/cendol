@@ -318,3 +318,7 @@ Action: Extend `SemanticAnalyzer::visit_return_stmt` to check if the returned va
 
 Learning: In C11 (unlike C++), expressions resulting from cast, ternary conditional (`?:`), comma (`,`), and assignment (`=`) operators do not yield modifiable lvalues. Arrays and functions are also not modifiable lvalues. Without tests covering these precise expressions, the compiler might implicitly allow assignments to them (like `(a = b) = c;`), which breaks fundamental C language constraints and causes invalid codegen or crashes downstream.
 Action: Add `guardian_lvalue_assignment.rs` to validate that these constructs are strictly rejected with `SemanticError::NotAnLvalue` at `CompilePhase::Mir`, and ensure the diagnostic spans are accurately tested.
+2024-05-24 - [Function Specifier Constraints]
+
+Learning: C11 6.7.4p1 requires that function specifiers ('inline' and '_Noreturn') only be used in the declaration of an identifier that is a function. This means they must be rejected for typedefs, struct/union members, and tag declarations (forward decls or definitions), even if the underlying type is a function pointer.
+Action: Centralize function specifier validation in semantic lowering to ensure all non-function declaration paths (variables, typedefs, members, tags) correctly enforce these constraints.

@@ -465,7 +465,9 @@ fn reborrow_data_description<'b>(dd: &'b mut Option<&mut DataDescription>) -> Op
 
 /// Helper to determine if a type should be packed into registers (I64)
 /// Returns Some(count) of I64 registers needed (max 2)
-fn get_struct_packing(mir_type: &MirType, mir: &MirProgram) -> Option<Vec<Type>> {
+/// Bolt ⚡: Optimization: Return `smallvec::SmallVec<[Type; 2]>` instead of `Vec` to completely
+/// eliminate heap allocations during struct packing checks and lowerings.
+fn get_struct_packing(mir_type: &MirType, mir: &MirProgram) -> Option<smallvec::SmallVec<[Type; 2]>> {
     match mir_type {
         MirType::Record {
             layout, field_types, ..
@@ -475,9 +477,13 @@ fn get_struct_packing(mir_type: &MirType, mir: &MirProgram) -> Option<Vec<Type>>
                 let ft_mir = mir.get_type(ft);
                 matches!(ft_mir, MirType::F32 | MirType::F64)
             }) {
-                Some(vec![types::F64; count as usize])
+                let mut v = smallvec::SmallVec::new();
+                v.resize(count as usize, types::F64);
+                Some(v)
             } else {
-                Some(vec![types::I64; count as usize])
+                let mut v = smallvec::SmallVec::new();
+                v.resize(count as usize, types::I64);
+                Some(v)
             }
         }
         _ => None,
@@ -2530,8 +2536,10 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
                         ctx.builder.ins().return_(&[return_ptr]);
                     } else if let Some(types_list) = get_struct_packing(mir_type, ctx.mir) {
                         // Pack return value into multiple registers
+                        // Bolt ⚡: Optimization: Return `smallvec::SmallVec<[Value; 2]>` instead of `Vec`
+                        // to completely eliminate heap allocation during packed struct returns.
                         let addr = emit_operand(operand, ctx, types::I64);
-                        let mut ret_values = Vec::new();
+                        let mut ret_values = smallvec::SmallVec::<[Value; 2]>::new();
                         for (i, &t) in types_list.iter().enumerate() {
                             let offset = (i * 8) as i32;
                             let val = ctx.builder.ins().load(t, MemFlagsData::new(), addr, offset);
@@ -2554,7 +2562,8 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
         Terminator::Unreachable => {
             // For unreachable, default to appropriate return based on function type
             if !ctx.return_types.is_empty() {
-                let mut ret_values = Vec::new();
+                // Bolt ⚡: Pre-allocate capacity of `ret_values` to avoid any reallocations.
+                let mut ret_values = Vec::with_capacity(ctx.return_types.len());
                 for &ret_type in ctx.return_types {
                     let val = if ret_type == types::F32 {
                         ctx.builder.ins().f32const(0.0)

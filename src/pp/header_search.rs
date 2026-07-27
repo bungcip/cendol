@@ -19,9 +19,7 @@ pub(crate) struct SearchKeyRef<'a> {
 
 impl<'a> hashbrown::Equivalent<SearchKey> for SearchKeyRef<'a> {
     fn equivalent(&self, key: &SearchKey) -> bool {
-        self.include_path == key.include_path
-            && self.is_angled == key.is_angled
-            && self.current_dir == key.current_dir
+        self.include_path == key.include_path && self.is_angled == key.is_angled && self.current_dir == key.current_dir
     }
 }
 

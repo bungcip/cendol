@@ -828,6 +828,23 @@ impl<'src> Lexer<'src> {
         let span = SourceSpan::from_loc_and_length(pptoken.location, pptoken.length as u32);
 
         if pptoken.kind == PPTokenKind::StringLiteral {
+            // ⚡ Bolt: Fast-path for single (non-concatenated) string literals.
+            // Bypasses creating a SmallVec, peeking, pushing, popping, and allocating a new String.
+            let is_single = match self.peek_pp_token()? {
+                Some(ref next) => next.kind != PPTokenKind::StringLiteral,
+                None => true,
+            };
+
+            if is_single {
+                let text = pptoken.get_text(self.preprocessor.sm);
+                let (prefix, content) = Self::extract_literal_parts(&text).unwrap_or(("", &text));
+                let unescaped = literal_parsing::unescape(content);
+                return Ok(Some(Token {
+                    kind: TokenKind::Literal(StringLitRef::from_bytes(unescaped, StrPrefix::from_str(prefix)).into()),
+                    span,
+                }));
+            }
+
             // Collect all adjacent string literals FIRST to avoid borrow checker issues
             let mut string_tokens: SmallVec<[PPToken; 4]> = smallvec::smallvec![pptoken];
             while let Some(next) = self.peek_pp_token()? {

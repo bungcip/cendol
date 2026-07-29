@@ -1340,6 +1340,7 @@ where
         Opcode::GetExceptionHandlerAddress => unimplemented!("GetExceptionHandlerAddress"),
 
         Opcode::SequencePoint => unimplemented!("SequencePoint"),
+        Opcode::InlineAsm | Opcode::VAStart => todo!("InlineAsm and VAStart are not supported in interpreter"),
     })
 }
 

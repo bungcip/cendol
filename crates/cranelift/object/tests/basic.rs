@@ -1,7 +1,7 @@
 use cranelift_codegen::ir::*;
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings;
-use cranelift_codegen::{Context, ir::types::I16};
+use cranelift_codegen::{ir::types::I16, Context};
 use cranelift_entity::EntityRef;
 use cranelift_frontend::*;
 use cranelift_module::*;
@@ -17,6 +17,7 @@ fn error_on_incompatible_sig_in_declare_function() {
     let mut module =
         ObjectModule::new(ObjectBuilder::new(isa, "foo", default_libcall_names()).unwrap());
     let mut sig = Signature {
+        is_variadic: false,
         params: vec![AbiParam::new(types::I64)],
         returns: vec![],
         call_conv: CallConv::SystemV,
@@ -33,6 +34,7 @@ fn error_on_incompatible_sig_in_declare_function() {
 
 fn define_simple_function(module: &mut ObjectModule) -> FuncId {
     let sig = Signature {
+        is_variadic: false,
         params: vec![],
         returns: vec![],
         call_conv: CallConv::SystemV,
@@ -96,6 +98,7 @@ fn switch_error() {
     use cranelift_codegen::settings;
 
     let sig = Signature {
+        is_variadic: false,
         params: vec![AbiParam::new(types::I32)],
         returns: vec![AbiParam::new(types::I32)],
         call_conv: CallConv::SystemV,
@@ -174,6 +177,7 @@ fn libcall_function() {
         ObjectModule::new(ObjectBuilder::new(isa, "foo", default_libcall_names()).unwrap());
 
     let sig = Signature {
+        is_variadic: false,
         params: vec![],
         returns: vec![],
         call_conv: CallConv::SystemV,
@@ -228,6 +232,7 @@ fn reject_nul_byte_symbol_for_func() {
         ObjectModule::new(ObjectBuilder::new(isa, "foo", default_libcall_names()).unwrap());
 
     let sig = Signature {
+        is_variadic: false,
         params: vec![],
         returns: vec![],
         call_conv: CallConv::SystemV,
@@ -278,6 +283,7 @@ fn aarch64_colocated_data_symbol_reloc() {
     module.define_data(data_id, &data_desc).unwrap();
 
     let sig = Signature {
+        is_variadic: false,
         params: vec![],
         returns: vec![AbiParam::new(types::I64)],
         call_conv: CallConv::SystemV,
@@ -339,6 +345,7 @@ mod eh_frame {
     /// on, this is enough to make cranelift emit a System V FDE for it.
     fn define_leaf(module: &mut ObjectModule, name: &str) -> FuncId {
         let sig = Signature {
+            is_variadic: false,
             params: vec![],
             returns: vec![],
             call_conv: CallConv::SystemV,
@@ -531,6 +538,7 @@ mod eh_frame {
         // set on the builder.
         let mut module = module_for("x86_64-pc-windows-msvc", true);
         let sig = Signature {
+            is_variadic: false,
             params: vec![],
             returns: vec![],
             call_conv: CallConv::WindowsFastcall,

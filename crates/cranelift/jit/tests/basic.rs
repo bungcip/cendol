@@ -24,6 +24,7 @@ fn error_on_incompatible_sig_in_declare_function() {
     let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
 
     let mut sig = Signature {
+        is_variadic: false,
         params: vec![AbiParam::new(types::I64)],
         returns: vec![],
         call_conv: CallConv::SystemV,
@@ -40,6 +41,7 @@ fn error_on_incompatible_sig_in_declare_function() {
 
 fn define_simple_function(module: &mut JITModule) -> Result<FuncId, ModuleError> {
     let sig = Signature {
+        is_variadic: false,
         params: vec![],
         returns: vec![],
         call_conv: CallConv::SystemV,
@@ -78,6 +80,7 @@ fn switch_error() {
     use cranelift_codegen::settings;
 
     let sig = Signature {
+        is_variadic: false,
         params: vec![AbiParam::new(types::I32)],
         returns: vec![AbiParam::new(types::I32)],
         call_conv: CallConv::SystemV,
@@ -154,6 +157,7 @@ fn libcall_function() {
     let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
 
     let sig = Signature {
+        is_variadic: false,
         params: vec![],
         returns: vec![],
         call_conv: CallConv::SystemV,

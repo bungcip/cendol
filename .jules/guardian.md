@@ -322,3 +322,8 @@ Action: Add `guardian_lvalue_assignment.rs` to validate that these constructs ar
 
 Learning: C11 6.7.4p1 requires that function specifiers ('inline' and '_Noreturn') only be used in the declaration of an identifier that is a function. This means they must be rejected for typedefs, struct/union members, and tag declarations (forward decls or definitions), even if the underlying type is a function pointer.
 Action: Centralize function specifier validation in semantic lowering to ensure all non-function declaration paths (variables, typedefs, members, tags) correctly enforce these constraints.
+
+2026-07-28 - [C11 §6.7.4p8: _Noreturn function contains a return statement]
+
+Learning: A function declared with `_Noreturn` shall not return to its caller. The semantic phase correctly checks for explicit `return` statements in functions marked as `_Noreturn` and emits `SemanticError::NoreturnFunctionHasReturn`. To fully ensure this invariant is strictly checked with precise spans and diagnostics, dedicated tests were required to assert that both void and non-void returns correctly trigger the diagnostic on the specific `return` keyword.
+Action: Add `guardian_noreturn_has_return.rs` to validate that any `return` statement within a `_Noreturn` function triggers the exact error during `CompilePhase::Mir` with accurate line/column diagnostic spans.

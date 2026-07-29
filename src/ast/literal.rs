@@ -577,3 +577,19 @@ mod tests {
         assert!(null_lit.is_integer_zero());
     }
 }
+
+#[cfg(test)]
+mod get_type_tests {
+    use super::{FloatSuffix, CharPrefix};
+    use crate::semantic::TypeRegistry;
+
+    #[test]
+    fn test_literal_get_type_coverage() {
+        let registry = TypeRegistry::new(target_lexicon::Triple::host());
+        assert_eq!(FloatSuffix::IL.get_type(&registry), registry.type_complex_long_double);
+        assert_eq!(CharPrefix::Utf8.get_type(&registry), registry.type_char_unsigned);
+        assert_eq!(CharPrefix::Wide.get_type(&registry), registry.type_signed);
+        assert_eq!(CharPrefix::Char16.get_type(&registry), registry.type_short_unsigned);
+        assert_eq!(CharPrefix::Char32.get_type(&registry), registry.type_int_unsigned);
+    }
+}

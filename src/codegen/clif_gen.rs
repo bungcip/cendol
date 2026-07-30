@@ -2617,9 +2617,8 @@ fn emit_stack_slots(
     clif_stack_slots.clear(); // Clear for each function
 
     // Combine locals and params for slot allocation
-    let all_locals: Vec<LocalId> = func.locals.iter().chain(func.params.iter()).cloned().collect();
-
-    for &local_id in &all_locals {
+    // Bolt ⚡: Optimization: Iterate directly without allocating a temporary Vec.
+    for &local_id in func.locals.iter().chain(func.params.iter()) {
         let local = mir.get_local(local_id);
         let local_type = mir.get_type(local.type_id);
         let size = lower_type_size(local_type, mir);
@@ -2904,7 +2903,9 @@ impl ClifGen {
                 }
 
                 // Step 3: NOW emit instructions - store fixed params to stack slots
-                let param_values: Vec<Value> = builder.block_params(*clif_block).to_vec();
+                // Bolt ⚡: Optimization: Use SmallVec to store values on the stack to satisfy borrow checker and avoid heap allocation.
+                let param_values: smallvec::SmallVec<[Value; 8]> =
+                    smallvec::SmallVec::from_slice(builder.block_params(*clif_block));
                 let mut param_iter = param_values.iter().copied();
 
                 if has_hidden_ptr {

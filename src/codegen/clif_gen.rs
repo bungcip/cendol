@@ -2396,7 +2396,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             for (constraint, place) in outputs {
                 let constraint_str = match constraint.get_val() {
                     LitVal::String { value, .. } => String::from_utf8_lossy(&value).into_owned(),
-                    _ => unimplemented!(),
+                    _ => unreachable!("inline asm constraint must be a string literal"),
                 };
                 let asm_constraint = match constraint_str.as_str() {
                     "r" => AsmConstraintKind::GeneralReg,
@@ -2420,7 +2420,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             for (constraint, operand) in inputs {
                 let constraint_str = match constraint.get_val() {
                     LitVal::String { value, .. } => String::from_utf8_lossy(&value).into_owned(),
-                    _ => unimplemented!(),
+                    _ => unreachable!("inline asm constraint must be a string literal"),
                 };
                 let asm_constraint = match constraint_str.as_str() {
                     "r" => AsmConstraintKind::GeneralReg,
@@ -2445,14 +2445,14 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             for clobber in clobbers {
                 let clobber_str = match clobber.get_val() {
                     LitVal::String { value, .. } => String::from_utf8_lossy(&value).into_owned(),
-                    _ => unimplemented!(),
+                    _ => unreachable!("inline asm clobber must be a string literal"),
                 };
                 clobber_strings.push(clobber_str);
             }
 
             let template_str = match template.get_val() {
                 LitVal::String { value, .. } => String::from_utf8_lossy(&value).into_owned(),
-                _ => unimplemented!("Non-string asm template"),
+                _ => unreachable!("inline asm template must be a string literal"),
             };
 
             let asm_data = InlineAsmData {

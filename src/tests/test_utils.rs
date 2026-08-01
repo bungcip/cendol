@@ -15,8 +15,10 @@ fn setup_driver(source: &str, phase: CompilePhase) -> CompilerDriver {
 /// provide default SourceManager & DiagnosticEngine
 pub(crate) fn setup_sm_and_de() -> (SourceManager, DiagnosticEngine) {
     let sm = SourceManager::new();
-    let mut de = DiagnosticEngine::default();
-    de.is_testing = true;
+    let de = DiagnosticEngine {
+        is_testing: true,
+        ..Default::default()
+    };
     (sm, de)
 }
 

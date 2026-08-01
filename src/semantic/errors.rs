@@ -202,6 +202,7 @@ pub enum SemanticError {
     },
     FunctionReturningArray,
     FunctionReturningFunction,
+    ArrayOfFunction,
     MemberNotFound {
         name: NameId,
         ty: QualType,
@@ -612,6 +613,7 @@ impl DiagDisplay for SemanticError {
             }
             SemanticError::FunctionReturningArray => write!(f, "function cannot return an array type"),
             SemanticError::FunctionReturningFunction => write!(f, "function cannot return a function type"),
+            SemanticError::ArrayOfFunction => write!(f, "declaration of array of functions is invalid"),
             SemanticError::MemberNotFound { name, ty } => {
                 write!(f, "no member named '{}' in '{}'", name, f.display_qual_type(*ty))
             }

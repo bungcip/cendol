@@ -118,6 +118,7 @@ pub mod guardian_alignas_constraints;
 pub mod guardian_alignas_vla;
 pub mod guardian_alignof_bitfield;
 pub mod guardian_array_init;
+pub mod guardian_array_of_functions;
 pub mod guardian_bitfield_constraints;
 pub mod guardian_block_scope_func;
 pub mod guardian_builtin_complex_const;

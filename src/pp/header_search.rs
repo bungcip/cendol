@@ -2,6 +2,7 @@ use hashbrown::HashMap;
 use rustc_hash::FxBuildHasher;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub(crate) struct SearchKey {
@@ -31,9 +32,9 @@ pub(crate) struct HeaderSearch {
     pub(crate) quoted_includes: Vec<PathBuf>,
     pub(crate) angled_includes: Vec<PathBuf>,
     /// Cache for resolved paths: (include_path, is_angled, current_dir) -> resolved_path
-    pub(crate) resolve_cache: RefCell<HashMap<SearchKey, Option<PathBuf>, FxBuildHasher>>,
+    pub(crate) resolve_cache: RefCell<HashMap<SearchKey, Option<Arc<PathBuf>>, FxBuildHasher>>,
     /// Cache for resolved next paths: (include_path, is_angled, current_dir) -> resolved_path
-    pub(crate) resolve_next_cache: RefCell<HashMap<SearchKey, Option<PathBuf>, FxBuildHasher>>,
+    pub(crate) resolve_next_cache: RefCell<HashMap<SearchKey, Option<Arc<PathBuf>>, FxBuildHasher>>,
 }
 
 impl HeaderSearch {
@@ -69,7 +70,7 @@ impl HeaderSearch {
     }
 
     /// Resolve an include path to an absolute path
-    pub(crate) fn resolve_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
+    pub(crate) fn resolve_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<Arc<PathBuf>> {
         let key_ref = SearchKeyRef {
             include_path,
             is_angled,
@@ -97,13 +98,15 @@ impl HeaderSearch {
             }
         };
 
+        let result_arc = result.map(Arc::new);
+
         let key = SearchKey {
             include_path: include_path.to_string(),
             is_angled,
             current_dir: current_dir.to_path_buf(),
         };
-        self.resolve_cache.borrow_mut().insert(key, result.clone());
-        result
+        self.resolve_cache.borrow_mut().insert(key, result_arc.clone());
+        result_arc
     }
 
     /// Helper to check a list of paths for an include file
@@ -118,7 +121,7 @@ impl HeaderSearch {
     }
 
     /// Resolve an include path for #include_next, skipping the search path valid for current_dir
-    pub(crate) fn resolve_next_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
+    pub(crate) fn resolve_next_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<Arc<PathBuf>> {
         let key_ref = SearchKeyRef {
             include_path,
             is_angled,
@@ -159,12 +162,14 @@ impl HeaderSearch {
             }
         }
 
+        let result_arc = result.map(Arc::new);
+
         let key = SearchKey {
             include_path: include_path.to_string(),
             is_angled,
             current_dir: current_dir.to_path_buf(),
         };
-        self.resolve_next_cache.borrow_mut().insert(key, result.clone());
-        result
+        self.resolve_next_cache.borrow_mut().insert(key, result_arc.clone());
+        result_arc
     }
 }

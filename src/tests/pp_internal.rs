@@ -39,15 +39,15 @@ fn test_header_search_resolution() {
     // Test angled includes (<header.h>)
     // Should find in angled_path
     let resolved = search.resolve_path("ang.h", true, &local_dir);
-    assert_eq!(resolved.unwrap(), angled_dir.join("ang.h"));
+    assert_eq!(*resolved.unwrap(), angled_dir.join("ang.h"));
 
     // Should find in system_path
     let resolved = search.resolve_path("sys.h", true, &local_dir);
-    assert_eq!(resolved.unwrap(), system_dir.join("sys.h"));
+    assert_eq!(*resolved.unwrap(), system_dir.join("sys.h"));
 
     // Should find in framework_path
     let resolved = search.resolve_path("frm.h", true, &local_dir);
-    assert_eq!(resolved.unwrap(), framework_dir.join("frm.h"));
+    assert_eq!(*resolved.unwrap(), framework_dir.join("frm.h"));
 
     // Should NOT find local header for angled include (unless in search path)
     let resolved = search.resolve_path("loc.h", true, &local_dir);
@@ -56,11 +56,11 @@ fn test_header_search_resolution() {
     // Test quoted includes ("header.h")
     // Should find in current dir first
     let resolved = search.resolve_path("loc.h", false, &local_dir);
-    assert_eq!(resolved.unwrap(), local_dir.join("loc.h"));
+    assert_eq!(*resolved.unwrap(), local_dir.join("loc.h"));
 
     // Should fallback to system/angled/framework
     let resolved = search.resolve_path("sys.h", false, &local_dir);
-    assert_eq!(resolved.unwrap(), system_dir.join("sys.h"));
+    assert_eq!(*resolved.unwrap(), system_dir.join("sys.h"));
 }
 
 #[test]
@@ -93,12 +93,12 @@ fn test_header_search_include_next() {
     // resolve_next_path(filename, is_angled, current_dir)
     let current_dir_a = &include_a;
     let resolved = search.resolve_next_path("foo.h", true, current_dir_a);
-    assert_eq!(resolved.unwrap(), include_b.join("foo.h"));
+    assert_eq!(*resolved.unwrap(), include_b.join("foo.h"));
 
     // Case 2: Current file is in B. #include_next <foo.h> should find C/foo.h
     let current_dir_b = &include_b;
     let resolved = search.resolve_next_path("foo.h", true, current_dir_b);
-    assert_eq!(resolved.unwrap(), include_c.join("foo.h"));
+    assert_eq!(*resolved.unwrap(), include_c.join("foo.h"));
 
     // Case 3: Current file is in C. #include_next <foo.h> should find nothing
     let current_dir_c = &include_c;
@@ -116,12 +116,12 @@ fn test_header_search_include_next() {
     // Start in A (quoted path), looking for quoted include "foo.h"
     // Should find B/foo.h (angled path)
     let resolved = search.resolve_next_path("foo.h", false, current_dir_a);
-    assert_eq!(resolved.unwrap(), include_b.join("foo.h"));
+    assert_eq!(*resolved.unwrap(), include_b.join("foo.h"));
 
     // Start in B (angled path), looking for quoted include "foo.h"
     // Should find C/foo.h (system path)
     let resolved = search.resolve_next_path("foo.h", false, current_dir_b);
-    assert_eq!(resolved.unwrap(), include_c.join("foo.h"));
+    assert_eq!(*resolved.unwrap(), include_c.join("foo.h"));
 }
 
 #[test]

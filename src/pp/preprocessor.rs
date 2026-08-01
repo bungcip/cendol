@@ -205,7 +205,7 @@ impl<'src> Preprocessor<'src> {
     pub(super) fn load_resolved_header(
         &mut self,
         path: &str,
-        resolved: Option<PathBuf>,
+        resolved: Option<std::sync::Arc<PathBuf>>,
         loc: SourceLoc,
     ) -> Result<Option<SourceId>, PPDiag> {
         if let Some(path_buf) = resolved {

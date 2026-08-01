@@ -190,3 +190,13 @@ fn test_static_assert_float_logical_and_comparison() {
     "#;
     run_pass(code, CompilePhase::Mir);
 }
+
+#[test]
+fn test_static_assert_float_unary_and_complex() {
+    let code = r#"
+        _Static_assert(-2.5 < -2.0, "");
+        _Static_assert(+3.14 == 3.14, "");
+        _Static_assert(__builtin_complex(1.0, 0.0) || 1, "");
+    "#;
+    run_pass(code, CompilePhase::Mir);
+}

@@ -135,6 +135,7 @@ pub mod guardian_increment_completeness;
 pub mod guardian_index_completeness;
 pub mod guardian_invalid_atomic_specifier;
 pub mod guardian_modifiable_lvalue;
+pub mod guardian_noreturn_has_return;
 pub mod guardian_noreturn_switch;
 pub mod guardian_npc_propagation;
 pub mod guardian_offsetof;

@@ -580,7 +580,7 @@ mod tests {
 
 #[cfg(test)]
 mod get_type_tests {
-    use super::{FloatSuffix, CharPrefix};
+    use super::{CharPrefix, FloatSuffix};
     use crate::semantic::TypeRegistry;
 
     #[test]

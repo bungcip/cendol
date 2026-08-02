@@ -3064,6 +3064,9 @@ impl<'a> Parser<'a> {
                 let imm = self.match_imm64("expected immediate handler index")?;
                 InstructionData::ExceptionHandlerAddress { opcode, block, imm }
             }
+            InstructionFormat::InlineAsm => {
+                todo!("Parsing of InlineAsm in Cranelift IR text format is not yet supported")
+            }
         };
         Ok(idata)
     }

@@ -326,3 +326,6 @@ Action: Centralize function specifier validation in semantic lowering to ensure 
 
 Learning: When lowering array declarators, checking if the element type is a function previously emitted `SemanticError::FunctionReturningFunction`, which is inaccurate. An array of functions is explicitly forbidden by C11 6.7.6.2p1 because functions are not objects. It is a distinct error from a function returning a function. The parser already rejects `int foo[10]()` as a syntax error, but `typedef int func(); func arr[10];` passes parsing and must be rejected during semantic lowering with the correct diagnostic.
 Action: Added `SemanticError::ArrayOfFunction` and a dedicated Guardian test `guardian_array_of_functions.rs` to ensure this invariant is protected and the diagnostic span correctly identifies the invalid array declaration.
+2024-05-18 - function_returning_array_function
+
+Learning: When reporting SemanticError::FunctionReturningArray or FunctionReturningFunction, the span points to the closing parenthesis of the function declarator, not the start of the function name. This is due to the structure of PDeclarator::Function and how scopes are resolved. Action: Future tests that check diagnostic spans for declarator-related errors should carefully check if the error is triggered by the inner declarator or the entire declarator (like the '()').

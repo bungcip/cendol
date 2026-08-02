@@ -183,5 +183,6 @@ pub mod semantic_binary_conversion;
 pub mod semantic_binary_invalid_operands;
 pub mod semantic_cleanup_coverage;
 pub mod semantic_conversions_uncovered;
+pub mod semantic_gnu_local_label;
 pub mod semantic_types_compatible;
 pub mod test_utils;

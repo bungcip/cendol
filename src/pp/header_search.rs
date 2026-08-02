@@ -121,7 +121,12 @@ impl HeaderSearch {
     }
 
     /// Resolve an include path for #include_next, skipping the search path valid for current_dir
-    pub(crate) fn resolve_next_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<Arc<PathBuf>> {
+    pub(crate) fn resolve_next_path(
+        &self,
+        include_path: &str,
+        is_angled: bool,
+        current_dir: &Path,
+    ) -> Option<Arc<PathBuf>> {
         let key_ref = SearchKeyRef {
             include_path,
             is_angled,

@@ -322,3 +322,6 @@ Action: Add `guardian_lvalue_assignment.rs` to validate that these constructs ar
 
 Learning: C11 6.7.4p1 requires that function specifiers ('inline' and '_Noreturn') only be used in the declaration of an identifier that is a function. This means they must be rejected for typedefs, struct/union members, and tag declarations (forward decls or definitions), even if the underlying type is a function pointer.
 Action: Centralize function specifier validation in semantic lowering to ensure all non-function declaration paths (variables, typedefs, members, tags) correctly enforce these constraints.
+2024-05-18 - function_returning_array_function
+
+Learning: When reporting SemanticError::FunctionReturningArray or FunctionReturningFunction, the span points to the closing parenthesis of the function declarator, not the start of the function name. This is due to the structure of PDeclarator::Function and how scopes are resolved. Action: Future tests that check diagnostic spans for declarator-related errors should carefully check if the error is triggered by the inner declarator or the entire declarator (like the '()').

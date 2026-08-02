@@ -2952,7 +2952,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             PDeclarator::Array { inner, size } => {
                 if current_type.is_function() {
-                    self.report_error(span, SemanticError::FunctionReturningFunction);
+                    self.report_error(span, SemanticError::ArrayOfFunction);
                 }
                 let array_qt = self.lower_array_declarator(*inner, size, current_type, span, ctx);
                 self.apply_declarator(array_qt, *inner, span, spec_info, ctx)

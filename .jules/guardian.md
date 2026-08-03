@@ -329,3 +329,8 @@ Action: Added `SemanticError::ArrayOfFunction` and a dedicated Guardian test `gu
 2024-05-18 - function_returning_array_function
 
 Learning: When reporting SemanticError::FunctionReturningArray or FunctionReturningFunction, the span points to the closing parenthesis of the function declarator, not the start of the function name. This is due to the structure of PDeclarator::Function and how scopes are resolved. Action: Future tests that check diagnostic spans for declarator-related errors should carefully check if the error is triggered by the inner declarator or the entire declarator (like the '()').
+
+2026-07-25 - [Address of Array always True in Conditional Contexts]
+
+Learning: Cendol correctly emitted `SemanticError::AddressOfArrayAlwaysTrue` when an array was used in boolean scalar contexts like `if`, `while`, and `!`. However, the validation was missing for the ternary conditional operator (`?:`), allowing array addresses to silently evaluate to true without any warning. This could cause unexpected behaviors when developers mistakenly use an array name directly instead of explicitly indexing or dereferencing it.
+Action: Add `guardian_address_of_array_always_true.rs` to validate that `SemanticError::AddressOfArrayAlwaysTrue` is consistently rejected in all scalar condition contexts (e.g. `if`, `while`, `!`, and ternary `?:`). Fixed `visit_ternary_op` to share the same validation behavior to enforce this missing invariant.

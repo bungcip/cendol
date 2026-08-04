@@ -1,3 +1,4 @@
+pub mod semantic_const_eval_offsetof;
 pub mod parser_lexer_coverage;
 // Preprocessor
 pub mod pp_common;

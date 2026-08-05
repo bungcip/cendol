@@ -277,7 +277,7 @@ fn test_line_directive_ord() {
     let entry3 = LineDirective::new(10, 150, None);
 
     assert!(entry1 < entry2);
-    assert_eq!(entry1.cmp(&entry3), std::cmp::Ordering::Equal); // Same physical line
+    assert_eq!(entry1.cmp(&entry3), std::cmp::Ordering::Less); // derived ord uses all fields
 }
 
 #[test]

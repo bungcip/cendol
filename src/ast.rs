@@ -172,13 +172,6 @@ impl Offset for u32 {
     }
 }
 
-impl Offset for usize {
-    #[inline]
-    fn to_u32(self) -> u32 {
-        self as u32
-    }
-}
-
 impl Offset for i32 {
     #[inline]
     fn to_u32(self) -> u32 {

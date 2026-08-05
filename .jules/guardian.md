@@ -329,3 +329,7 @@ Action: Added `SemanticError::ArrayOfFunction` and a dedicated Guardian test `gu
 2024-05-18 - function_returning_array_function
 
 Learning: When reporting SemanticError::FunctionReturningArray or FunctionReturningFunction, the span points to the closing parenthesis of the function declarator, not the start of the function name. This is due to the structure of PDeclarator::Function and how scopes are resolved. Action: Future tests that check diagnostic spans for declarator-related errors should carefully check if the error is triggered by the inner declarator or the entire declarator (like the '()').
+2024-05-30 - [Diagnostic Span for Switch Scope Jumps]
+
+Learning: When a `switch` statement jumps into the scope of a variably modified type (VLA), the diagnostic span must correctly point to the specific `case` or `default` label that triggered the error, rather than the statement immediately following the label. This requires passing the correct AST `NodeRef` down to the error reporting function (e.g., `check_switch_vla_jump`), as relying on the body statement's node will result in inaccurate line/column numbers.
+Action: When testing diagnostic spans for control-flow statements (like `switch`), always assert the exact line and column using `run_fail_with_diagnostic` to catch subtle node resolution bugs. Ensure error reporting functions take the specific error node as a parameter rather than falling back to the current statement context.

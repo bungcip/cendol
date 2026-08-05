@@ -3093,7 +3093,7 @@ impl<'a> SemanticAnalyzer<'a> {
         truncated
     }
 
-    fn check_switch_vla_jump(&mut self, node: NodeRef) {
+    fn check_switch_vla_jump(&mut self, error_node: NodeRef) {
         let Some(ctx) = self.switch_stack.last() else {
             return;
         };
@@ -3118,7 +3118,7 @@ impl<'a> SemanticAnalyzer<'a> {
             notes.push((self.ast.get_span(vla), SemanticError::NoteVLADeclaredHere { name }));
         }
 
-        self.report_error_with_notes(node, SemanticError::JumpIntoScopeVLA { is_switch: true }, notes);
+        self.report_error_with_notes(error_node, SemanticError::JumpIntoScopeVLA { is_switch: true }, notes);
     }
 
     fn visit_case_statement(
@@ -3170,7 +3170,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
         }
 
-        self.check_switch_vla_jump(stmt);
+        self.check_switch_vla_jump(node);
         self.visit_node(stmt);
         None
     }

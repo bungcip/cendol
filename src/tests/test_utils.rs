@@ -5,7 +5,7 @@ use crate::driver::compiler::CompilerDriver;
 use crate::lang_options::PedanticMode;
 use crate::source_manager::SourceManager;
 
-fn setup_driver(source: &str, phase: CompilePhase) -> CompilerDriver {
+pub fn setup_driver(source: &str, phase: CompilePhase) -> CompilerDriver {
     let config = CompileConfig::from_virtual_file(source.to_string(), phase);
     let mut driver = CompilerDriver::from_config(config);
     driver.de.is_testing = true;

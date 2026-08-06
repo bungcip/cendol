@@ -1,4 +1,4 @@
-use hashbrown::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use serde::Serialize;
 use std::sync::Arc;
 use std::{
@@ -304,7 +304,7 @@ impl Default for SourceManager {
     fn default() -> Self {
         Self {
             file_infos: Vec::new(),
-            path_to_id: HashMap::new(),
+            path_to_id: HashMap::default(),
             digits_id: std::sync::OnceLock::new(),
         }
     }

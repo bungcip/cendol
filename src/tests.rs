@@ -175,6 +175,7 @@ pub mod guardian_invalid_function_specifier;
 mod guardian_invalid_number_of_arguments;
 pub mod guardian_invalid_storage_class_for_function;
 mod guardian_invalid_unary_operand;
+pub mod guardian_jump_into_scope_vla;
 mod guardian_lvalue_assignment;
 pub mod guardian_pointer_assignment_nested_qualifiers;
 pub mod guardian_switch_multiple_default;

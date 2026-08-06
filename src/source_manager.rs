@@ -2,7 +2,6 @@ use rustc_hash::FxHashMap as HashMap;
 use serde::Serialize;
 use std::sync::Arc;
 use std::{
-    cmp::Ordering,
     num::NonZeroU32,
     path::{Path, PathBuf},
 };
@@ -197,7 +196,7 @@ impl std::fmt::Display for SourceSpan {
 }
 
 /// Represents a single #line directive entry
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LineDirective {
     pub(crate) physical_line: u32,
     pub(crate) logical_line: u32,
@@ -211,18 +210,6 @@ impl LineDirective {
             logical_line,
             logical_file,
         }
-    }
-}
-
-impl Ord for LineDirective {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.physical_line.cmp(&other.physical_line)
-    }
-}
-
-impl PartialOrd for LineDirective {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
     }
 }
 

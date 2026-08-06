@@ -741,7 +741,7 @@ fn get_call_result(ctx: &mut BodyEmitContext, call_inst: Inst, return_type_id: T
     // Bolt ⚡: Optimization: Use a fast path for common single-result or zero-result calls
     // to avoid heap allocation from .to_vec(). We only allocate for packed struct returns.
     if let Some(types_list) = get_struct_packing(mir_type, ctx.mir) {
-        let results = ctx.builder.inst_results(call_inst).to_vec();
+        let results = smallvec::SmallVec::<[Value; 2]>::from_slice(ctx.builder.inst_results(call_inst));
         // Results are packed into multiple registers. Store them to a temporary stack slot.
         let size = lower_type_size(mir_type, ctx.mir);
         let slot = ctx
@@ -2466,7 +2466,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
 
             let inst = ctx.builder.ins().inline_asm(asm_id, &input_values);
 
-            let results = ctx.builder.inst_results(inst).to_vec();
+            let results = smallvec::SmallVec::<[Value; 8]>::from_slice(ctx.builder.inst_results(inst));
             for (i, place) in output_values.iter().enumerate() {
                 if i < results.len() {
                     let val = results[i];

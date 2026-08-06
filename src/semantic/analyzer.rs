@@ -3349,7 +3349,10 @@ impl<'a> SemanticAnalyzer<'a> {
         self.apply_lvalue_conversion(cond);
         if cond_qt.is_array() {
             if let crate::ast::NodeKind::Ident(name, _) = self.ast.get_kind(cond) {
-                self.report_warning(cond, crate::semantic::errors::SemanticError::AddressOfArrayAlwaysTrue { name: *name });
+                self.report_warning(
+                    cond,
+                    crate::semantic::errors::SemanticError::AddressOfArrayAlwaysTrue { name: *name },
+                );
             }
         }
         let mut actual_cond_qt = cond_qt;

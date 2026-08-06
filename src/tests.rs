@@ -168,6 +168,7 @@ pub mod regr_union_cast;
 
 // Test Helpers
 pub mod codegen_alias;
+pub mod guardian_address_of_array_always_true;
 pub mod guardian_break_not_in_loop_or_switch;
 pub mod guardian_case_not_in_switch;
 pub mod guardian_continue_not_in_loop;
@@ -187,4 +188,3 @@ pub mod semantic_conversions_uncovered;
 pub mod semantic_gnu_local_label;
 pub mod semantic_types_compatible;
 pub mod test_utils;
-pub mod guardian_address_of_array_always_true;

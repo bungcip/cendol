@@ -3347,7 +3347,20 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_ternary_op(&mut self, cond: NodeRef, then: NodeRef, else_expr: NodeRef) -> Option<QualType> {
         let cond_qt = self.visit_node(cond)?;
         self.apply_lvalue_conversion(cond);
-        self.require_scalar(cond, cond_qt);
+        if cond_qt.is_array() {
+            if let crate::ast::NodeKind::Ident(name, _) = self.ast.get_kind(cond) {
+                self.report_warning(
+                    cond,
+                    crate::semantic::errors::SemanticError::AddressOfArrayAlwaysTrue { name: *name },
+                );
+            }
+        }
+        let mut actual_cond_qt = cond_qt;
+        if actual_cond_qt.is_array() || actual_cond_qt.is_function() {
+            actual_cond_qt = self.decay(cond, actual_cond_qt);
+            self.semantic_info.types[cond.index()] = Some(actual_cond_qt);
+        }
+        self.require_scalar(cond, actual_cond_qt);
         let then_ty = self.visit_node(then);
         let else_ty = self.visit_node(else_expr);
 

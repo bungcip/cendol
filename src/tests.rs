@@ -187,3 +187,4 @@ pub mod semantic_conversions_uncovered;
 pub mod semantic_gnu_local_label;
 pub mod semantic_types_compatible;
 pub mod test_utils;
+pub mod ast_methods_coverage;

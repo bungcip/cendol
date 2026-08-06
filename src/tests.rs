@@ -186,5 +186,5 @@ pub mod semantic_cleanup_coverage;
 pub mod semantic_conversions_uncovered;
 pub mod semantic_gnu_local_label;
 pub mod semantic_types_compatible;
-pub mod test_utils;
 pub mod test_const_eval_unary;
+pub mod test_utils;

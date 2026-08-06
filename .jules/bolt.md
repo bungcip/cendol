@@ -33,3 +33,8 @@
 
 **Learning:** During parsing/lexing, C programs contain many string literals, of which the vast majority (>99%) are single and non-concatenated (e.g. `"SELECT..."` or `"<digits>"`). In the previous implementation, the parser's `next_token` always allocated a `SmallVec`, peeked/pushed/popped adjacent tokens, and allocated a temporary `String` buffer. Adding an `is_single` check via `peek_pp_token` allows single string literals to bypass this entire overhead, drastically reducing memory allocations and CPU instructions in the lexer's hot path.
 **Action:** Always identify and fast-path the common single-item case for list/concatenation collectors to avoid unnecessary heap allocations and collection overhead in the compiler's lexer.
+
+## 2025-10-15 - FxHashMap for PathBuf and String in SourceManager
+
+**Learning:** During C preprocessing, file existence and ID resolution are queried repeatedly (e.g., via `__has_include` or duplicate include checks). `SourceManager`'s `path_to_id` map historically used standard `hashbrown::HashMap` which defaults to the slow, cryptographically secure `SipHash` algorithm. Swapping this map to use `rustc_hash::FxHashMap` completely removes the SipHash overhead for `PathBuf` keys, significantly accelerating path resolution and header check performance with zero functional regression.
+**Action:** Always prefer `rustc_hash::FxHashMap` over standard `hashbrown::HashMap` in core resource tables (such as `SourceManager`'s path-to-ID indices) where path string lookups are hot and denial-of-service protection is not required.

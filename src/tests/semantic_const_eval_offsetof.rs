@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::{run_pass, run_fail};
+use crate::tests::test_utils::{run_fail, run_pass};
 
 #[test]
 fn test_builtin_offsetof_in_const_eval_coverage() {

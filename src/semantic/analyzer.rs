@@ -3347,6 +3347,7 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_ternary_op(&mut self, cond: NodeRef, then: NodeRef, else_expr: NodeRef) -> Option<QualType> {
         let cond_qt = self.visit_node(cond)?;
         self.apply_lvalue_conversion(cond);
+        #[allow(clippy::collapsible_if)]
         if cond_qt.is_array() {
             if let crate::ast::NodeKind::Ident(name, _) = self.ast.get_kind(cond) {
                 self.report_warning(

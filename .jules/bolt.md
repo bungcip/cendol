@@ -41,3 +41,7 @@
 
 **Learning:** During C preprocessing, file existence and ID resolution are queried repeatedly (e.g., via `__has_include` or duplicate include checks). `SourceManager`'s `path_to_id` map historically used standard `hashbrown::HashMap` which defaults to the slow, cryptographically secure `SipHash` algorithm. Swapping this map to use `rustc_hash::FxHashMap` completely removes the SipHash overhead for `PathBuf` keys, significantly accelerating path resolution and header check performance with zero functional regression.
 **Action:** Always prefer `rustc_hash::FxHashMap` over standard `hashbrown::HashMap` in core resource tables (such as `SourceManager`'s path-to-ID indices) where path string lookups are hot and denial-of-service protection is not required.
+
+## 2026-03-12 - Avoiding Temporary Heap Allocation on Arc Creation from SmallVec
+**Learning:** Instantiating `Arc<[T]>` from `SmallVec` via `Arc::from(set.into_vec())` triggers a redundant heap allocation. Even if the `SmallVec` was small and stack-allocated, `into_vec()` allocates a standard `Vec` first before shrinking it into an `Arc`. Using `Arc::from(set.as_slice())` allows the standard library to directly allocate the `Arc` header and copy the slice elements, completely bypassing the intermediate `Vec` allocation on the hot path of macro hide-set interning.
+**Action:** When creating an `Arc<[T]>` from a stack-allocated or cached collection like `SmallVec`, always use `Arc::from(set.as_slice())` rather than `into_vec()` to guarantee a single-allocation construct.

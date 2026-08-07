@@ -4,6 +4,32 @@ use crate::{
 };
 
 #[test]
+fn test_sizeof_incomplete_type_prohibited() {
+    // C11 6.5.3.4p1: The sizeof operator shall not be applied to... an incomplete type.
+
+    // 1. sizeof applied to void
+    run_fail_with_message(
+        r#"
+        int main() {
+            return sizeof(void);
+        }
+        "#,
+        "Invalid application of 'sizeof' to an incomplete type 'void'",
+    );
+
+    // 2. sizeof applied to an incomplete struct
+    run_fail_with_message(
+        r#"
+        struct S;
+        int main() {
+            return sizeof(struct S);
+        }
+        "#,
+        "Invalid application of 'sizeof' to an incomplete type 'struct S'",
+    );
+}
+
+#[test]
 fn test_sizeof_function_type_prohibited() {
     // C11 6.5.3.4p1: The sizeof operator shall not be applied to an expression
     // that has function type... or to the parenthesized name of such a type.

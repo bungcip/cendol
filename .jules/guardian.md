@@ -338,3 +338,8 @@ Action: Add `guardian_address_of_array_always_true.rs` to validate that `Semanti
 
 Learning: When a `switch` statement jumps into the scope of a variably modified type (VLA), the diagnostic span must correctly point to the specific `case` or `default` label that triggered the error, rather than the statement immediately following the label. This requires passing the correct AST `NodeRef` down to the error reporting function (e.g., `check_switch_vla_jump`), as relying on the body statement's node will result in inaccurate line/column numbers.
 Action: When testing diagnostic spans for control-flow statements (like `switch`), always assert the exact line and column using `run_fail_with_diagnostic` to catch subtle node resolution bugs. Ensure error reporting functions take the specific error node as a parameter rather than falling back to the current statement context.
+
+2024-08-08 - [return statement diagnostic constraints]
+
+Learning: [C11 §6.8.6.4 constraints on `return` statements have distinct semantic errors depending on if the function is void/non-void and if the return expression is missing, has a value, or is a void expression. Ensuring that the diagnostic span correctly targets the `return` expression (or the keyword itself when the expression is missing) is critical for compiler accuracy.]
+Action: [Added tests in `guardian_return_constraints.rs` to validate the specific diagnostic messages and their exact source spans for `VoidReturnWithValue`, `NonVoidReturnWithoutValue`, and `VoidReturnWithVoidExpr` during semantic lowering.]

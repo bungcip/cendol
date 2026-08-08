@@ -3348,7 +3348,8 @@ impl<'a> SemanticAnalyzer<'a> {
         let cond_qt = self.visit_node(cond)?;
         self.apply_lvalue_conversion(cond);
         if cond_qt.is_array() {
-            if let crate::ast::NodeKind::Ident(name, _) = self.ast.get_kind(cond) {
+            let kind = self.ast.get_kind(cond);
+            if let crate::ast::NodeKind::Ident(name, _) = kind {
                 self.report_warning(
                     cond,
                     crate::semantic::errors::SemanticError::AddressOfArrayAlwaysTrue { name: *name },

@@ -7,7 +7,7 @@ fn test_c23_bool_literals_basic() {
         int main() {
             bool a = true;
             bool b = false;
-            return a == true ? 1 : 0;
+            return a ? 1 : 0;
         }
     ";
     let _ = run_pipeline(src, CompilePhase::Mir);

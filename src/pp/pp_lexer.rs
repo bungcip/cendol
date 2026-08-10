@@ -693,8 +693,119 @@ impl PPLexer {
             } else {
                 self.lex_operator(start_pos, ch, flags)
             }),
-            b'+' | b'-' | b'*' | b'/' | b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'^' | b'~' | b'?' | b':' | b','
-            | b';' | b'(' | b')' | b'[' | b']' | b'{' | b'}' => Some(self.lex_operator(start_pos, ch, flags)),
+            b'(' => Some(PPToken::new(
+                PPTokenKind::LeftParen,
+                if self.has_splice {
+                    flags | PPTokenFlags::HAS_SPLICES
+                } else {
+                    flags
+                },
+                SourceLoc::new(self.source_id, start_pos),
+                (self.position - start_pos) as u16,
+            )),
+            b')' => Some(PPToken::new(
+                PPTokenKind::RightParen,
+                if self.has_splice {
+                    flags | PPTokenFlags::HAS_SPLICES
+                } else {
+                    flags
+                },
+                SourceLoc::new(self.source_id, start_pos),
+                (self.position - start_pos) as u16,
+            )),
+            b'[' => Some(PPToken::new(
+                PPTokenKind::LeftBracket,
+                if self.has_splice {
+                    flags | PPTokenFlags::HAS_SPLICES
+                } else {
+                    flags
+                },
+                SourceLoc::new(self.source_id, start_pos),
+                (self.position - start_pos) as u16,
+            )),
+            b']' => Some(PPToken::new(
+                PPTokenKind::RightBracket,
+                if self.has_splice {
+                    flags | PPTokenFlags::HAS_SPLICES
+                } else {
+                    flags
+                },
+                SourceLoc::new(self.source_id, start_pos),
+                (self.position - start_pos) as u16,
+            )),
+            b'{' => Some(PPToken::new(
+                PPTokenKind::LeftBrace,
+                if self.has_splice {
+                    flags | PPTokenFlags::HAS_SPLICES
+                } else {
+                    flags
+                },
+                SourceLoc::new(self.source_id, start_pos),
+                (self.position - start_pos) as u16,
+            )),
+            b'}' => Some(PPToken::new(
+                PPTokenKind::RightBrace,
+                if self.has_splice {
+                    flags | PPTokenFlags::HAS_SPLICES
+                } else {
+                    flags
+                },
+                SourceLoc::new(self.source_id, start_pos),
+                (self.position - start_pos) as u16,
+            )),
+            b',' => Some(PPToken::new(
+                PPTokenKind::Comma,
+                if self.has_splice {
+                    flags | PPTokenFlags::HAS_SPLICES
+                } else {
+                    flags
+                },
+                SourceLoc::new(self.source_id, start_pos),
+                (self.position - start_pos) as u16,
+            )),
+            b';' => Some(PPToken::new(
+                PPTokenKind::Semicolon,
+                if self.has_splice {
+                    flags | PPTokenFlags::HAS_SPLICES
+                } else {
+                    flags
+                },
+                SourceLoc::new(self.source_id, start_pos),
+                (self.position - start_pos) as u16,
+            )),
+            b':' => Some(PPToken::new(
+                PPTokenKind::Colon,
+                if self.has_splice {
+                    flags | PPTokenFlags::HAS_SPLICES
+                } else {
+                    flags
+                },
+                SourceLoc::new(self.source_id, start_pos),
+                (self.position - start_pos) as u16,
+            )),
+            b'~' => Some(PPToken::new(
+                PPTokenKind::Tilde,
+                if self.has_splice {
+                    flags | PPTokenFlags::HAS_SPLICES
+                } else {
+                    flags
+                },
+                SourceLoc::new(self.source_id, start_pos),
+                (self.position - start_pos) as u16,
+            )),
+            b'?' => Some(PPToken::new(
+                PPTokenKind::Question,
+                if self.has_splice {
+                    flags | PPTokenFlags::HAS_SPLICES
+                } else {
+                    flags
+                },
+                SourceLoc::new(self.source_id, start_pos),
+                (self.position - start_pos) as u16,
+            )),
+            b'+' | b'-' | b'*' | b'/' | b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'^' => {
+                Some(self.lex_operator(start_pos, ch, flags))
+            }
             _ => Some(PPToken::new(
                 PPTokenKind::Unknown,
                 flags,

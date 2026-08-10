@@ -338,3 +338,8 @@ Action: Add `guardian_address_of_array_always_true.rs` to validate that `Semanti
 
 Learning: When a `switch` statement jumps into the scope of a variably modified type (VLA), the diagnostic span must correctly point to the specific `case` or `default` label that triggered the error, rather than the statement immediately following the label. This requires passing the correct AST `NodeRef` down to the error reporting function (e.g., `check_switch_vla_jump`), as relying on the body statement's node will result in inaccurate line/column numbers.
 Action: When testing diagnostic spans for control-flow statements (like `switch`), always assert the exact line and column using `run_fail_with_diagnostic` to catch subtle node resolution bugs. Ensure error reporting functions take the specific error node as a parameter rather than falling back to the current statement context.
+
+2026-08-06 - [Expected Array Type on Subscripting]
+
+Learning: C11 requires that one of the expressions in a subscript operator `[]` has the type "pointer to complete object type" (and thus it decays to a pointer). Trying to apply the subscript operator to a non-pointer, non-array type (like `int` or `struct`) is invalid and should result in an error. We want to ensure that `SemanticError::ExpectedArrayType` correctly intercepts this with a precise diagnostic error and correct spans.
+Action: Add `guardian_expected_array_type.rs` to validate this invariant, ensuring the diagnostic triggers at `CompilePhase::Mir` with the correct error message `"subscripted value is not an array (have '...')"` and specific line/column spans.

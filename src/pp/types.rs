@@ -61,7 +61,8 @@ impl HideSetTable {
             return id;
         }
 
-        let arc_set: Arc<[StringId]> = Arc::from(set.into_vec());
+        // Bolt ⚡: Instantiate Arc directly from the slice to avoid a redundant Vec heap allocation.
+        let arc_set: Arc<[StringId]> = Arc::from(set.as_slice());
         let id = self.sets.len() as u32;
         self.sets.push(arc_set.clone());
         self.map.insert(arc_set, id);

@@ -343,3 +343,7 @@ Action: When testing diagnostic spans for control-flow statements (like `switch`
 
 Learning: C11 requires that one of the expressions in a subscript operator `[]` has the type "pointer to complete object type" (and thus it decays to a pointer). Trying to apply the subscript operator to a non-pointer, non-array type (like `int` or `struct`) is invalid and should result in an error. We want to ensure that `SemanticError::ExpectedArrayType` correctly intercepts this with a precise diagnostic error and correct spans.
 Action: Add `guardian_expected_array_type.rs` to validate this invariant, ensuring the diagnostic triggers at `CompilePhase::Mir` with the correct error message `"subscripted value is not an array (have '...')"` and specific line/column spans.
+2024-05-24 - Enforce C11 6.7.9p5 constraints on extern block scope initializers
+
+Learning: The C11 standard explicitly states in 6.7.9p5 that "If the declaration of an identifier has block scope, and the identifier has external or internal linkage, the declaration shall have no initializer for the identifier." Thus `extern int x = 1;` inside a block scope is invalid. Previously untested specifically for the error diagnostic correctness and exact source span targeting the start of the declaration.
+Action: Added test `guardian_invalid_initializer.rs` which verifies `SemanticError::InvalidInitializer` is correctly emitted during the MIR phase, and its diagnostic points directly to the `extern` keyword.

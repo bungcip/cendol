@@ -343,3 +343,8 @@ Action: When testing diagnostic spans for control-flow statements (like `switch`
 
 Learning: C11 requires that one of the expressions in a subscript operator `[]` has the type "pointer to complete object type" (and thus it decays to a pointer). Trying to apply the subscript operator to a non-pointer, non-array type (like `int` or `struct`) is invalid and should result in an error. We want to ensure that `SemanticError::ExpectedArrayType` correctly intercepts this with a precise diagnostic error and correct spans.
 Action: Add `guardian_expected_array_type.rs` to validate this invariant, ensuring the diagnostic triggers at `CompilePhase::Mir` with the correct error message `"subscripted value is not an array (have '...')"` and specific line/column spans.
+
+2026-08-07 - [Extern Block Scope Initializer Constraint]
+
+Learning: C11 6.7.9p5 requires that if the declaration of an identifier has block scope, and the identifier has external or internal linkage, the declaration shall have no initializer for the identifier. This means `extern int x = 10;` inside a function is a constraint violation. Cendol correctly checks this in `visit_var_declaration` during semantic analysis and emits `SemanticError::InvalidInitializer`. The diagnostic span should correctly point to the start of the declaration.
+Action: Add `guardian_invalid_initializer.rs` to explicitly validate this rejection, asserting the correct error message, phase (`CompilePhase::Mir`), and precise span.

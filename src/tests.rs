@@ -177,6 +177,7 @@ pub mod guardian_case_not_in_switch;
 pub mod guardian_continue_not_in_loop;
 pub mod guardian_invalid_function_specifier;
 mod guardian_invalid_number_of_arguments;
+pub mod guardian_invalid_initializer;
 pub mod guardian_invalid_storage_class_for_function;
 mod guardian_invalid_unary_operand;
 pub mod guardian_jump_into_scope_vla;

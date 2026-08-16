@@ -46,3 +46,8 @@
 
 **Learning:** During macro expansion, Dave Prosser's hiding set algorithm repeatedly interns token sets to prevent infinite recursive macro expansion. Historically, `HideSetTable::intern` accepted a `SmallVec<[StringId; 4]>` and converted it into a heap-allocated `Vec` using `.into_vec()`, before wrapping it inside an `Arc<[StringId]>`. Because macro hide-sets are extremely small (usually containing 1 or 2 macro names), they fit entirely within `SmallVec`'s inline storage. Replacing `.into_vec()` with `Arc::from(set.as_slice())` avoids constructing the intermediate heap-allocated `Vec` entirely, eliminating a redundant heap allocation on the hot interning path.
 **Action:** Always prefer instantiating `Arc<[T]>` or `Box<[T]>` directly from a slice reference `as_slice()` instead of consuming stack-allocated `SmallVec` or `Vec` containers with `.into_vec()`, completely bypassing unnecessary heap allocation overhead on critical paths.
+
+## 2025-11-01 - FxHashMap for TypeId in MirValidator
+
+**Learning:** During MIR validation (`src/mir/validation.rs`), `MirValidator` constructs and queries `pointee_to_pointer`, mapping `TypeId` to `TypeId`. Using standard `hashbrown::HashMap` incurs SipHash overhead on integer keys. Replacing `hashbrown::HashMap` with `rustc_hash::FxHashMap` eliminates SipHash overhead during MIR validation.
+**Action:** Ensure integer-to-integer compiler maps like `TypeId` -> `TypeId` use `rustc_hash::FxHashMap` across all compiler validation passes.

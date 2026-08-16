@@ -343,3 +343,7 @@ Action: When testing diagnostic spans for control-flow statements (like `switch`
 
 Learning: C11 requires that one of the expressions in a subscript operator `[]` has the type "pointer to complete object type" (and thus it decays to a pointer). Trying to apply the subscript operator to a non-pointer, non-array type (like `int` or `struct`) is invalid and should result in an error. We want to ensure that `SemanticError::ExpectedArrayType` correctly intercepts this with a precise diagnostic error and correct spans.
 Action: Add `guardian_expected_array_type.rs` to validate this invariant, ensuring the diagnostic triggers at `CompilePhase::Mir` with the correct error message `"subscripted value is not an array (have '...')"` and specific line/column spans.
+2024-05-18 - [Restrict Qualifier on Non-Object Types]
+
+Learning: The C standard (C11 6.7.3p2) restricts the `restrict` qualifier to only be applied to pointer-to-object types. Cendol correctly lowers this but previously lacked robust tests verifying the diagnostic message and span accuracy when `restrict` is inappropriately applied to non-object types (e.g., integers, arrays, functions, and function pointers).
+Action: Added `guardian_invalid_restrict.rs` to comprehensively assert the `SemanticError::InvalidRestrict` constraint, including validation of precise source spans (such as the specific column for the `restrict` keyword in a function pointer declaration: `void (* restrict f)(void)`).

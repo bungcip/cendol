@@ -2895,7 +2895,10 @@ impl ClifGen {
 
         // PHASE 2️⃣ — Lower block content (without sealing)
         for &current_block_id in &func.blocks {
-            let clif_block = self.clif_blocks.get(&current_block_id).expect("Block not found in mapping");
+            let clif_block = self
+                .clif_blocks
+                .get(&current_block_id)
+                .expect("Block not found in mapping");
             builder.switch_to_block(*clif_block);
 
             // Setup entry block parameters

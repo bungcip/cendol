@@ -896,11 +896,10 @@ impl<'src> Lexer<'src> {
         // Standard literals starts with '"' directly. Checking this first completely avoids
         // up to 4 failed prefix matches for >99% of string literals.
         if s.starts_with('"') {
-            if let Some(rest) = s.strip_prefix('"') {
-                if let Some(inner) = rest.strip_suffix('"') {
+            if let Some(rest) = s.strip_prefix('"')
+                && let Some(inner) = rest.strip_suffix('"') {
                     return Some(("", inner));
                 }
-            }
             return None;
         }
         for prefix in ["L", "u8", "u", "U"] {

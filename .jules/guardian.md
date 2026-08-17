@@ -343,3 +343,8 @@ Action: When testing diagnostic spans for control-flow statements (like `switch`
 
 Learning: C11 requires that one of the expressions in a subscript operator `[]` has the type "pointer to complete object type" (and thus it decays to a pointer). Trying to apply the subscript operator to a non-pointer, non-array type (like `int` or `struct`) is invalid and should result in an error. We want to ensure that `SemanticError::ExpectedArrayType` correctly intercepts this with a precise diagnostic error and correct spans.
 Action: Add `guardian_expected_array_type.rs` to validate this invariant, ensuring the diagnostic triggers at `CompilePhase::Mir` with the correct error message `"subscripted value is not an array (have '...')"` and specific line/column spans.
+
+2024-05-18 - [Switch case uniqueness checking]
+
+Learning: Checking for switch case duplication is done efficiently in Cendol using an `IntervalMap` via binary search (`partition_point`). Case labels must be unique *within the same switch statement scope*. Nested switch statements create separate case scopes, allowing identical case labels in inner and outer switches without conflicting.
+Action: Add explicit verification tests to confirm that nested switch scopes appropriately isolate case and default labels and do not produce false positive `DuplicateCase` semantic errors.

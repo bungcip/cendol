@@ -755,7 +755,11 @@ impl<'src> Lexer<'src> {
             }
             PPTokenKind::CharLiteral(codepoint) => {
                 let text = pptoken.get_text(self.preprocessor.sm);
-                let prefix = if text.starts_with("u8'") {
+                // Bolt ⚡: Fast-path for standard character literals.
+                // If it starts with `'`, it has no prefix, avoiding up to 4 failed prefix string checks.
+                let prefix = if text.starts_with('\'') {
+                    CharPrefix::None
+                } else if text.starts_with("u8'") {
                     CharPrefix::Utf8
                 } else if text.starts_with("L'") {
                     CharPrefix::Wide
@@ -888,6 +892,17 @@ impl<'src> Lexer<'src> {
 
     /// Extract parts from a string literal symbol: (prefix, content_without_quotes)
     fn extract_literal_parts(s: &str) -> Option<(&'static str, &str)> {
+        // Bolt ⚡: Fast-path for standard string literals without any prefix.
+        // Standard literals starts with '"' directly. Checking this first completely avoids
+        // up to 4 failed prefix matches for >99% of string literals.
+        if s.starts_with('"') {
+            if let Some(rest) = s.strip_prefix('"') {
+                if let Some(inner) = rest.strip_suffix('"') {
+                    return Some(("", inner));
+                }
+            }
+            return None;
+        }
         for prefix in ["L", "u8", "u", "U"] {
             if let Some(rest) = s.strip_prefix(prefix)
                 && let Some(inner) = rest.strip_prefix('"')?.strip_suffix('"')

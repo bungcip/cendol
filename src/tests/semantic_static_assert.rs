@@ -200,3 +200,13 @@ fn test_static_assert_float_unary_and_complex() {
     "#;
     run_pass(code, CompilePhase::Mir);
 }
+
+#[test]
+fn test_static_assert_float_short_circuit_eval() {
+    let code = r#"
+        extern int unresolved_var;
+        _Static_assert(!(0.0 && unresolved_var), "");
+        _Static_assert(1.0 || unresolved_var, "");
+    "#;
+    run_pass(code, CompilePhase::Mir);
+}

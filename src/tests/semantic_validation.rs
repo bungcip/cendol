@@ -164,3 +164,13 @@ fn test_struct_init_in_array_regression() {
     let output = run_c_code_with_output(source);
     assert_eq!(output, "3 6 7 0");
 }
+
+#[test]
+fn test_multiple_storage_class_specifiers() {
+    crate::tests::test_utils::run_fail_with_message(
+        r#"
+        typedef static int my_int;
+        "#,
+        "conflicting storage class specifiers",
+    );
+}

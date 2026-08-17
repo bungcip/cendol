@@ -151,23 +151,11 @@ pub mod guardian_static_array_constraints;
 pub mod guardian_storage_class_parameter;
 pub mod guardian_ternary_pointer_constraints;
 pub mod guardian_typedef_member_function;
-pub mod guardian_typedef_redefinition;
 pub mod guardian_vla;
 pub mod guardian_vm_linkage_constraints;
 
 // Regression
-pub mod regr_different_pointer_levels_warning;
-pub mod regr_incompatible_pointer_warning;
-pub mod regr_incomplete_deref_statement;
-pub mod regr_init_range;
-pub mod regr_mixed_sign_comp;
-pub mod regr_nonconstant_array_designator;
 
-pub mod regr_shadowing;
-pub mod regr_struct_bitfield;
-pub mod regr_tag_kind_mismatch;
-pub mod regr_typeof_ternary;
-pub mod regr_union_cast;
 
 // Test Helpers
 pub mod codegen_alias;

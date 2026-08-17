@@ -90,3 +90,59 @@ fn test_usual_arithmetic_conversions_coverage() {
     let (_, result) = run_pipeline(source, CompilePhase::SemanticLowering);
     assert!(result.is_ok());
 }
+
+#[test]
+fn test_different_pointer_levels_warning() {
+    let source = r#"
+        void test(void) {
+            int x;
+            int *y = 0;
+            int *a = &x;
+            const int *b = &y;
+        }
+    "#;
+    let driver = crate::tests::test_utils::run_pass(source, crate::driver::artifact::CompilePhase::Mir);
+    crate::tests::test_utils::check_diagnostic_message_only(
+        &driver,
+        "incompatible pointer types passing 'int**' to parameter of type 'const int*'",
+    );
+}
+
+#[test]
+fn test_incompatible_pointer_warning_function_call() {
+    let source = r#"
+        void f(int *i) {
+        }
+        void test(void) {
+            double *d;
+            f(d);
+        }
+    "#;
+    let driver = crate::tests::test_utils::run_pass(source, crate::driver::artifact::CompilePhase::Mir);
+    crate::tests::test_utils::check_diagnostic_message_only(
+        &driver,
+        "incompatible pointer types passing 'double*' to parameter of type 'int*'",
+    );
+}
+
+#[test]
+fn test_union_cast_extension() {
+    let source = r#"
+        typedef union { int x; } t;
+        void test(int n) {
+            ((t)n);
+        }
+    "#;
+    crate::tests::test_utils::run_pass(source, crate::driver::artifact::CompilePhase::Mir);
+}
+
+#[test]
+fn test_union_cast_invalid_type_rejected() {
+    let source = r#"
+        typedef union { float x; } t;
+        void test(int n) {
+            ((t)n);
+        }
+    "#;
+    crate::tests::test_utils::run_fail_with_message(source, "expected scalar type");
+}

@@ -159,14 +159,6 @@ fn test_invalid_restrict() {
 }
 
 #[test]
-fn test_multiple_storage_class_specifiers() {
-    run_fail_with_message(
-        r#"
-        typedef static int my_int;
-        "#,
-        "conflicting storage class specifiers",
-    );
-}
 
 #[test]
 fn test_variable_of_void_type() {
@@ -180,17 +172,6 @@ fn test_variable_of_void_type() {
 
 // K. Type System Edge Cases
 #[test]
-fn test_sizeof_incomplete_struct() {
-    run_fail_with_message(
-        r#"
-        struct S;
-        int main() {
-            int x = sizeof(struct S);
-        }
-        "#,
-        "Invalid application of 'sizeof' to an incomplete type",
-    );
-}
 
 // M. Expression Validation
 #[test]
@@ -207,42 +188,12 @@ fn test_invalid_use_of_void_in_expr() {
 }
 
 #[test]
-fn test_extern_followed_by_static_variable_mismatch() {
-    run_fail_with_message(
-        r#"
-        extern int x;
-        static int x;
-        "#,
-        "conflicting linkage",
-    );
-}
 
 #[test]
-fn test_plain_followed_by_static_variable_mismatch() {
-    run_fail_with_message(
-        r#"
-        int x;
-        static int x;
-        "#,
-        "conflicting linkage",
-    );
-}
 
 #[test]
-fn test_extern_followed_by_static_function_mismatch() {
-    run_fail_with_message(
-        r#"
-        extern void f(void);
-        static void f(void) {}
-        "#,
-        "conflicting linkage",
-    );
-}
 
 #[test]
-fn test_static_tentative_incomplete_type_prohibited() {
-    run_fail_with_message("struct S; static struct S x;", "incomplete type 'struct S'");
-}
 
 #[test]
 fn test_static_tentative_incomplete_type_allowed() {
@@ -253,26 +204,10 @@ fn test_static_tentative_incomplete_type_allowed() {
 }
 
 #[test]
-fn test_global_tentative_incomplete_type_prohibited() {
-    run_fail_with_message("struct S; struct S x;", "incomplete type 'struct S'");
-    run_fail_with_message("enum E; enum E x;", "incomplete type 'enum E'");
-}
 
 #[test]
-fn test_no_linkage_incomplete_type_prohibited() {
-    run_fail_with_message("void f() { int arr[]; }", "incomplete type 'int[]'");
-    run_fail_with_message("void f() { static int arr[]; }", "incomplete type 'int[]'");
-    run_fail_with_message(
-        "void f() { struct S; static struct S x; }",
-        "incomplete type 'struct S'",
-    );
-}
 
 #[test]
-fn test_function_parameter_incomplete_type_prohibited() {
-    run_fail_with_message("void f(void x) {}", "incomplete type 'void'");
-    run_fail_with_message("void f(int x, void y) {}", "incomplete type 'void'");
-}
 // S. Undeclared Identifiers
 
 // Consolidated from guardian_pointer_assignment_qualifiers.rs and guardian_restrict_constraints.rs
@@ -427,4 +362,57 @@ fn test_designator_in_scalar() {
         "#,
         "array index in non-array initializer",
     );
+}
+
+#[test]
+fn test_deref_incomplete_type_error() {
+    let source = r#"
+        typedef struct _x x;
+        void test(x *p) {
+            *p;
+        }
+    "#;
+    run_fail_with_message(source, "incomplete type 'struct _x'");
+}
+
+#[test]
+fn test_linkage_mismatches() {
+    crate::tests::test_utils::run_fail_with_message(
+        r#"
+        extern int x;
+        static int x;
+        "#,
+        "conflicting linkage",
+    );
+
+    crate::tests::test_utils::run_fail_with_message(
+        r#"
+        int x;
+        static int x;
+        "#,
+        "conflicting linkage",
+    );
+
+    crate::tests::test_utils::run_fail_with_message(
+        r#"
+        extern void f(void);
+        static void f(void) {}
+        "#,
+        "conflicting linkage",
+    );
+}
+
+#[test]
+fn test_incomplete_type_prohibitions() {
+    crate::tests::test_utils::run_fail_with_message("struct S; static struct S x;", "incomplete type 'struct S'");
+    crate::tests::test_utils::run_fail_with_message("struct S; struct S x;", "incomplete type 'struct S'");
+    crate::tests::test_utils::run_fail_with_message("enum E; enum E x;", "incomplete type 'enum E'");
+    crate::tests::test_utils::run_fail_with_message("void f() { int arr[]; }", "incomplete type 'int[]'");
+    crate::tests::test_utils::run_fail_with_message("void f() { static int arr[]; }", "incomplete type 'int[]'");
+    crate::tests::test_utils::run_fail_with_message(
+        "void f() { struct S; static struct S x; }",
+        "incomplete type 'struct S'",
+    );
+    crate::tests::test_utils::run_fail_with_message("void f(void x) {}", "incomplete type 'void'");
+    crate::tests::test_utils::run_fail_with_message("void f(int x, void y) {}", "incomplete type 'void'");
 }

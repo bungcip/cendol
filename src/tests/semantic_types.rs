@@ -801,3 +801,33 @@ fn test_display_array_types() {
     let arr_vla = reg.array_of(int_ty, ArraySize::Variable(node_ref));
     assert_eq!(reg.display_type(arr_vla), "int[*]");
 }
+
+#[test]
+fn test_tag_kind_mismatches() {
+    crate::tests::test_utils::run_fail_with_message(
+        r#"
+        typedef struct _a a;
+        union _a {
+          int x;
+          int y;
+        };
+        "#,
+        "does not match previous declaration",
+    );
+
+    crate::tests::test_utils::run_fail_with_message(
+        r#"
+        struct _a;
+        enum _a { A };
+        "#,
+        "does not match previous declaration",
+    );
+
+    crate::tests::test_utils::run_fail_with_message(
+        r#"
+        enum _a { A };
+        struct _a;
+        "#,
+        "does not match previous declaration",
+    );
+}

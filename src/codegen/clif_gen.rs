@@ -2675,6 +2675,8 @@ pub struct ClifGen {
     pub(crate) module: ObjectModule,
     pub(crate) mir: MirProgram, // NOTE: need better nama
     pub(crate) clif_stack_slots: HashMap<LocalId, StackSlot>,
+    // ⚡ Bolt: Reusable map to avoid allocating a new HashMap of blocks for every single function compiled.
+    pub(crate) clif_blocks: HashMap<MirBlockId, Block>,
     // Store compiled functions for dumping
     pub(crate) compiled_functions: HashMap<String, String>,
 
@@ -2718,6 +2720,7 @@ impl ClifGen {
             // ctx: module.make_context(),
             module,
             clif_stack_slots: HashMap::default(),
+            clif_blocks: HashMap::default(),
             compiled_functions: HashMap::default(),
             emit_kind: EmitKind::Object,
             func_id_map: HashMap::default(),
@@ -2884,15 +2887,15 @@ impl ClifGen {
         emit_stack_slots(func, &self.mir, &mut builder, &mut self.clif_stack_slots);
 
         // PHASE 1️⃣ — Create all Cranelift blocks first (no instructions)
-        let mut clif_blocks = HashMap::default();
+        self.clif_blocks.clear();
 
         for &block_id in &func.blocks {
-            clif_blocks.insert(block_id, builder.create_block());
+            self.clif_blocks.insert(block_id, builder.create_block());
         }
 
         // PHASE 2️⃣ — Lower block content (without sealing)
         for &current_block_id in &func.blocks {
-            let clif_block = clif_blocks.get(&current_block_id).expect("Block not found in mapping");
+            let clif_block = self.clif_blocks.get(&current_block_id).expect("Block not found in mapping");
             builder.switch_to_block(*clif_block);
 
             // Setup entry block parameters
@@ -2968,7 +2971,7 @@ impl ClifGen {
             let mut return_ptr = None;
             if has_hidden_ptr {
                 // Return pointer is the first block parameter
-                let clif_block = clif_blocks.get(&func.entry_block.unwrap()).unwrap();
+                let clif_block = self.clif_blocks.get(&func.entry_block.unwrap()).unwrap();
                 return_ptr = Some(builder.block_params(*clif_block)[0]);
             }
 
@@ -2978,7 +2981,7 @@ impl ClifGen {
                 stack_slots: &self.clif_stack_slots,
                 module: &mut self.module,
                 func,
-                clif_blocks: &clif_blocks,
+                clif_blocks: &self.clif_blocks,
                 return_types: &return_types,
                 return_ptr,
                 func_id_map: &self.func_id_map,
@@ -3002,7 +3005,7 @@ impl ClifGen {
 
         // PHASE 3️⃣ — Seal blocks with correct order
         for &mir_block_id in &func.blocks {
-            let cl_block = clif_blocks.get(&mir_block_id).expect("Block not found in mapping");
+            let cl_block = self.clif_blocks.get(&mir_block_id).expect("Block not found in mapping");
             builder.seal_block(*cl_block);
         }
 

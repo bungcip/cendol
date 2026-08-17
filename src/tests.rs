@@ -194,3 +194,5 @@ pub mod semantic_types_compatible;
 pub mod test_const_eval_unary;
 pub mod test_utils;
 pub mod semantic_mir_label_addr;
+pub mod test_const_eval_coverage;
+pub mod guardian_duplicate_case;

@@ -2072,9 +2072,11 @@ impl<'a> Parser<'a> {
             | Some(Token::LAngle) => true,
             _ => false,
         } {
-            let srcloc = self.optional_srcloc()?;
-
+            // Debug tags are written before the source location (see
+            // `write_debug_tags`), so parse them in that order.
             let debug_tags = self.optional_debug_tags()?;
+
+            let srcloc = self.optional_srcloc()?;
 
             // We need to parse instruction results here because they are shared
             // between the parsing of value aliases and the parsing of instructions.
@@ -2918,45 +2920,21 @@ impl<'a> Parser<'a> {
                 ctx.check_fn(func_ref, self.loc)?;
                 InstructionData::FuncAddr { opcode, func_ref }
             }
-            InstructionFormat::StackLoad => {
+            InstructionFormat::StackAddr => {
                 let ss = self.match_ss("expected stack slot number: ss«n»")?;
                 ctx.check_ss(ss, self.loc)?;
                 let offset = self.optional_offset32()?;
-                InstructionData::StackLoad {
+                InstructionData::StackAddr {
                     opcode,
                     stack_slot: ss,
                     offset,
                 }
             }
-            InstructionFormat::StackStore => {
-                let arg = self.match_value("expected SSA value operand")?;
-                self.match_token(Token::Comma, "expected ',' between operands")?;
-                let ss = self.match_ss("expected stack slot number: ss«n»")?;
-                ctx.check_ss(ss, self.loc)?;
-                let offset = self.optional_offset32()?;
-                InstructionData::StackStore {
-                    opcode,
-                    arg,
-                    stack_slot: ss,
-                    offset,
-                }
-            }
-            InstructionFormat::DynamicStackLoad => {
+            InstructionFormat::DynamicStackAddr => {
                 let dss = self.match_dss("expected dynamic stack slot number: dss«n»")?;
                 ctx.check_dss(dss, self.loc)?;
-                InstructionData::DynamicStackLoad {
+                InstructionData::DynamicStackAddr {
                     opcode,
-                    dynamic_stack_slot: dss,
-                }
-            }
-            InstructionFormat::DynamicStackStore => {
-                let arg = self.match_value("expected SSA value operand")?;
-                self.match_token(Token::Comma, "expected ',' between operands")?;
-                let dss = self.match_dss("expected dynamic stack slot number: dss«n»")?;
-                ctx.check_dss(dss, self.loc)?;
-                InstructionData::DynamicStackStore {
-                    opcode,
-                    arg,
                     dynamic_stack_slot: dss,
                 }
             }

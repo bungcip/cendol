@@ -1,7 +1,7 @@
 //! A frontend for building Cranelift IR from other languages.
 use crate::ssa::{SSABuilder, SideEffects};
 use crate::variable::Variable;
-use alloc::{vec, vec::Vec};
+use alloc::{boxed::Box, vec, vec::Vec};
 use core::fmt::{self, Debug};
 use cranelift_codegen::cursor::{Cursor, CursorPosition, FuncCursor};
 use cranelift_codegen::entity::{EntityRef, EntitySet, PrimaryMap, SecondaryMap};
@@ -76,6 +76,7 @@ impl FunctionBuilderContext {
         status.clear();
         variables.clear();
         safepoints.clear();
+        safepoints.make_alias_region = None;
     }
 
     fn is_empty(&self) -> bool {
@@ -677,11 +678,30 @@ impl<'a> FunctionBuilder<'a> {
         }
     }
 
+    /// Configure a callback that assigns an alias region to the loads and
+    /// stores inserted when spilling and reloading values that are live across
+    /// safepoints.
+    ///
+    /// The callback is given the function's [`ir::AliasRegionSet`] (so it can
+    /// intern a region), along with the type, stack slot, and offset of the
+    /// spill/reload being emitted, and returns the alias region to attach to
+    /// that load or store (or `None` to leave it unannotated).
+    pub fn make_stack_map_alias_region(
+        &mut self,
+        make_alias_region: Box<
+            dyn Fn(&mut ir::AliasRegionSet, ir::Type, ir::StackSlot, u32) -> Option<ir::AliasRegion>
+                + Send
+                + Sync,
+        >,
+    ) {
+        self.func_ctx.safepoints.make_alias_region = Some(make_alias_region);
+    }
+
     /// Declare that translation of the current function is complete.
     ///
     /// This resets the state of the [`FunctionBuilderContext`] in preparation to
     /// be used for another function.
-    pub fn finalize(mut self) {
+    pub fn finalize(mut self, frontend_config: TargetFrontendConfig) {
         // Check that all the `Block`s are filled and sealed.
         #[cfg(debug_assertions)]
         {
@@ -715,9 +735,11 @@ impl<'a> FunctionBuilder<'a> {
         // to run our pass to spill those values to the stack at safepoints and
         // generate stack maps.
         if !self.func_ctx.ssa.stack_map_values().is_empty() {
-            self.func_ctx
-                .safepoints
-                .run(&mut self.func, self.func_ctx.ssa.stack_map_values());
+            self.func_ctx.safepoints.run(
+                &mut self.func,
+                self.func_ctx.ssa.stack_map_values(),
+                frontend_config.pointer_type(),
+            );
         }
 
         // Clear the state (but preserve the allocated buffers) in preparation
@@ -1156,7 +1178,7 @@ impl<'a> FunctionBuilder<'a> {
         let pointer_type = config.pointer_type();
         let size = self.ins().iconst(pointer_type, size as i64);
         let cmp = self.call_memcmp(config, left, right, size);
-        self.ins().icmp_imm(zero_cc, cmp, 0)
+        self.ins().icmp_imm_s(zero_cc, cmp, 0)
     }
 }
 
@@ -1295,7 +1317,7 @@ mod tests {
                 builder.seal_all_blocks();
             }
 
-            builder.finalize();
+            builder.finalize(systemv_frontend_config());
         }
 
         let flags = settings::Flags::new(settings::builder());
@@ -1361,7 +1383,7 @@ mod tests {
             builder.ins().return_(&[size]);
 
             builder.seal_all_blocks();
-            builder.finalize();
+            builder.finalize(systemv_frontend_config());
         }
 
         check(
@@ -1416,7 +1438,7 @@ block0:
             builder.ins().return_(&[dest]);
 
             builder.seal_all_blocks();
-            builder.finalize();
+            builder.finalize(systemv_frontend_config());
         }
 
         check(
@@ -1468,7 +1490,7 @@ block0:
             builder.ins().return_(&[dest]);
 
             builder.seal_all_blocks();
-            builder.finalize();
+            builder.finalize(systemv_frontend_config());
         }
 
         check(
@@ -1512,7 +1534,7 @@ block0:
             builder.ins().return_(&[dest]);
 
             builder.seal_all_blocks();
-            builder.finalize();
+            builder.finalize(systemv_frontend_config());
         }
 
         check(
@@ -1551,7 +1573,7 @@ block0:
             builder.ins().return_(&[dest]);
 
             builder.seal_all_blocks();
-            builder.finalize();
+            builder.finalize(systemv_frontend_config());
         }
 
         check(
@@ -1612,7 +1634,7 @@ block0:
             builder.ins().return_(&[cmp]);
 
             builder.seal_all_blocks();
-            builder.finalize();
+            builder.finalize(systemv_frontend_config());
         }
 
         check(
@@ -1821,7 +1843,7 @@ block0:
             builder.ins().return_(&[ret]);
 
             builder.seal_all_blocks();
-            builder.finalize();
+            builder.finalize(systemv_frontend_config());
         }
 
         check(
@@ -1854,7 +1876,7 @@ block0:
             builder.ins().return_(&[a, b, c]);
 
             builder.seal_all_blocks();
-            builder.finalize();
+            builder.finalize(systemv_frontend_config());
         }
 
         check(
@@ -1927,7 +1949,7 @@ block0:
         builder.ins().return_(&[]);
 
         builder.seal_all_blocks();
-        builder.finalize();
+        builder.finalize(systemv_frontend_config());
 
         let flags = cranelift_codegen::settings::Flags::new(cranelift_codegen::settings::builder());
         let ctx = cranelift_codegen::Context::for_function(func);
@@ -2002,7 +2024,7 @@ block0:
         builder.ins().return_(&[ret_val]);
 
         builder.seal_all_blocks();
-        builder.finalize();
+        builder.finalize(systemv_frontend_config());
 
         let flags = cranelift_codegen::settings::Flags::new(cranelift_codegen::settings::builder());
         let ctx = cranelift_codegen::Context::for_function(func);

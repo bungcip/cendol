@@ -235,14 +235,14 @@ impl FunctionStencil {
         self.dfg.jump_tables.push(data)
     }
 
-    /// Creates a sized stack slot in the function, to be used by `stack_load`, `stack_store`
-    /// and `stack_addr` instructions.
+    /// Creates a sized stack slot in the function, to be used by the `stack_addr`
+    /// instruction.
     pub fn create_sized_stack_slot(&mut self, data: StackSlotData) -> StackSlot {
         self.sized_stack_slots.push(data)
     }
 
-    /// Creates a dynamic stack slot in the function, to be used by `dynamic_stack_load`,
-    /// `dynamic_stack_store` and `dynamic_stack_addr` instructions.
+    /// Creates a dynamic stack slot in the function, to be used by the
+    /// `dynamic_stack_addr` instruction.
     pub fn create_dynamic_stack_slot(&mut self, data: DynamicStackSlotData) -> DynamicStackSlot {
         self.dynamic_stack_slots.push(data)
     }
@@ -472,6 +472,20 @@ impl Function {
     /// Declare an external function import.
     pub fn import_function(&mut self, data: ExtFuncData) -> FuncRef {
         self.stencil.dfg.ext_funcs.push(data)
+    }
+
+    /// Is the given block marked `cold` or otherwise effectively `cold` in
+    /// practice?
+    pub fn is_effectively_cold(&self, block: Block) -> bool {
+        if self.layout.is_cold(block) {
+            return true;
+        }
+
+        // Blocks that unconditionally trap are effectively
+        // also cold.
+        self.layout
+            .last_inst(block)
+            .is_some_and(|inst| self.dfg.insts[inst].opcode() == ir::Opcode::Trap)
     }
 }
 

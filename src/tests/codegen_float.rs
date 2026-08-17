@@ -185,15 +185,15 @@ fn test_float_to_char_conversion() {
         v0 = f64const 0x1.8400000000000p6
         v1 = fcvt_to_sint_sat.i32 v0  ; v0 = 0x1.8400000000000p6
         v2 = ireduce.i8 v1
-        v8 = stack_addr.i64 ss0
-        store notrap v2, v8
-        v3 = f64const 0x1.8800000000000p6
-        v4 = fcvt_to_sint_sat.i32 v3  ; v3 = 0x1.8800000000000p6
-        v5 = ireduce.i16 v4
+        v3 = stack_addr.i64 ss0
+        store notrap v2, v3
+        v4 = f64const 0x1.8800000000000p6
+        v5 = fcvt_to_sint_sat.i32 v4  ; v4 = 0x1.8800000000000p6
+        v6 = ireduce.i16 v5
         v7 = stack_addr.i64 ss1
-        store notrap v5, v7
-        v6 = iconst.i32 0
-        return v6  ; v6 = 0
+        store notrap v6, v7
+        v8 = iconst.i32 0
+        return v8  ; v8 = 0
     }
     ");
 }

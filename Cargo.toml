@@ -67,21 +67,21 @@ edition = "2024"
 rust-version = "1.94.0"
 
 [workspace.dependencies]
-cranelift = { path = "crates/cranelift/umbrella", version = "0.133.1" }
-cranelift-codegen = { path = "crates/cranelift/codegen", version = "0.133.1", default-features = false, features = ["unwind"] }
-cranelift-frontend = { path = "crates/cranelift/frontend", version = "0.133.1" }
-cranelift-module = { path = "crates/cranelift/module", version = "0.133.1" }
-cranelift-object = { path = "crates/cranelift/object", version = "0.133.1" }
-cranelift-entity = { path = "crates/cranelift/entity", version = "0.133.1" }
-cranelift-bforest = { path = "crates/cranelift/bforest", version = "0.133.1" }
-cranelift-bitset = { path = "crates/cranelift/bitset", version = "0.133.1" }
-cranelift-control = { path = "crates/cranelift/control", version = "0.133.1", default-features = false }
-cranelift-reader = { path = "crates/cranelift/reader", version = "0.133.1" }
-cranelift-assembler-x64 = { path = "crates/cranelift/assembler-x64", version = "0.133.1" }
-cranelift-srcgen = { path = "crates/cranelift/srcgen", version = "0.133.1" }
-cranelift-interpreter = { path = "crates/cranelift/interpreter", version = "0.133.1" }
-cranelift-jit = { path = "crates/cranelift/jit", version = "0.133.1" }
-cranelift-native = { path = "crates/cranelift/native", version = "0.133.1" }
+cranelift = { path = "crates/cranelift/umbrella", version = "0.134.3" }
+cranelift-codegen = { path = "crates/cranelift/codegen", version = "0.134.3", default-features = false, features = ["unwind"] }
+cranelift-frontend = { path = "crates/cranelift/frontend", version = "0.134.3" }
+cranelift-module = { path = "crates/cranelift/module", version = "0.134.3" }
+cranelift-object = { path = "crates/cranelift/object", version = "0.134.3" }
+cranelift-entity = { path = "crates/cranelift/entity", version = "0.134.3" }
+cranelift-bforest = { path = "crates/cranelift/bforest", version = "0.134.3" }
+cranelift-bitset = { path = "crates/cranelift/bitset", version = "0.134.3" }
+cranelift-control = { path = "crates/cranelift/control", version = "0.134.3", default-features = false }
+cranelift-reader = { path = "crates/cranelift/reader", version = "0.134.3" }
+cranelift-assembler-x64 = { path = "crates/cranelift/assembler-x64", version = "0.134.3" }
+cranelift-srcgen = { path = "crates/cranelift/srcgen", version = "0.134.3" }
+cranelift-interpreter = { path = "crates/cranelift/interpreter", version = "0.134.3" }
+cranelift-jit = { path = "crates/cranelift/jit", version = "0.134.3" }
+cranelift-native = { path = "crates/cranelift/native", version = "0.134.3" }
 
 # Inherited third-party dependencies with their exact Wasmtime versions
 arbitrary = "1.4.2"
@@ -94,16 +94,17 @@ target-lexicon = "0.13.3"
 log = { version = "0.4.28", default-features = false }
 serde = { version = "1.0.228", default-features = false, features = ['alloc'] }
 serde_derive = "1.0.228"
-pulley-interpreter = { version = "46.0.1" }
+pulley-interpreter = { version = "47.0.3" }
 postcard = { version = "1.1.3", default-features = false, features = ['alloc'] }
 gimli = { version = "0.33.0", default-features = false, features = ['read'] }
 smallvec = { version = "1.15.1", features = ["union"] }
 regalloc2 = "0.15.1"
 sha2 = { version = "0.10.2", default-features = false }
 rustc-hash = { version = "2.1.1", default-features = false }
-wasmtime-core = { version = "46.0.1", package = 'wasmtime-internal-core' }
-wasmtime-jit-icache-coherence = { version = "46.0.1", package = 'wasmtime-internal-jit-icache-coherence' }
-wasmtime-unwinder = { version = "46.0.1", package = 'wasmtime-internal-unwinder' }
+wasmtime-core = { version = "47.0.3", package = 'wasmtime-internal-core' }
+wasmtime-jit-icache-coherence = { version = "47.0.3", package = 'wasmtime-internal-jit-icache-coherence' }
+wasmtime-unwinder = { version = "47.0.3", package = 'wasmtime-internal-unwinder' }
+mutatis = { version = "0.5.2", features = ["alloc", "derive", "check"] }
 object = { version = "0.39.0", default-features = false, features = ['read_core', 'elf'] }
 libm = "0.2.16"
 cfg-if = "1.0"

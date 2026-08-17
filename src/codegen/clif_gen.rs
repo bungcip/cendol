@@ -751,7 +751,7 @@ fn get_call_result(ctx: &mut BodyEmitContext, call_inst: Inst, return_type_id: T
         for (i, _) in types_list.iter().enumerate() {
             let val = results[i];
             let offset = (i * 8) as i32;
-            ctx.builder.ins().stack_store(val, slot, offset);
+            ctx.builder.ins().stack_store(types::I64, val, slot, offset);
         }
 
         return ctx.builder.ins().stack_addr(types::I64, slot, 0);
@@ -1145,7 +1145,7 @@ fn emit_constant_to_memory(const_id: ConstValueId, ctx: &mut BodyEmitContext) ->
         .expect("Failed to define anonymous data");
 
     let global_val = ctx.module.declare_data_in_func(data_id, ctx.builder.func);
-    ctx.builder.ins().global_value(types::I64, global_val)
+    ctx.builder.ins().symbol_value(types::I64, global_val)
 }
 
 fn truncate_const(val: i64, ty: Type) -> i64 {
@@ -1228,7 +1228,7 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                     let addr = if global.is_tls {
                         ctx.builder.ins().tls_value(types::I64, local_id)
                     } else {
-                        ctx.builder.ins().global_value(types::I64, local_id)
+                        ctx.builder.ins().symbol_value(types::I64, local_id)
                     };
                     let addr = if addend != 0 {
                         let addend_val = ctx.builder.ins().iconst(types::I64, addend);
@@ -1348,7 +1348,7 @@ fn emit_place(place: &Place, ctx: &mut BodyEmitContext, expected_type: Type) -> 
     match place {
         Place::Local(local_id) => {
             if let Some(stack_slot) = ctx.stack_slots.get(local_id) {
-                ctx.builder.ins().stack_load(expected_type, *stack_slot, 0)
+                ctx.builder.ins().stack_load(types::I64, expected_type, *stack_slot, 0)
             } else {
                 ctx.builder.ins().iconst(expected_type, 0)
             }
@@ -1535,7 +1535,7 @@ fn emit_place_addr(place: &Place, ctx: &mut BodyEmitContext) -> Value {
             if global.is_tls {
                 ctx.builder.ins().tls_value(types::I64, local_id)
             } else {
-                ctx.builder.ins().global_value(types::I64, local_id)
+                ctx.builder.ins().symbol_value(types::I64, local_id)
             }
         }
         Place::Deref(operand) => emit_operand(operand, ctx, types::I64),
@@ -1754,7 +1754,7 @@ fn emit_place_store(place: &Place, value: Value, expected_type: Type, ctx: &mut 
                     let addr = ctx.builder.ins().stack_addr(types::I64, *stack_slot, 0);
                     emit_f64_to_x87(value, addr, ctx.builder);
                 } else {
-                    ctx.builder.ins().stack_store(value, *stack_slot, 0);
+                    ctx.builder.ins().stack_store(types::I64, value, *stack_slot, 0);
                 }
             }
         }
@@ -2192,7 +2192,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
 
                     let offset_64 = ctx.builder.ins().uextend(types::I64, aligned_gp);
                     let gp_addr = ctx.builder.ins().iadd(reg_save_area, offset_64);
-                    ctx.builder.ins().stack_store(gp_addr, addr_slot, 0);
+                    ctx.builder.ins().stack_store(types::I64, gp_addr, addr_slot, 0);
 
                     let needed_gp = va_arg_type_size.max(8).div_ceil(8) * 8;
                     let next_gp_increment = ctx.builder.ins().iconst(types::I32, needed_gp as i64);
@@ -2204,7 +2204,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     ctx.builder.switch_to_block(fp_block);
                     let offset_64_fp = ctx.builder.ins().uextend(types::I64, fp_offset);
                     let fp_addr = ctx.builder.ins().iadd(reg_save_area, offset_64_fp);
-                    ctx.builder.ins().stack_store(fp_addr, addr_slot, 0);
+                    ctx.builder.ins().stack_store(types::I64, fp_addr, addr_slot, 0);
 
                     let next_fp_increment = ctx.builder.ins().iconst(types::I32, 16);
                     let next_fp = ctx.builder.ins().iadd(fp_offset, next_fp_increment);
@@ -2225,7 +2225,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                         overflow_addr
                     };
 
-                    ctx.builder.ins().stack_store(aligned_overflow, addr_slot, 0);
+                    ctx.builder.ins().stack_store(types::I64, aligned_overflow, addr_slot, 0);
 
                     let needed_overflow = va_arg_type_size.max(8).div_ceil(8) * 8;
                     let next_overflow_increment = ctx.builder.ins().iconst(types::I64, needed_overflow as i64);
@@ -2238,7 +2238,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     ctx.builder.seal_block(overflow_block);
                     ctx.builder.switch_to_block(join_block);
                     ctx.builder.seal_block(join_block);
-                    let addr = ctx.builder.ins().stack_load(types::I64, addr_slot, 0);
+                    let addr = ctx.builder.ins().stack_load(types::I64, types::I64, addr_slot, 0);
 
                     if mir_type.is_aggregate() {
                         // All aggregates (small or large) return the address
@@ -2933,7 +2933,7 @@ impl ClifGen {
                                 let remaining = size.saturating_sub((i * 8) as u32);
 
                                 if remaining >= 8 {
-                                    builder.ins().stack_store(val, *stack_slot, offset);
+                                    builder.ins().stack_store(types::I64, val, *stack_slot, offset);
                                 } else {
                                     // Partial store
                                     let current_val_i64 = if t.is_float() {
@@ -2962,7 +2962,7 @@ impl ClifGen {
                             let size = lower_type_size(mir_type, &self.mir) as i64;
                             emit_memcpy(dest_addr, param_value, size, &mut builder, &mut self.module);
                         } else {
-                            builder.ins().stack_store(param_value, *stack_slot, 0);
+                            builder.ins().stack_store(types::I64, param_value, *stack_slot, 0);
                         }
                     }
                 }
@@ -3013,7 +3013,7 @@ impl ClifGen {
         }
 
         // Finalize the function
-        builder.finalize();
+        builder.finalize(self.module.isa().frontend_config());
 
         finalize_function_processing(
             func,

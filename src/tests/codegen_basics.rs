@@ -130,91 +130,91 @@ fn test_boolean_logic_lowering() {
 
     block0:
         v0 = iconst.i32 4
-        v60 = stack_addr.i64 ss0
-        store notrap v0, v60  ; v0 = 4
-        v59 = stack_addr.i64 ss0
-        v1 = load.i32 notrap v59
-        v2 = iconst.i32 0
-        v3 = icmp eq v1, v2  ; v2 = 0
-        v4 = iconst.i32 1
-        v5 = iconst.i32 0
-        v6 = select v3, v4, v5  ; v4 = 1, v5 = 0
-        v58 = stack_addr.i64 ss1
-        store notrap v6, v58
-        v57 = stack_addr.i64 ss1
-        v7 = load.i32 notrap v57
-        v8 = iconst.i32 0
-        v9 = icmp ne v7, v8  ; v8 = 0
-        v10 = iconst.i32 1
-        v11 = iconst.i32 0
-        v12 = select v9, v10, v11  ; v10 = 1, v11 = 0
-        v56 = stack_addr.i64 ss2
-        store notrap v12, v56
-        v55 = stack_addr.i64 ss2
-        v13 = load.i32 notrap v55
-        v14 = iconst.i32 0
-        v15 = icmp ne v13, v14  ; v14 = 0
-        v16 = iconst.i8 1
-        v17 = iconst.i8 0
-        v18 = select v15, v16, v17  ; v16 = 1, v17 = 0
-        v19 = uextend.i32 v18
-        brif v19, block1, block2
+        v1 = stack_addr.i64 ss0
+        store notrap v0, v1  ; v0 = 4
+        v2 = stack_addr.i64 ss0
+        v3 = load.i32 notrap v2
+        v4 = iconst.i32 0
+        v5 = icmp eq v3, v4  ; v4 = 0
+        v6 = iconst.i32 1
+        v7 = iconst.i32 0
+        v8 = select v5, v6, v7  ; v6 = 1, v7 = 0
+        v9 = stack_addr.i64 ss1
+        store notrap v8, v9
+        v10 = stack_addr.i64 ss1
+        v11 = load.i32 notrap v10
+        v12 = iconst.i32 0
+        v13 = icmp ne v11, v12  ; v12 = 0
+        v14 = iconst.i32 1
+        v15 = iconst.i32 0
+        v16 = select v13, v14, v15  ; v14 = 1, v15 = 0
+        v17 = stack_addr.i64 ss2
+        store notrap v16, v17
+        v18 = stack_addr.i64 ss2
+        v19 = load.i32 notrap v18
+        v20 = iconst.i32 0
+        v21 = icmp ne v19, v20  ; v20 = 0
+        v22 = iconst.i8 1
+        v23 = iconst.i8 0
+        v24 = select v21, v22, v23  ; v22 = 1, v23 = 0
+        v25 = uextend.i32 v24
+        brif v25, block1, block2
 
     block1:
-        v20 = iconst.i32 1
-        return v20  ; v20 = 1
+        v26 = iconst.i32 1
+        return v26  ; v26 = 1
 
     block2:
         jump block3
 
     block3:
-        v54 = stack_addr.i64 ss0
-        v21 = load.i32 notrap v54
-        v22 = iconst.i32 0
-        v23 = icmp eq v21, v22  ; v22 = 0
-        v24 = iconst.i32 1
-        v25 = iconst.i32 0
-        v26 = select v23, v24, v25  ; v24 = 1, v25 = 0
-        v53 = stack_addr.i64 ss3
-        store notrap v26, v53
-        v52 = stack_addr.i64 ss3
-        v27 = load.i32 notrap v52
-        v28 = iconst.i32 0
-        v29 = icmp eq v27, v28  ; v28 = 0
-        v30 = iconst.i32 1
-        v31 = iconst.i32 0
-        v32 = select v29, v30, v31  ; v30 = 1, v31 = 0
-        v51 = stack_addr.i64 ss4
-        store notrap v32, v51
-        v50 = stack_addr.i64 ss4
-        v33 = load.i32 notrap v50
-        v34 = iconst.i32 1
-        v35 = icmp ne v33, v34  ; v34 = 1
-        v36 = iconst.i32 1
+        v27 = stack_addr.i64 ss0
+        v28 = load.i32 notrap v27
+        v29 = iconst.i32 0
+        v30 = icmp eq v28, v29  ; v29 = 0
+        v31 = iconst.i32 1
+        v32 = iconst.i32 0
+        v33 = select v30, v31, v32  ; v31 = 1, v32 = 0
+        v34 = stack_addr.i64 ss3
+        store notrap v33, v34
+        v35 = stack_addr.i64 ss3
+        v36 = load.i32 notrap v35
         v37 = iconst.i32 0
-        v38 = select v35, v36, v37  ; v36 = 1, v37 = 0
-        v49 = stack_addr.i64 ss5
-        store notrap v38, v49
-        v48 = stack_addr.i64 ss5
-        v39 = load.i32 notrap v48
+        v38 = icmp eq v36, v37  ; v37 = 0
+        v39 = iconst.i32 1
         v40 = iconst.i32 0
-        v41 = icmp ne v39, v40  ; v40 = 0
-        v42 = iconst.i8 1
-        v43 = iconst.i8 0
-        v44 = select v41, v42, v43  ; v42 = 1, v43 = 0
-        v45 = uextend.i32 v44
-        brif v45, block4, block5
+        v41 = select v38, v39, v40  ; v39 = 1, v40 = 0
+        v42 = stack_addr.i64 ss4
+        store notrap v41, v42
+        v43 = stack_addr.i64 ss4
+        v44 = load.i32 notrap v43
+        v45 = iconst.i32 1
+        v46 = icmp ne v44, v45  ; v45 = 1
+        v47 = iconst.i32 1
+        v48 = iconst.i32 0
+        v49 = select v46, v47, v48  ; v47 = 1, v48 = 0
+        v50 = stack_addr.i64 ss5
+        store notrap v49, v50
+        v51 = stack_addr.i64 ss5
+        v52 = load.i32 notrap v51
+        v53 = iconst.i32 0
+        v54 = icmp ne v52, v53  ; v53 = 0
+        v55 = iconst.i8 1
+        v56 = iconst.i8 0
+        v57 = select v54, v55, v56  ; v55 = 1, v56 = 0
+        v58 = uextend.i32 v57
+        brif v58, block4, block5
 
     block4:
-        v46 = iconst.i32 1
-        return v46  ; v46 = 1
+        v59 = iconst.i32 1
+        return v59  ; v59 = 1
 
     block5:
         jump block6
 
     block6:
-        v47 = iconst.i32 0
-        return v47  ; v47 = 0
+        v60 = iconst.i32 0
+        return v60  ; v60 = 0
     }
     ");
 }

@@ -16,7 +16,7 @@ use core::slice;
 use smallvec::{SmallVec, smallvec};
 
 pub(crate) mod regs;
-pub(crate) use self::regs::*;
+pub use self::regs::*;
 pub mod imms;
 pub use self::imms::*;
 pub mod args;
@@ -1233,7 +1233,11 @@ fn pretty_print_try_call(info: &TryCallInfo) -> String {
 }
 
 impl Inst {
-    fn print_with_state(&self, state: &mut EmitState) -> String {
+    #[expect(
+        missing_docs,
+        reason = "exposed for cranelift-isle/veri pretty-printing"
+    )]
+    pub fn print_with_state(&self, state: &mut EmitState) -> String {
         fn op_name(alu_op: ALUOp) -> &'static str {
             match alu_op {
                 ALUOp::Add => "add",
@@ -2287,6 +2291,9 @@ impl Inst {
                     VecALUModOp::Bsl => ("bsl", VectorSize::Size8x16),
                     VecALUModOp::Fmla => ("fmla", size),
                     VecALUModOp::Fmls => ("fmls", size),
+                    // Note: the real operand arrangement is .4s, .16b, .16b;
+                    // this debug print renders all lanes as .4s.
+                    VecALUModOp::Sdot => ("sdot", VectorSize::Size32x4),
                 };
                 let rd = pretty_print_vreg_vector(rd.to_reg(), size);
                 let ri = pretty_print_vreg_vector(ri, size);

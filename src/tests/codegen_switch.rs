@@ -35,72 +35,72 @@ fn test_switch_unreachable_cases() {
 
     block0:
         v0 = iconst.i32 0
-        v43 = stack_addr.i64 ss0
-        store notrap v0, v43  ; v0 = 0
-        v1 = iconst.i32 0
-        v42 = stack_addr.i64 ss1
-        store notrap v1, v42  ; v1 = 0
-        v41 = stack_addr.i64 ss0
-        v2 = load.i32 notrap v41
-        v3 = iconst.i32 1
-        v4 = icmp eq v2, v3  ; v3 = 1
-        v5 = iconst.i8 1
-        v6 = iconst.i8 0
-        v7 = select v4, v5, v6  ; v5 = 1, v6 = 0
-        v8 = iconst.i8 0
-        v9 = icmp ne v7, v8  ; v8 = 0
-        v10 = iconst.i8 1
+        v1 = stack_addr.i64 ss0
+        store notrap v0, v1  ; v0 = 0
+        v2 = iconst.i32 0
+        v3 = stack_addr.i64 ss1
+        store notrap v2, v3  ; v2 = 0
+        v4 = stack_addr.i64 ss0
+        v5 = load.i32 notrap v4
+        v6 = iconst.i32 1
+        v7 = icmp eq v5, v6  ; v6 = 1
+        v8 = iconst.i8 1
+        v9 = iconst.i8 0
+        v10 = select v7, v8, v9  ; v8 = 1, v9 = 0
         v11 = iconst.i8 0
-        v12 = select v9, v10, v11  ; v10 = 1, v11 = 0
-        v40 = stack_addr.i64 ss2
-        store notrap v12, v40
-        v39 = stack_addr.i64 ss2
-        v13 = load.i8 notrap v39
-        v14 = uextend.i32 v13
-        brif v14, block2, block5
+        v12 = icmp ne v10, v11  ; v11 = 0
+        v13 = iconst.i8 1
+        v14 = iconst.i8 0
+        v15 = select v12, v13, v14  ; v13 = 1, v14 = 0
+        v16 = stack_addr.i64 ss2
+        store notrap v15, v16
+        v17 = stack_addr.i64 ss2
+        v18 = load.i8 notrap v17
+        v19 = uextend.i32 v18
+        brif v19, block2, block5
 
     block1:
-        v38 = stack_addr.i64 ss1
-        v15 = load.i32 notrap v38
-        return v15
+        v20 = stack_addr.i64 ss1
+        v21 = load.i32 notrap v20
+        return v21
 
     block2:
-        v16 = iconst.i32 11
-        v37 = stack_addr.i64 ss1
-        store notrap v16, v37  ; v16 = 11
+        v22 = iconst.i32 11
+        v23 = stack_addr.i64 ss1
+        store notrap v22, v23  ; v22 = 11
         jump block1
 
     block3:
-        v17 = iconst.i32 22
-        v36 = stack_addr.i64 ss1
-        store notrap v17, v36  ; v17 = 22
+        v24 = iconst.i32 22
+        v25 = stack_addr.i64 ss1
+        store notrap v24, v25  ; v24 = 22
         jump block1
 
     block4:
-        v18 = iconst.i32 33
-        v35 = stack_addr.i64 ss1
-        store notrap v18, v35  ; v18 = 33
+        v26 = iconst.i32 33
+        v27 = stack_addr.i64 ss1
+        store notrap v26, v27  ; v26 = 33
         jump block1
 
     block5:
-        v34 = stack_addr.i64 ss0
-        v19 = load.i32 notrap v34
-        v20 = iconst.i32 2
-        v21 = icmp eq v19, v20  ; v20 = 2
-        v22 = iconst.i8 1
-        v23 = iconst.i8 0
-        v24 = select v21, v22, v23  ; v22 = 1, v23 = 0
-        v25 = iconst.i8 0
-        v26 = icmp ne v24, v25  ; v25 = 0
-        v27 = iconst.i8 1
-        v28 = iconst.i8 0
-        v29 = select v26, v27, v28  ; v27 = 1, v28 = 0
-        v33 = stack_addr.i64 ss3
-        store notrap v29, v33
-        v32 = stack_addr.i64 ss3
-        v30 = load.i8 notrap v32
-        v31 = uextend.i32 v30
-        brif v31, block3, block6
+        v28 = stack_addr.i64 ss0
+        v29 = load.i32 notrap v28
+        v30 = iconst.i32 2
+        v31 = icmp eq v29, v30  ; v30 = 2
+        v32 = iconst.i8 1
+        v33 = iconst.i8 0
+        v34 = select v31, v32, v33  ; v32 = 1, v33 = 0
+        v35 = iconst.i8 0
+        v36 = icmp ne v34, v35  ; v35 = 0
+        v37 = iconst.i8 1
+        v38 = iconst.i8 0
+        v39 = select v36, v37, v38  ; v37 = 1, v38 = 0
+        v40 = stack_addr.i64 ss3
+        store notrap v39, v40
+        v41 = stack_addr.i64 ss3
+        v42 = load.i8 notrap v41
+        v43 = uextend.i32 v42
+        brif v43, block3, block6
 
     block6:
         jump block4

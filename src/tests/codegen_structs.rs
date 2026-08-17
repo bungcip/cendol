@@ -29,41 +29,41 @@ fn test_compile_struct_pointer_access() {
 
     block0:
         v0 = stack_addr.i64 ss0
-        v29 = stack_addr.i64 ss1
-        store notrap v0, v29
-        v1 = iconst.i32 1
-        v2 = stack_addr.i64 ss0
-        v3 = iconst.i64 0
-        v4 = iadd v2, v3  ; v3 = 0
-        store v1, v4  ; v1 = 1
-        v5 = iconst.i32 2
-        v28 = stack_addr.i64 ss1
-        v6 = load.i64 notrap v28
-        v7 = iconst.i64 4
-        v8 = iadd v6, v7  ; v7 = 4
-        store v5, v8  ; v5 = 2
-        v27 = stack_addr.i64 ss1
-        v9 = load.i64 notrap v27
-        v10 = iconst.i64 4
-        v11 = iadd v9, v10  ; v10 = 4
-        v12 = load.i32 v11
-        v26 = stack_addr.i64 ss1
-        v13 = load.i64 notrap v26
-        v14 = iconst.i64 0
-        v15 = iadd v13, v14  ; v14 = 0
-        v16 = load.i32 v15
-        v17 = iadd v12, v16
-        v25 = stack_addr.i64 ss2
-        store notrap v17, v25
-        v24 = stack_addr.i64 ss2
-        v18 = load.i32 notrap v24
-        v19 = iconst.i32 3
-        v20 = isub v18, v19  ; v19 = 3
-        v23 = stack_addr.i64 ss3
-        store notrap v20, v23
-        v22 = stack_addr.i64 ss3
-        v21 = load.i32 notrap v22
-        return v21
+        v1 = stack_addr.i64 ss1
+        store notrap v0, v1
+        v2 = iconst.i32 1
+        v3 = stack_addr.i64 ss0
+        v4 = iconst.i64 0
+        v5 = iadd v3, v4  ; v4 = 0
+        store v2, v5  ; v2 = 1
+        v6 = iconst.i32 2
+        v7 = stack_addr.i64 ss1
+        v8 = load.i64 notrap v7
+        v9 = iconst.i64 4
+        v10 = iadd v8, v9  ; v9 = 4
+        store v6, v10  ; v6 = 2
+        v11 = stack_addr.i64 ss1
+        v12 = load.i64 notrap v11
+        v13 = iconst.i64 4
+        v14 = iadd v12, v13  ; v13 = 4
+        v15 = load.i32 v14
+        v16 = stack_addr.i64 ss1
+        v17 = load.i64 notrap v16
+        v18 = iconst.i64 0
+        v19 = iadd v17, v18  ; v18 = 0
+        v20 = load.i32 v19
+        v21 = iadd v15, v20
+        v22 = stack_addr.i64 ss2
+        store notrap v21, v22
+        v23 = stack_addr.i64 ss2
+        v24 = load.i32 notrap v23
+        v25 = iconst.i32 3
+        v26 = isub v24, v25  ; v25 = 3
+        v27 = stack_addr.i64 ss3
+        store notrap v26, v27
+        v28 = stack_addr.i64 ss3
+        v29 = load.i32 notrap v28
+        return v29
     }
     "
     );

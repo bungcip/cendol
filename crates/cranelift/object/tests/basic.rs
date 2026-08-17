@@ -152,7 +152,11 @@ fn switch_error() {
         bcx.ins().return_(&[r]);
 
         bcx.seal_all_blocks();
-        bcx.finalize();
+        bcx.finalize(cranelift_codegen::isa::TargetFrontendConfig {
+            default_call_conv: CallConv::SystemV,
+            pointer_width: target_lexicon::PointerWidth::U64,
+            page_size_align_log2: 12,
+        });
     }
 
     let flags = settings::Flags::new(settings::builder());
@@ -303,11 +307,11 @@ fn aarch64_colocated_data_symbol_reloc() {
 
         let gv = module.declare_data_in_func(data_id, &mut bcx.func);
         let ptr = module.target_config().pointer_type();
-        let addr = bcx.ins().global_value(ptr, gv);
+        let addr = bcx.ins().symbol_value(ptr, gv);
         bcx.ins().return_(&[addr]);
 
         bcx.seal_all_blocks();
-        bcx.finalize();
+        bcx.finalize(module.target_config());
     }
 
     module.define_function(func_id, &mut ctx).unwrap();
@@ -360,7 +364,7 @@ mod eh_frame {
             bcx.switch_to_block(block);
             bcx.ins().return_(&[]);
             bcx.seal_all_blocks();
-            bcx.finalize();
+            bcx.finalize(module.target_config());
         }
         module.define_function(func_id, &mut ctx).unwrap();
         func_id
@@ -555,7 +559,7 @@ mod eh_frame {
             bcx.switch_to_block(block);
             bcx.ins().return_(&[]);
             bcx.seal_all_blocks();
-            bcx.finalize();
+            bcx.finalize(module.target_config());
         }
         module.define_function(func_id, &mut ctx).unwrap();
 

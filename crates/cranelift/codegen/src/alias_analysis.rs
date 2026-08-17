@@ -2,33 +2,34 @@
 //! values" pass. These two passes operate as one fused pass, and so
 //! are implemented together here.
 //!
-//! We partition memory state into several *disjoint pieces* of
-//! "abstract state". There are a finite number of such pieces:
-//! currently, we call them "heap", "table", "vmctx", and "other".Any
-//! given address in memory belongs to exactly one disjoint piece.
+//! We partition memory state into several *disjoint regions* of
+//! "abstract state". These regions are defined by `ir::AliasRegion`
+//! and may correspond to distinct linear memories in Wasm, different
+//! types (or fields) that cannot alias each other (known as
+//! type-based alias analysis, or TBAA), unique stack slots,
+//! etc... Any given address in memory belongs to at most one region.
 //!
-//! One never tracks which piece a concrete address belongs to at
+//! We never track which piece a concrete address belongs to at
 //! runtime; this is a purely static concept. Instead, all
-//! memory-accessing instructions (loads and stores) are labeled with
-//! one of these four categories in the `MemFlagsData`. It is forbidden
-//! for a load or store to access memory under one category and a
-//! later load or store to access the same memory under a different
-//! category. This is ensured to be true by construction during
-//! frontend translation into CLIF and during legalization.
+//! memory-accessing instructions (loads and stores) are tagged with
+//! one of these regions in their `ir::MemFlagsData`. It is forbidden
+//! for one instruction tagged with region `R` to access a memory
+//! location `L` and then for another instruction tagged with region
+//! `S` to access the same memory location `L`. This invariant must be
+//! provided by the CLIF-producing frontend.
 //!
-//! Given that this non-aliasing property is ensured by the producer
-//! of CLIF, we can compute a *may-alias* property: one load or store
-//! may-alias another load or store if both access the same category
-//! of abstract state.
+//! Given that this non-aliasing property is provided by the CLIF
+//! producer, we can compute a *may-alias* property: one load or store
+//! may-alias another load or store if both access the same region.
 //!
 //! The "last store" pass helps to compute this aliasing: it scans the
 //! code, finding at each program point the last instruction that
-//! *might have* written to a given part of abstract state.
+//! *might have* written to a given region.
 //!
 //! We can't say for sure that the "last store" *did* actually write
-//! that state, but we know for sure that no instruction *later* than
-//! it (up to the current instruction) did. However, we can get a
-//! must-alias property from this: if at a given load or store, we
+//! that region, but we know for sure that no instruction *later* than
+//! it (up to the current instruction) did. However, we can derive a
+//! *must-alias* property from this: if at a given load or store, we
 //! look backward to the "last store", *AND* we find that it has
 //! exactly the same address expression and type, then we know that
 //! the current instruction's access *must* be to the same memory
@@ -52,7 +53,7 @@
 //!
 //! In theory we could also do *dead-store elimination*, where if a
 //! store overwrites a key in the table, *and* if no other load/store
-//! to the abstract state category occurred, *and* no other trapping
+//! to the abstract region occurred, *and* no other trapping
 //! instruction occurred (at which point we need an up-to-date memory
 //! state because post-trap-termination memory state can be observed),
 //! *and* we can prove the original store could not have trapped, then
@@ -140,25 +141,31 @@ impl LastStores {
         }
     }
 
-    fn meet_from(&mut self, other: &LastStores, loc: Inst) {
-        let meet = |a: PackedOption<Inst>, b: PackedOption<Inst>| -> PackedOption<Inst> {
-            match (a.into(), b.into()) {
-                (None, None) => None.into(),
-                (Some(a), None) => a,
-                (None, Some(b)) => b,
-                (Some(a), Some(b)) if a == b => a,
-                _ => loc.into(),
-            }
+    /// Meet `self` with `other` and place the result in `self`.
+    ///
+    /// Returns `true` if `self` changed, `false` otherwise.
+    fn meet_from(&mut self, other: &LastStores, loc: Inst) -> bool {
+        let meet = |a: &mut PackedOption<Inst>, b: PackedOption<Inst>| -> bool {
+            let old = a.expand();
+            let new = match (old, b.expand()) {
+                (None, None) => None,
+                (Some(a), Some(b)) if a == b => Some(a),
+                _ => Some(loc),
+            };
+            *a = new.into();
+            old != new
         };
 
         // Meet all region slots.
+        let mut changed = false;
         let max_len = core::cmp::max(self.regions.keys().len(), other.regions.keys().len());
         for i in 0..max_len {
             let ar = AliasRegion::new(i);
-            self.regions[ar] = meet(self.regions[ar], other.regions[ar]);
+            changed |= meet(&mut self.regions[ar], other.regions[ar]);
         }
-        self.other = meet(self.other, other.other);
-        self.last_fence = meet(self.last_fence, other.last_fence);
+        changed |= meet(&mut self.other, other.other);
+        changed |= meet(&mut self.last_fence, other.last_fence);
+        changed
     }
 }
 
@@ -261,11 +268,7 @@ impl<'a> AliasAnalysis<'a> {
             visit_block_succs(func, block, |_inst, succ, _from_table| {
                 let succ_first_inst = func.layout.block_insts(succ).next().unwrap();
                 let updated = match self.block_input.get_mut(&succ) {
-                    Some(succ_state) => {
-                        let old = succ_state.clone();
-                        succ_state.meet_from(&state, succ_first_inst);
-                        *succ_state != old
-                    }
+                    Some(succ_state) => succ_state.meet_from(&state, succ_first_inst),
                     None => {
                         self.block_input.insert(succ, state.clone());
                         true

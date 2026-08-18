@@ -880,7 +880,11 @@ fn test_init_range_excess_elements() {
         return 0;
     }
     "#;
-    crate::tests::test_utils::run_pass_with_diagnostic_message(source, crate::driver::artifact::CompilePhase::Mir, "excess elements");
+    crate::tests::test_utils::run_pass_with_diagnostic_message(
+        source,
+        crate::driver::artifact::CompilePhase::Mir,
+        "excess elements",
+    );
 }
 
 #[test]

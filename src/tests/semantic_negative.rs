@@ -159,7 +159,6 @@ fn test_invalid_restrict() {
 }
 
 #[test]
-
 #[test]
 fn test_variable_of_void_type() {
     run_fail_with_message(
@@ -172,7 +171,6 @@ fn test_variable_of_void_type() {
 
 // K. Type System Edge Cases
 #[test]
-
 // M. Expression Validation
 #[test]
 fn test_invalid_use_of_void_in_expr() {
@@ -188,13 +186,9 @@ fn test_invalid_use_of_void_in_expr() {
 }
 
 #[test]
-
 #[test]
-
 #[test]
-
 #[test]
-
 #[test]
 fn test_static_tentative_incomplete_type_allowed() {
     run_pass(
@@ -204,9 +198,7 @@ fn test_static_tentative_incomplete_type_allowed() {
 }
 
 #[test]
-
 #[test]
-
 #[test]
 // S. Undeclared Identifiers
 

@@ -518,7 +518,6 @@ impl PPLexer {
                     token!(PPTokenKind::Xor)
                 }
             }
-            b'~' => token!(PPTokenKind::Tilde),
             b'.' => {
                 let pos_after_first = self.position;
                 let at_start_after_first = self.at_start_of_line;
@@ -537,16 +536,6 @@ impl PPLexer {
                     token!(PPTokenKind::Dot)
                 }
             }
-            b'?' => token!(PPTokenKind::Question),
-            b':' => token!(PPTokenKind::Colon),
-            b',' => token!(PPTokenKind::Comma),
-            b';' => token!(PPTokenKind::Semicolon),
-            b'(' => token!(PPTokenKind::LeftParen),
-            b')' => token!(PPTokenKind::RightParen),
-            b'[' => token!(PPTokenKind::LeftBracket),
-            b']' => token!(PPTokenKind::RightBracket),
-            b'{' => token!(PPTokenKind::LeftBrace),
-            b'}' => token!(PPTokenKind::RightBrace),
             _ => token!(PPTokenKind::Unknown),
         }
     }
@@ -637,6 +626,36 @@ impl PPLexer {
         // ch is the first character of the token.
         // If next_char encountered a splice, has_splice is now true.
         let token = match ch {
+            // ⚡ Bolt: Fast path for single-character, non-combining punctuation.
+            // Tokens like (, ), [, ], {, }, ,, ;, :, ~, ? cannot combine with any subsequent
+            // characters to form multi-character operators. Bypassing `lex_operator` for these
+            // extremely frequent tokens directly speeds up the preprocessor tokenization loop.
+            b'(' | b')' | b'[' | b']' | b'{' | b'}' | b',' | b';' | b':' | b'~' | b'?' => {
+                let kind = match ch {
+                    b'(' => PPTokenKind::LeftParen,
+                    b')' => PPTokenKind::RightParen,
+                    b'[' => PPTokenKind::LeftBracket,
+                    b']' => PPTokenKind::RightBracket,
+                    b'{' => PPTokenKind::LeftBrace,
+                    b'}' => PPTokenKind::RightBrace,
+                    b',' => PPTokenKind::Comma,
+                    b';' => PPTokenKind::Semicolon,
+                    b':' => PPTokenKind::Colon,
+                    b'~' => PPTokenKind::Tilde,
+                    b'?' => PPTokenKind::Question,
+                    _ => unreachable!(),
+                };
+                let mut token_flags = flags;
+                if self.has_splice {
+                    token_flags |= PPTokenFlags::HAS_SPLICES;
+                }
+                Some(PPToken::new(
+                    kind,
+                    token_flags,
+                    SourceLoc::new(self.source_id, start_pos),
+                    (self.position - start_pos) as u16,
+                ))
+            }
             b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'$' => {
                 let tok = match (ch, self.peek_char()) {
                     (b'u', Some(b'8')) => {
@@ -693,8 +712,9 @@ impl PPLexer {
             } else {
                 self.lex_operator(start_pos, ch, flags)
             }),
-            b'+' | b'-' | b'*' | b'/' | b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'^' | b'~' | b'?' | b':' | b','
-            | b';' | b'(' | b')' | b'[' | b']' | b'{' | b'}' => Some(self.lex_operator(start_pos, ch, flags)),
+            b'+' | b'-' | b'*' | b'/' | b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'^' => {
+                Some(self.lex_operator(start_pos, ch, flags))
+            }
             _ => Some(PPToken::new(
                 PPTokenKind::Unknown,
                 flags,

@@ -2225,7 +2225,9 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                         overflow_addr
                     };
 
-                    ctx.builder.ins().stack_store(types::I64, aligned_overflow, addr_slot, 0);
+                    ctx.builder
+                        .ins()
+                        .stack_store(types::I64, aligned_overflow, addr_slot, 0);
 
                     let needed_overflow = va_arg_type_size.max(8).div_ceil(8) * 8;
                     let next_overflow_increment = ctx.builder.ins().iconst(types::I64, needed_overflow as i64);

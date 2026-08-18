@@ -472,7 +472,7 @@ fn test_sizeof_compound_literal_postfix() {
 #[test]
 fn test_builtin_alloca() {
     let resolved = setup_expr("__builtin_alloca(42)");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     FunctionCall:
       - Ident: __builtin_alloca
       - - LiteralInt: 42
@@ -493,7 +493,7 @@ fn test_builtin_bit_cast() {
 #[test]
 fn test_builtin_trap() {
     let resolved = setup_expr("__builtin_trap()");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     FunctionCall:
       - Ident: __builtin_trap
       - []
@@ -503,9 +503,7 @@ fn test_builtin_trap() {
 #[test]
 fn test_enum_with_non_literal_value() {
     let resolved = setup_expr("sizeof(enum { A = 1 + 1 })");
-    insta::assert_yaml_snapshot!(&resolved, @"
-    SizeOfType: type_1
-    ");
+    insta::assert_yaml_snapshot!(&resolved, @"SizeOfType: type_1");
 }
 
 #[test]

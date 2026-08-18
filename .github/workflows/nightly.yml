@@ -25,6 +25,7 @@ jobs:
           python3 realworld_test.py tinyexpr
           python3 realworld_test.py sds
           python3 realworld_test.py lua
+          python3 realworld_test.py cpython
 
           # Mark this commit as tested
           touch .nightly-tested

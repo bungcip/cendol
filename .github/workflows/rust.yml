@@ -19,6 +19,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
       - name: Run fmt
         run: cargo fmt --check
       - name: Run clippy

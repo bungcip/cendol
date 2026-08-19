@@ -61,6 +61,20 @@ impl FunctionState {
             scope_cleanup: Vec::new(),
         }
     }
+
+    fn reset(&mut self, func_id: MirFunctionId, entry_block: MirBlockId) {
+        self.func_id = func_id;
+        self.current_block = Some(entry_block);
+        self.local_map.clear();
+        self.vla_map.clear();
+        self.label_map.clear();
+        self.break_target = None;
+        self.break_depth = None;
+        self.continue_target = None;
+        self.continue_depth = None;
+        self.switch_case_map.clear();
+        self.scope_cleanup.clear();
+    }
 }
 
 pub(crate) struct MirGen<'a> {
@@ -75,6 +89,8 @@ pub(crate) struct MirGen<'a> {
     pub(crate) valist_mir_id: Option<TypeId>,
     pub(crate) current_scope_id: ScopeId,
     pub(crate) func_state: Option<FunctionState>,
+    // ⚡ Bolt: Reusable FunctionState to avoid heap allocating HashMaps/Vecs for every function in MIR gen.
+    pub(crate) reusable_func_state: Option<FunctionState>,
     pub(crate) keywords: MirGenKeywords,
     pub(crate) is_pic: bool,
     pub(crate) signed_overflow_mode: SignedOverflowMode,
@@ -255,6 +271,7 @@ impl<'a> MirGen<'a> {
             keywords: MirGenKeywords::new(),
             current_scope_id: ScopeId::GLOBAL,
             func_state: None,
+            reusable_func_state: None,
             is_pic: options.fpic,
             signed_overflow_mode: options.signed_overflow_mode,
             visibility: options.visibility,
@@ -587,7 +604,12 @@ impl<'a> MirGen<'a> {
             entry_block_id
         };
 
-        self.func_state = Some(FunctionState::new(func_id, entry_block_id));
+        let mut state = self
+            .reusable_func_state
+            .take()
+            .unwrap_or_else(|| FunctionState::new(func_id, entry_block_id));
+        state.reset(func_id, entry_block_id);
+        self.func_state = Some(state);
 
         let param_len = if let SymbolKind::Function(f) = &symbol_entry.kind {
             f.param_len
@@ -603,7 +625,10 @@ impl<'a> MirGen<'a> {
 
         self.emit_implicit_return(func_id, func_name);
 
-        self.func_state = None;
+        if let Some(mut state) = self.func_state.take() {
+            state.reset(func_id, entry_block_id);
+            self.reusable_func_state = Some(state);
+        }
     }
 
     fn map_parameters(&mut self, func_id: MirFunctionId, function: &FunctionDef, param_len: u16) {

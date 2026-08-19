@@ -185,6 +185,7 @@ mod guardian_lvalue_assignment;
 pub mod guardian_pointer_assignment_nested_qualifiers;
 pub mod guardian_switch_multiple_default;
 mod guardian_zero_or_negative_size_array;
+pub mod guardian_invalid_restrict;
 pub mod parser_struct_pragmas;
 pub mod semantic_binary_conversion;
 pub mod semantic_binary_invalid_operands;

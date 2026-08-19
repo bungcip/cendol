@@ -348,3 +348,7 @@ Action: Add `guardian_expected_array_type.rs` to validate this invariant, ensuri
 
 Learning: Checking for switch case duplication is done efficiently in Cendol using an `IntervalMap` via binary search (`partition_point`). Case labels must be unique *within the same switch statement scope*. Nested switch statements create separate case scopes, allowing identical case labels in inner and outer switches without conflicting.
 Action: Add explicit verification tests to confirm that nested switch scopes appropriately isolate case and default labels and do not produce false positive `DuplicateCase` semantic errors.
+2024-05-24 - [Invalid Restrict Modifier Constraints]
+
+Learning: A new test was added to verify C11 6.7.3p2, which mandates that the `restrict` type qualifier must only be applied to a pointer to an object or incomplete type. The test asserts that compiling code that applies `restrict` directly to integers, floats, function pointers, or arrays (via typedef) fails with the `SemanticError::InvalidRestrict` error, and properly allows it on object pointers.
+Action: I have explicitly added a new unit test for invalid restrict constraints.

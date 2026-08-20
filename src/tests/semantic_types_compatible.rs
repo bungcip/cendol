@@ -32,3 +32,18 @@ fn test_negative_array_size_with_builtin_types_compatible() {
         "size of array is negative",
     );
 }
+
+#[test]
+fn test_types_compatible_unresolved_typeof_in_alias() {
+    run_pass(
+        "
+        int main() {
+            int a = 1;
+            typedef typeof(({ a; })) unresolved_alias_t;
+            int x = __builtin_types_compatible_p(unresolved_alias_t, int);
+            return x;
+        }
+        ",
+        CompilePhase::Mir,
+    );
+}

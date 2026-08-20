@@ -1259,7 +1259,18 @@ impl PPLexer {
     }
 
     fn lex_char_literal(&mut self, start_pos: u32, prefix: &[u8], flags: PPTokenFlags) -> PPToken {
-        let ends_with_delimiter = prefix.ends_with(b"'");
+        // Bolt ⚡: Fast-path for standard single-quote character literals without multi-byte prefixes.
+        let (ends_with_delimiter, content_start) = if prefix == [b'\''] {
+            (true, 1)
+        } else {
+            let ends_with = prefix.ends_with(b"'");
+            let quote_start = if ends_with {
+                prefix.len() - 1
+            } else {
+                prefix.len()
+            };
+            (ends_with, quote_start + 1)
+        };
         let invalid_ucn = self.lex_quoted_literal(ends_with_delimiter, b'\'');
 
         let mut final_flags = flags;
@@ -1275,14 +1286,6 @@ impl PPLexer {
         let raw_buffer = &self.buffer[start_pos as usize..self.position as usize];
         let raw_text = unsafe { std::str::from_utf8_unchecked(raw_buffer) };
         let de_spliced = final_flags.apply_splices(raw_text);
-
-        // Parse character literal content from de-spliced text
-        let quote_start = if ends_with_delimiter {
-            prefix.len() - 1
-        } else {
-            prefix.len()
-        };
-        let content_start = quote_start + 1;
 
         let content_end = if de_spliced.as_bytes().last() == Some(&b'\'') && de_spliced.len() > content_start {
             de_spliced.len() - 1

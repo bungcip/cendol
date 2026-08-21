@@ -50,3 +50,8 @@
 ## 2025-11-12 - Reusable HashMap for Cranelift Blocks to Avoid Heap Allocations
 **Learning:** During mid-level IR to Cranelift IR generation, blocks are compiled on a function-by-function basis. Creating a new `HashMap<MirBlockId, Block>` local variable inside `visit_function` results in allocating a brand-new map on the heap for every single function, triggering thousands of redundant memory allocations on large source files like SQLite. Promoting `clif_blocks` to be a reusable field on `ClifGen` (much like `clif_stack_slots`) and simply calling `.clear()` at the start of each function compilation completely eliminates these allocations, yielding a ~4.4% compile-time speedup during codegen.
 **Action:** Always reuse standard collections (like `HashMap` or `Vec`) as fields on a visitor/codegen struct rather than instantiating them locally within frequently-called methods, completely bypassing hot path heap allocation overhead.
+
+## 2025-11-20 - FxHashSet for Diagnostic Warnings and AST Dumper
+
+**Learning:** `hashbrown::HashSet` defaults to standard SipHash for DOS protection. In `src/diagnostic.rs` and `src/ast/dumper.rs`, `HashSet` is used for looking up disabled warning flag strings and tracking unique AST `TypeRef` IDs. Replacing `hashbrown::HashSet` with `rustc_hash::FxHashSet` completely eliminates SipHash hashing overhead. Note that when aliasing `FxHashSet as HashSet`, initialize instances with `HashSet::default()` rather than `HashSet::new()` to ensure `FxHasher` is used.
+**Action:** Use `rustc_hash::FxHashSet` constructed with `HashSet::default()` for set-based lookups and unique ID collection across compiler diagnostic and AST passes.

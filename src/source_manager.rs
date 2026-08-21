@@ -612,4 +612,13 @@ mod tests {
         let span = SourceSpan::empty();
         assert_eq!(format!("{}", span), "SourceSpan(source_id=SourceId(1), start=0, end=0)");
     }
+
+    #[test]
+    fn test_line_window_empty_line_starts() {
+        let mut sm = SourceManager::new();
+        let id = sm.add_buffer(b"macro content".to_vec(), "macro", None, FileKind::MacroExpansion);
+        let info = sm.file_infos.last_mut().unwrap();
+        info.line_starts.clear();
+        assert_eq!(sm.get_line_window(id, 0, 1), (0, 13, 1));
+    }
 }

@@ -3026,10 +3026,14 @@ impl ClifGen {
     }
 
     fn analyze_reachability(&self) -> (HashSet<MirFunctionId>, HashSet<GlobalId>) {
-        let mut reachable_functions = HashSet::default();
-        let mut reachable_globals = HashSet::default();
-        let mut worklist_functions = Vec::new();
-        let mut worklist_globals = Vec::new();
+        // Bolt ⚡: Pre-allocate capacities for sets and worklists based on total MIR functions and globals
+        // to avoid repetitive re-allocations and hashing rehashing during reachability analysis.
+        let num_funcs = self.mir.functions.len();
+        let num_globals = self.mir.globals.len();
+        let mut reachable_functions = HashSet::with_capacity_and_hasher(num_funcs, Default::default());
+        let mut reachable_globals = HashSet::with_capacity_and_hasher(num_globals, Default::default());
+        let mut worklist_functions = Vec::with_capacity(num_funcs);
+        let mut worklist_globals = Vec::with_capacity(num_globals);
 
         // Initial roots: all external functions and all globals with initializers
         for (i, func) in self.mir.functions.iter().enumerate() {

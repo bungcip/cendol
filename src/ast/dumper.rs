@@ -2,7 +2,8 @@
 //!
 //! This module handles AST dumping for debugging and visualization.
 
-use hashbrown::HashSet;
+// Bolt ⚡: Use `FxHashSet` (aliased as `HashSet`) to eliminate SipHash hashing overhead for AST type dumping.
+use rustc_hash::FxHashSet as HashSet;
 use std::fmt;
 use std::fmt::Formatter;
 
@@ -54,7 +55,7 @@ pub(crate) struct TypeRegistryDisplay<'a> {
 impl<'a> fmt::Display for TypeRegistryDisplay<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // Collect all TypeRefs used in the AST
-        let mut used_types = HashSet::new();
+        let mut used_types = HashSet::default();
 
         for kind in &self.ast.kinds {
             AstDumper::collect_types(kind, &mut used_types);

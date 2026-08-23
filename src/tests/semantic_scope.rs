@@ -432,3 +432,18 @@ fn test_redefinition_function() {
     "#;
     crate::tests::test_utils::run_fail_with_message(source, "redefinition of 'f'");
 }
+
+#[test]
+fn test_func_param_shadows_func_name() {
+    run_pass(
+        r#"
+        int f(int f) {
+            return f;
+        }
+        int main() {
+            return f(0);
+        }
+        "#,
+        CompilePhase::Cranelift,
+    );
+}

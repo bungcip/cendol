@@ -351,3 +351,8 @@ Action: Add explicit verification tests to confirm that nested switch scopes app
 2024-05-18 - [Return Statement Constraints]
 Learning: C11 6.8.6.4 constraints on `return` statements mandate distinct semantic checks depending on the function's return type and whether a return expression exists. Returning a value in a `void` function is an error (`VoidReturnWithValue`). Returning no value in a non-`void` function is an error (`NonVoidReturnWithoutValue`). Returning an expression of type `void` (e.g. calling a `void` function) inside a `void` function is a GCC extension but standard C warns/errors (`VoidReturnWithVoidExpr`).
 Action: Add tests specifically verifying that these semantic errors and warnings trigger at `CompilePhase::Mir` with precise diagnostic spans, as Cendol already has the logic but it needs robust coverage in `guardian_return_constraints.rs`.
+
+2024-05-18 - [Indirection Requires Pointer Operand]
+
+Learning: In C, the dereference operator (`*`) must only be applied to an operand of pointer type. Cendol checks this during semantic analysis (`SemanticLowering`/`Mir` phases). If applied to a non-pointer type like `int`, the compiler correctly rejects the code and emits `SemanticError::IndirectionRequiresPointer`. Ensuring that this is caught and the error is accurately reported at the correct source span is an important invariant for catching improper pointer arithmetics and misuse of the indirection operator early.
+Action: Add `guardian_indirection_requires_pointer.rs` to validate this invariant, ensuring that applying `*` to a primitive like `int` correctly triggers the "indirection requires pointer operand" error and points to the right position in the AST.

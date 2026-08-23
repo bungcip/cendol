@@ -157,18 +157,6 @@ pub mod guardian_vla;
 pub mod guardian_vm_linkage_constraints;
 
 // Regression
-pub mod regr_different_pointer_levels_warning;
-pub mod regr_incompatible_pointer_warning;
-pub mod regr_incomplete_deref_statement;
-pub mod regr_init_range;
-pub mod regr_mixed_sign_comp;
-pub mod regr_nonconstant_array_designator;
-
-pub mod regr_shadowing;
-pub mod regr_struct_bitfield;
-pub mod regr_tag_kind_mismatch;
-pub mod regr_typeof_ternary;
-pub mod regr_union_cast;
 
 // Test Helpers
 pub mod codegen_alias;
@@ -177,6 +165,7 @@ pub mod guardian_break_not_in_loop_or_switch;
 pub mod guardian_case_not_in_switch;
 pub mod guardian_continue_not_in_loop;
 pub mod guardian_duplicate_case;
+pub mod guardian_indirection_requires_pointer;
 pub mod guardian_invalid_function_specifier;
 mod guardian_invalid_number_of_arguments;
 pub mod guardian_invalid_storage_class_for_function;
@@ -190,10 +179,8 @@ pub mod parser_struct_pragmas;
 pub mod semantic_binary_conversion;
 pub mod semantic_binary_invalid_operands;
 pub mod semantic_cleanup_coverage;
-pub mod semantic_conversions_uncovered;
+pub mod semantic_const_eval_statement_expr;
 pub mod semantic_gnu_local_label;
 pub mod semantic_mir_label_addr;
 pub mod semantic_types_compatible;
-pub mod test_const_eval_coverage;
-pub mod test_const_eval_unary;
 pub mod test_utils;

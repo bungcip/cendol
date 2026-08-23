@@ -1,3 +1,6 @@
+use crate::tests::test_utils::check_diagnostic_message_only;
+use crate::tests::test_utils::run_pass;
+
 use crate::driver::artifact::CompilePhase;
 use crate::tests::test_utils::run_pipeline;
 
@@ -89,4 +92,36 @@ fn test_usual_arithmetic_conversions_coverage() {
     "#;
     let (_, result) = run_pipeline(source, CompilePhase::SemanticLowering);
     assert!(result.is_ok());
+}
+
+#[test]
+fn test_pointer_level_and_type_warnings() {
+    // --- test_different_pointer_levels_warning ---
+    let source = r#"
+        void test(void) {
+            int x;
+            int *y = 0;
+            int *a = &x;
+            const int *b = &y;
+        }
+    "#;
+    let driver = run_pass(source, CompilePhase::Mir);
+    check_diagnostic_message_only(
+        &driver,
+        "incompatible pointer types passing 'int**' to parameter of type 'const int*'",
+    );
+    // --- test_incompatible_pointer_warning_function_call ---
+    let source = r#"
+        void f(int *i) {
+        }
+        void test(void) {
+            double *d;
+            f(d);
+        }
+    "#;
+    let driver = run_pass(source, CompilePhase::Mir);
+    check_diagnostic_message_only(
+        &driver,
+        "incompatible pointer types passing 'double*' to parameter of type 'int*'",
+    );
 }

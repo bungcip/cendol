@@ -1,5 +1,4 @@
-use hashbrown::HashMap;
-use rustc_hash::FxBuildHasher;
+use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -11,19 +10,6 @@ pub(crate) struct SearchKey {
     pub(crate) current_dir: PathBuf,
 }
 
-#[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
-pub(crate) struct SearchKeyRef<'a> {
-    pub(crate) include_path: &'a str,
-    pub(crate) is_angled: bool,
-    pub(crate) current_dir: &'a Path,
-}
-
-impl<'a> hashbrown::Equivalent<SearchKey> for SearchKeyRef<'a> {
-    fn equivalent(&self, key: &SearchKey) -> bool {
-        self.include_path == key.include_path && self.is_angled == key.is_angled && self.current_dir == key.current_dir
-    }
-}
-
 /// Manages header search paths and include resolution
 #[derive(Clone)]
 pub(crate) struct HeaderSearch {
@@ -32,9 +18,9 @@ pub(crate) struct HeaderSearch {
     pub(crate) quoted_includes: Vec<PathBuf>,
     pub(crate) angled_includes: Vec<PathBuf>,
     /// Cache for resolved paths: (include_path, is_angled, current_dir) -> resolved_path
-    pub(crate) resolve_cache: RefCell<HashMap<SearchKey, Option<Arc<PathBuf>>, FxBuildHasher>>,
+    pub(crate) resolve_cache: RefCell<FxHashMap<SearchKey, Option<Arc<PathBuf>>>>,
     /// Cache for resolved next paths: (include_path, is_angled, current_dir) -> resolved_path
-    pub(crate) resolve_next_cache: RefCell<HashMap<SearchKey, Option<Arc<PathBuf>>, FxBuildHasher>>,
+    pub(crate) resolve_next_cache: RefCell<FxHashMap<SearchKey, Option<Arc<PathBuf>>>>,
 }
 
 impl HeaderSearch {
@@ -44,8 +30,8 @@ impl HeaderSearch {
             framework_path: Vec::new(),
             quoted_includes: Vec::new(),
             angled_includes: Vec::new(),
-            resolve_cache: RefCell::new(HashMap::with_hasher(FxBuildHasher)),
-            resolve_next_cache: RefCell::new(HashMap::with_hasher(FxBuildHasher)),
+            resolve_cache: RefCell::new(FxHashMap::default()),
+            resolve_next_cache: RefCell::new(FxHashMap::default()),
         }
     }
 
@@ -71,12 +57,12 @@ impl HeaderSearch {
 
     /// Resolve an include path to an absolute path
     pub(crate) fn resolve_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<Arc<PathBuf>> {
-        let key_ref = SearchKeyRef {
-            include_path,
+        let key = SearchKey {
+            include_path: include_path.to_string(),
             is_angled,
-            current_dir,
+            current_dir: current_dir.to_path_buf(),
         };
-        if let Some(cached) = self.resolve_cache.borrow().get(&key_ref) {
+        if let Some(cached) = self.resolve_cache.borrow().get(&key) {
             return cached.clone();
         }
 
@@ -100,11 +86,6 @@ impl HeaderSearch {
 
         let result_arc = result.map(Arc::new);
 
-        let key = SearchKey {
-            include_path: include_path.to_string(),
-            is_angled,
-            current_dir: current_dir.to_path_buf(),
-        };
         self.resolve_cache.borrow_mut().insert(key, result_arc.clone());
         result_arc
     }
@@ -127,12 +108,12 @@ impl HeaderSearch {
         is_angled: bool,
         current_dir: &Path,
     ) -> Option<Arc<PathBuf>> {
-        let key_ref = SearchKeyRef {
-            include_path,
+        let key = SearchKey {
+            include_path: include_path.to_string(),
             is_angled,
-            current_dir,
+            current_dir: current_dir.to_path_buf(),
         };
-        if let Some(cached) = self.resolve_next_cache.borrow().get(&key_ref) {
+        if let Some(cached) = self.resolve_next_cache.borrow().get(&key) {
             return cached.clone();
         }
 
@@ -169,11 +150,6 @@ impl HeaderSearch {
 
         let result_arc = result.map(Arc::new);
 
-        let key = SearchKey {
-            include_path: include_path.to_string(),
-            is_angled,
-            current_dir: current_dir.to_path_buf(),
-        };
         self.resolve_next_cache.borrow_mut().insert(key, result_arc.clone());
         result_arc
     }

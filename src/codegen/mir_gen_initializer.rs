@@ -279,7 +279,7 @@ impl<'a> MirGen<'a> {
             &mut iter,
             None,
             ArrayInitArgs {
-                element_ty: element_ty,
+                element_ty,
                 size,
                 target_ty,
                 destination,
@@ -577,12 +577,7 @@ impl<'a> MirGen<'a> {
                 unreachable!()
             };
 
-            Operand::Constant(self.create_array_const_from_string(
-                content,
-                prefix,
-                fixed_size,
-                Some(element_type),
-            ))
+            Operand::Constant(self.create_array_const_from_string(content, prefix, fixed_size, Some(element_type)))
         })
     }
 
@@ -684,8 +679,7 @@ impl<'a> MirGen<'a> {
             .get_array_element()
             .unwrap_or(self.registry.type_char);
 
-        let array_const =
-            self.create_array_const_from_string(content, prefix, None, Some(elem_ty));
+        let array_const = self.create_array_const_from_string(content, prefix, None, Some(elem_ty));
         let global_id = self.create_anon_global(mir_ty, array_const);
 
         Operand::Constant(self.create_constant(mir_ty, ConstValueKind::GlobalAddress(global_id, 0)))

@@ -1403,46 +1403,16 @@ impl<'a> MirGen<'a> {
                 .expect("Placeholder must exist for recursive type");
         }
 
-        // Bolt ⚡: Avoid cloning the entire TypeKind.
-        // We use matching on a reference and scoped extraction where needed.
-        enum Task {
-            Record(Option<NameId>, bool, bool),
-            Builtin(BuiltinType),
-            Pointer(QualType),
-            Array(TypeRef, ArraySize),
-            Function(TypeRef, SmallVec<[FunctionParam; 8]>, bool),
-            Complex(TypeRef),
-            Default,
-        }
+        let kind = self.registry.get(ty).kind.clone();
 
-        let task = {
-            let type_info = self.registry.get(ty);
-            match &type_info.kind {
-                TypeKind::Record {
-                    tag,
-                    is_union,
-                    is_complete,
-                    ..
-                } => Task::Record(*tag, *is_union, *is_complete),
-                TypeKind::Builtin(b) => Task::Builtin(*b),
-                TypeKind::Pointer { pointee } => Task::Pointer(*pointee),
-                TypeKind::Array { element_type, size } => Task::Array(*element_type, *size),
-                TypeKind::Function {
-                    return_type,
-                    parameters,
-                    is_variadic,
-                    ..
-                } => Task::Function(*return_type, SmallVec::from_slice(parameters), *is_variadic),
-                TypeKind::Complex { base_type } => Task::Complex(*base_type),
-                _ => Task::Default,
-            }
-        };
-
-        match task {
-            Task::Record(tag, is_union, is_complete) => {
-                self.lower_recursive_record_pattern(ty, tag, is_union, is_complete)
-            }
-            Task::Builtin(b) => {
+        match kind {
+            TypeKind::Record {
+                tag,
+                is_union,
+                is_complete,
+                ..
+            } => self.lower_recursive_record_pattern(ty, tag, is_union, is_complete),
+            TypeKind::Builtin(b) => {
                 let mir_type = if matches!(b, BuiltinType::VaList) {
                     self.lower_valist_type()
                 } else {
@@ -1450,19 +1420,24 @@ impl<'a> MirGen<'a> {
                 };
                 self.cache_type(ty, mir_type)
             }
-            Task::Pointer(pointee) => {
+            TypeKind::Pointer { pointee } => {
                 let mir_type = self.lower_pointer_type(pointee);
                 self.cache_type(ty, mir_type)
             }
-            Task::Array(element_type, size) => {
+            TypeKind::Array { element_type, size } => {
                 let mir_type = self.lower_array_type(ty, element_type, &size);
                 self.cache_type(ty, mir_type)
             }
-            Task::Function(return_type, parameters, is_variadic) => {
+            TypeKind::Function {
+                return_type,
+                parameters,
+                is_variadic,
+                ..
+            } => {
                 let mir_type = self.lower_function_type(return_type, &parameters, is_variadic);
                 self.cache_type(ty, mir_type)
             }
-            Task::Complex(base_type) => {
+            TypeKind::Complex { base_type } => {
                 let mir_type = self.lower_complex_type(base_type);
                 self.cache_type(ty, mir_type)
             }

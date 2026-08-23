@@ -33,6 +33,32 @@ pub struct TypeLayout {
     pub kind: LayoutKind,
 }
 
+impl TypeLayout {
+    pub(crate) fn scalar(size: u64, alignment: u16) -> Self {
+        TypeLayout {
+            size,
+            alignment,
+            kind: LayoutKind::Scalar,
+        }
+    }
+
+    pub(crate) fn array(size: u64, alignment: u16, element: TypeRef, len: u64) -> Self {
+        TypeLayout {
+            size,
+            alignment,
+            kind: LayoutKind::Array { element, len },
+        }
+    }
+
+    pub(crate) fn record_fields(size: u64, alignment: u16, fields: Arc<[FieldLayout]>) -> Self {
+        TypeLayout {
+            size,
+            alignment,
+            kind: LayoutKind::RecordFields { fields },
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum LayoutKind {
     Scalar,
@@ -46,6 +72,17 @@ pub struct FieldLayout {
     pub bit_width: Option<u16>,
     pub bit_offset: Option<u16>,
     pub storage_size: u64,
+}
+
+impl FieldLayout {
+    pub(crate) fn new(offset: u64, storage_size: u64) -> Self {
+        FieldLayout {
+            offset,
+            bit_width: None,
+            bit_offset: None,
+            storage_size,
+        }
+    }
 }
 
 impl Type {

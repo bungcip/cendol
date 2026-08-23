@@ -237,7 +237,7 @@ impl<'a> SemanticAnalyzer<'a> {
     fn apply_lvalue_conversion(&mut self, node: NodeRef) {
         if self.is_lvalue(node) {
             // C11 6.3.2.1p2: Lvalue-to-rvalue conversion does not apply to array or function types.
-            if let Some(qt) = self.semantic_info.types[node.index()] {
+            if let Some(qt) = self.get_type(node) {
                 if qt.is_array() || qt.is_function() {
                     return;
                 }
@@ -420,7 +420,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
                 }
 
-                if let Some(callee_type) = self.semantic_info.types[call.callee.index()] {
+                if let Some(callee_type) = self.get_type(call.callee) {
                     let mut ty = callee_type.ty();
                     // Bolt ⚡: Optimization: use registry.get_pointee() and is_noreturn_function helper.
                     // This avoids redundant Cow<Type> allocations for pointers in the hot path.
@@ -526,6 +526,14 @@ impl<'a> SemanticAnalyzer<'a> {
         self.semantic_info.value_categories[node.index()] = category;
     }
 
+    fn get_type(&self, node: NodeRef) -> Option<QualType> {
+        self.semantic_info.types[node.index()]
+    }
+
+    fn set_type(&mut self, node: NodeRef, ty: QualType) {
+        self.semantic_info.types[node.index()] = Some(ty);
+    }
+
     /// ⚡ Bolt: Checks if the node is an LValue.
     /// This function is optimized to use the already-computed value category from the side table.
     fn is_lvalue(&self, node: NodeRef) -> bool {
@@ -556,7 +564,7 @@ impl<'a> SemanticAnalyzer<'a> {
     fn get_bitfield_width(&self, node: NodeRef) -> Option<u16> {
         match self.ast.get_kind(node) {
             NodeKind::MemberAccess(obj, field_name, is_arrow) => {
-                let obj_qt = self.semantic_info.types[obj.index()]?;
+                let obj_qt = self.get_type(*obj)?;
                 let record_ty = if *is_arrow {
                     self.registry.get_pointee(obj_qt.ty()).map(|p| p.ty())
                 } else {
@@ -585,7 +593,7 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::StatementExpr(_, result_expr) => self.get_bitfield_width(*result_expr),
             NodeKind::UnaryOp(UnaryOp::Real, operand) => self.get_bitfield_width(*operand),
             NodeKind::UnaryOp(UnaryOp::Imag, operand) => {
-                let operand_ty = self.semantic_info.types.get(operand.index()).and_then(|t| *t);
+                let operand_ty = self.get_type(*operand);
                 if operand_ty.is_some_and(|t| t.is_complex()) {
                     self.get_bitfield_width(*operand)
                 } else {
@@ -608,7 +616,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::UnaryOp(UnaryOp::Real, operand) => self.is_register_variable(*operand),
             NodeKind::UnaryOp(UnaryOp::Imag, operand) => {
-                let operand_ty = self.semantic_info.types.get(operand.index()).and_then(|t| *t);
+                let operand_ty = self.get_type(*operand);
                 if operand_ty.is_some_and(|t| t.is_complex()) {
                     self.is_register_variable(*operand)
                 } else {
@@ -617,7 +625,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::MemberAccess(obj, _, is_arrow) => !is_arrow && self.is_register_variable(*obj),
             NodeKind::IndexAccess(arr, _) => {
-                let arr_ty = self.semantic_info.types.get(arr.index()).and_then(|t| *t);
+                let arr_ty = self.get_type(*arr);
                 arr_ty.is_some_and(|t| t.is_array()) && self.is_register_variable(*arr)
             }
             NodeKind::BuiltinChooseExpr(..) => {
@@ -705,7 +713,7 @@ impl<'a> SemanticAnalyzer<'a> {
             return l.is_integer_zero();
         }
 
-        if let Some(qt) = self.semantic_info.types.get(node.index()).and_then(|t| *t)
+        if let Some(qt) = self.get_type(node)
             && qt.is_integer()
         {
             return self.const_ctx().eval_int(node) == Some(0);
@@ -980,7 +988,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if cond_qt.is_array() || cond_qt.is_function() {
             cond_qt = self.decay(condition, cond_qt);
-            self.semantic_info.types[condition.index()] = Some(cond_qt);
+            self.set_type(condition, cond_qt);
         }
 
         if !cond_qt.is_scalar() {
@@ -1214,7 +1222,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
                 if actual_qt.is_array() || actual_qt.is_function() {
                     actual_qt = self.decay(expr, actual_qt);
-                    self.semantic_info.types[expr.index()] = Some(actual_qt);
+                    self.set_type(expr, actual_qt);
                 }
 
                 if !actual_qt.is_scalar() {
@@ -1844,7 +1852,7 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_init(&mut self, init: NodeRef, target_qt: QualType) {
         match self.ast.get_kind(init) {
             NodeKind::InitializerList(list) => {
-                self.semantic_info.types[init.index()] = Some(target_qt);
+                self.set_type(init, target_qt);
                 let list = *list;
                 self.visit_init_list(&list, target_qt);
             }
@@ -2317,12 +2325,13 @@ impl<'a> SemanticAnalyzer<'a> {
                     };
                     self.apply_lvalue_conversion(arg_node);
 
+                    let actual_arg_qt = self.decay(arg_node, arg_qt);
+
                     if let Some(kind) = builtin_kind {
-                        self.validate_builtin_arg(kind, i, arg_node, arg_qt, &mut atomic_pointee);
+                        self.validate_builtin_arg(kind, i, arg_node, actual_arg_qt, &mut atomic_pointee);
                     }
 
                     if i < parameters.len() {
-                        let actual_arg_qt = self.decay(arg_node, arg_qt);
                         self.validate_assignment(arg_node, parameters[i].param_type, actual_arg_qt, arg_node);
                     } else if is_variadic {
                         self.handle_variadic_argument(arg_node, arg_qt);
@@ -2378,109 +2387,95 @@ impl<'a> SemanticAnalyzer<'a> {
         arg_qt: QualType,
         atomic_pointee: &mut Option<QualType>,
     ) {
-        if kind.is_bitwise() && i == 0 {
-            let check_qt = if arg_qt.is_array() || arg_qt.is_function() {
-                self.registry.decay(arg_qt, TypeQuals::empty())
-            } else {
-                arg_qt
-            };
-            if !check_qt.is_integer() {
-                self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: check_qt });
-            }
-        } else if kind.is_fabs() && i == 0 {
-            let check_qt = if arg_qt.is_array() || arg_qt.is_function() {
-                self.registry.decay(arg_qt, TypeQuals::empty())
-            } else {
-                arg_qt
-            };
-            if !check_qt.is_floating() {
-                self.report_error(arg_node, SemanticError::ExpectedFloatingType { found: check_qt });
+        if i == 0 {
+            if kind.is_bitwise() && !arg_qt.is_integer() {
+                self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: arg_qt });
+            } else if kind.is_fabs() && !arg_qt.is_floating() {
+                self.report_error(arg_node, SemanticError::ExpectedFloatingType { found: arg_qt });
             }
         }
 
-        match kind {
-            BuiltinFunctionKind::Memcpy | BuiltinFunctionKind::Memmove | BuiltinFunctionKind::Memcmp => {
-                let void_ptr = QualType::unqualified(self.registry.type_void_ptr);
+        match (kind, i) {
+            (
+                BuiltinFunctionKind::Memcpy
+                | BuiltinFunctionKind::Memmove
+                | BuiltinFunctionKind::Memcmp
+                | BuiltinFunctionKind::Memset
+                | BuiltinFunctionKind::Prefetch,
+                0,
+            ) => {
+                let ptr_qt = if kind == BuiltinFunctionKind::Memcmp {
+                    let const_void = QualType::new(self.registry.type_void, TypeQuals::CONST);
+                    QualType::unqualified(self.registry.pointer_to(const_void))
+                } else {
+                    QualType::unqualified(self.registry.type_void_ptr)
+                };
+                self.validate_assignment(arg_node, ptr_qt, arg_qt, arg_node);
+            }
+            (BuiltinFunctionKind::Memcpy | BuiltinFunctionKind::Memmove | BuiltinFunctionKind::Memcmp, 1) => {
                 let const_void = QualType::new(self.registry.type_void, TypeQuals::CONST);
-                let const_void_ptr = QualType::unqualified(self.registry.pointer_to(const_void));
-                let size_t = QualType::unqualified(self.registry.type_long_unsigned);
-
-                if i == 0 {
-                    self.validate_assignment(
-                        arg_node,
-                        if kind == BuiltinFunctionKind::Memcmp {
-                            const_void_ptr
-                        } else {
-                            void_ptr
-                        },
-                        arg_qt,
-                        arg_node,
-                    );
-                } else if i == 1 {
-                    self.validate_assignment(arg_node, const_void_ptr, arg_qt, arg_node);
-                } else if i == 2 {
-                    self.validate_assignment(arg_node, size_t, arg_qt, arg_node);
-                }
+                let ptr_qt = QualType::unqualified(self.registry.pointer_to(const_void));
+                self.validate_assignment(arg_node, ptr_qt, arg_qt, arg_node);
             }
-            BuiltinFunctionKind::Memset => {
-                let void_ptr = QualType::unqualified(self.registry.type_void_ptr);
+            (BuiltinFunctionKind::Memset, 1) => {
                 let int_ty = self.registry.unqualified_int;
+                self.validate_assignment(arg_node, int_ty, arg_qt, arg_node);
+            }
+            (
+                BuiltinFunctionKind::Memcpy
+                | BuiltinFunctionKind::Memmove
+                | BuiltinFunctionKind::Memcmp
+                | BuiltinFunctionKind::Memset,
+                2,
+            ) => {
                 let size_t = QualType::unqualified(self.registry.type_long_unsigned);
-
-                if i == 0 {
-                    self.validate_assignment(arg_node, void_ptr, arg_qt, arg_node);
-                } else if i == 1 {
-                    self.validate_assignment(arg_node, int_ty, arg_qt, arg_node);
-                } else if i == 2 {
-                    self.validate_assignment(arg_node, size_t, arg_qt, arg_node);
+                self.validate_assignment(arg_node, size_t, arg_qt, arg_node);
+            }
+            (BuiltinFunctionKind::Prefetch, 1) => {
+                if !arg_qt.is_integer() {
+                    self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: arg_qt });
+                } else if let Some(v) = self.const_ctx().eval_int(arg_node) {
+                    if v != 0 && v != 1 {
+                        self.report_error(arg_node, SemanticError::BuiltinPrefetchOutOfRange { arg: "rw" });
+                    }
+                } else {
+                    self.report_error(arg_node, SemanticError::BuiltinPrefetchNotConstant { arg: "rw" });
                 }
             }
-            BuiltinFunctionKind::Prefetch => {
-                if i == 0 {
-                    let void_ptr = QualType::unqualified(self.registry.type_void_ptr);
-                    self.validate_assignment(arg_node, void_ptr, arg_qt, arg_node);
-                } else if i == 1 {
-                    // rw
-                    if !arg_qt.is_integer() {
-                        self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: arg_qt });
-                    } else if let Some(v) = self.const_ctx().eval_int(arg_node) {
-                        if v != 0 && v != 1 {
-                            self.report_error(arg_node, SemanticError::BuiltinPrefetchOutOfRange { arg: "rw" });
-                        }
-                    } else {
-                        self.report_error(arg_node, SemanticError::BuiltinPrefetchNotConstant { arg: "rw" });
+            (BuiltinFunctionKind::Prefetch, 2) => {
+                if !arg_qt.is_integer() {
+                    self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: arg_qt });
+                } else if let Some(v) = self.const_ctx().eval_int(arg_node) {
+                    if !(0..=3).contains(&v) {
+                        self.report_error(arg_node, SemanticError::BuiltinPrefetchOutOfRange { arg: "locality" });
                     }
-                } else if i == 2 {
-                    // locality
-                    if !arg_qt.is_integer() {
-                        self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: arg_qt });
-                    } else if let Some(v) = self.const_ctx().eval_int(arg_node) {
-                        if !(0..=3).contains(&v) {
-                            self.report_error(arg_node, SemanticError::BuiltinPrefetchOutOfRange { arg: "locality" });
-                        }
-                    } else {
-                        self.report_error(arg_node, SemanticError::BuiltinPrefetchNotConstant { arg: "locality" });
-                    }
+                } else {
+                    self.report_error(arg_node, SemanticError::BuiltinPrefetchNotConstant { arg: "locality" });
                 }
             }
-            BuiltinFunctionKind::FrameAddress => {
-                if i == 0 && self.const_ctx().eval_int(arg_node).is_none() {
+            (BuiltinFunctionKind::FrameAddress, 0) => {
+                if self.const_ctx().eval_int(arg_node).is_none() {
                     self.report_error(arg_node, SemanticError::BuiltinFrameAddressNotConstant);
                 }
             }
-            BuiltinFunctionKind::AddOverflow | BuiltinFunctionKind::SubOverflow | BuiltinFunctionKind::MulOverflow => {
-                if i == 0 || i == 1 {
-                    if !arg_qt.is_integer() {
-                        self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: arg_qt });
+            (
+                BuiltinFunctionKind::AddOverflow | BuiltinFunctionKind::SubOverflow | BuiltinFunctionKind::MulOverflow,
+                0 | 1,
+            ) => {
+                if !arg_qt.is_integer() {
+                    self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: arg_qt });
+                }
+            }
+            (
+                BuiltinFunctionKind::AddOverflow | BuiltinFunctionKind::SubOverflow | BuiltinFunctionKind::MulOverflow,
+                2,
+            ) => {
+                if let Some(pointee) = self.registry.get_pointee(arg_qt.ty()) {
+                    if !pointee.is_integer() {
+                        self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: pointee });
                     }
-                } else if i == 2 {
-                    if let Some(pointee) = self.registry.get_pointee(arg_qt.ty()) {
-                        if !pointee.is_integer() {
-                            self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: pointee });
-                        }
-                    } else {
-                        self.report_error(arg_node, SemanticError::IndirectionRequiresPointer { ty: arg_qt });
-                    }
+                } else {
+                    self.report_error(arg_node, SemanticError::IndirectionRequiresPointer { ty: arg_qt });
                 }
             }
             _ => {
@@ -3319,7 +3314,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let mut actual_cond_qt = cond_qt;
         if actual_cond_qt.is_array() || actual_cond_qt.is_function() {
             actual_cond_qt = self.decay(cond, actual_cond_qt);
-            self.semantic_info.types[cond.index()] = Some(actual_cond_qt);
+            self.set_type(cond, actual_cond_qt);
         }
         self.require_scalar(cond, actual_cond_qt);
         let then_ty = self.visit_node(then);
@@ -3457,7 +3452,7 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_node(&mut self, node: NodeRef) -> Option<QualType> {
         // Bolt ⚡: Memoization - skip analysis if node was already visited.
         // This avoids O(N^2) complexity in constructs like StatementExpr and GenericSelection.
-        if let Some(qt) = self.semantic_info.types[node.index()] {
+        if let Some(qt) = self.get_type(node) {
             return Some(qt);
         }
 
@@ -3503,7 +3498,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if let Some(ty) = result_type {
             // set resolved type for this node
-            self.semantic_info.types[node.index()] = Some(ty);
+            self.set_type(node, ty);
         }
         result_type
     }
@@ -3641,7 +3636,7 @@ impl<'a> SemanticAnalyzer<'a> {
             // Bolt ⚡: Propagate value category from the selected expression.
             self.set_category(node, self.get_category(expr));
 
-            self.semantic_info.types.get(expr.index()).and_then(|t| *t)
+            self.get_type(expr)
         } else {
             self.report_error(node, SemanticError::GenericNoMatch { ty: ctrl });
             None

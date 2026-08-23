@@ -12,7 +12,7 @@ use crate::{
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
-use target_lexicon::{PointerWidth, Triple};
+use target_lexicon::Triple;
 
 use super::types::TypeClass;
 use super::types::{FieldLayout, LayoutKind};
@@ -154,6 +154,45 @@ impl TypeRegistry {
             }
             let max = if width >= 64 { u64::MAX } else { (1u64 << width) - 1 };
             (val as u64) <= max
+        }
+    }
+
+    pub(crate) fn pointer_size(&self) -> u64 {
+        match self.target_triple.pointer_width() {
+            Ok(target_lexicon::PointerWidth::U16) => 2,
+            Ok(target_lexicon::PointerWidth::U32) => 4,
+            Ok(target_lexicon::PointerWidth::U64) => 8,
+            Err(_) => 8, // Default to 64-bit if unknown
+        }
+    }
+
+    fn builtin_layout(&self, b: BuiltinType) -> Option<TypeLayout> {
+        match b {
+            BuiltinType::Void => None,
+            BuiltinType::Bool | BuiltinType::Char | BuiltinType::SChar | BuiltinType::UChar => {
+                Some(TypeLayout::scalar(1, 1))
+            }
+            BuiltinType::Short | BuiltinType::UShort => Some(TypeLayout::scalar(2, 2)),
+            BuiltinType::Int | BuiltinType::UInt | BuiltinType::Float | BuiltinType::Signed => {
+                Some(TypeLayout::scalar(4, 4))
+            }
+            BuiltinType::Long | BuiltinType::ULong => {
+                let size = self.pointer_size();
+                Some(TypeLayout::scalar(size, size as u16))
+            }
+            BuiltinType::LongLong | BuiltinType::ULongLong | BuiltinType::Double => Some(TypeLayout::scalar(8, 8)),
+            BuiltinType::LongDouble => Some(TypeLayout::scalar(16, 16)),
+            BuiltinType::VaList => Some(TypeLayout::record_fields(
+                24,
+                8,
+                std::sync::Arc::from([
+                    FieldLayout::new(0, 4),
+                    FieldLayout::new(4, 4),
+                    FieldLayout::new(8, 8),
+                    FieldLayout::new(16, 8),
+                ]),
+            )),
+            BuiltinType::Complex => None,
         }
     }
 
@@ -391,32 +430,21 @@ impl TypeRegistry {
     }
 
     /// Get the unsigned version of a builtin integer type.
-    pub(crate) fn get_unsigned_corresponding_type(&self, mut ty: TypeRef) -> TypeRef {
-        loop {
-            // Bolt ⚡: Optimization: First check for bitfield-encoded builtins (common case).
-            if let Some(b) = ty.builtin() {
-                return self.get_builtin_type(b.to_unsigned());
-            }
+    pub(crate) fn get_unsigned_corresponding_type(&self, ty: TypeRef) -> TypeRef {
+        let ty = self.canonical_type(ty);
 
-            // Bolt ⚡: Use TypeClass for fast dispatch.
-            // Builtins and aliases are the only candidates for integer conversion.
-            match ty.class() {
-                TypeClass::Builtin => {
-                    if let TypeKind::Builtin(b) = &self.types[ty.index()].kind {
-                        return self.get_builtin_type(b.to_unsigned());
-                    }
-                    return ty;
-                }
-                TypeClass::Alias => {
-                    if let TypeKind::Alias(inner) = &self.types[ty.index()].kind {
-                        ty = *inner;
-                    } else {
-                        return ty;
-                    }
-                }
-                _ => return ty,
-            }
+        // Bolt ⚡: Optimization: First check for bitfield-encoded builtins (common case).
+        if let Some(b) = ty.builtin() {
+            return self.get_builtin_type(b.to_unsigned());
         }
+
+        if ty.class() == TypeClass::Builtin
+            && let TypeKind::Builtin(b) = &self.types[ty.index()].kind
+        {
+            return self.get_builtin_type(b.to_unsigned());
+        }
+
+        ty
     }
 
     /// Resolve a TypeRef to a Type.
@@ -441,11 +469,7 @@ impl TypeRegistry {
                         kind: TypeKind::Pointer {
                             pointee: QualType::unqualified(pointee),
                         },
-                        layout: Some(TypeLayout {
-                            size: 8,
-                            alignment: 8,
-                            kind: LayoutKind::Scalar,
-                        }),
+                        layout: Some(TypeLayout::scalar(8, 8)),
                     });
                 }
                 TypeClass::Array if r.is_inline_array() => {
@@ -473,30 +497,22 @@ impl TypeRegistry {
     }
 
     /// Helper to get the pointee type if the given type is a pointer.
-    pub(crate) fn get_pointee(&self, mut ty: TypeRef) -> Option<QualType> {
-        loop {
-            // Bolt ⚡: Fast path for non-pointer types to avoid registry lookup and match.
-            // Pointers and aliases (which might resolve to pointers) are the only candidates.
-            let class = ty.class();
-            if class != TypeClass::Pointer && class != TypeClass::Alias {
-                return None;
-            }
+    pub(crate) fn get_pointee(&self, ty: TypeRef) -> Option<QualType> {
+        let ty = self.canonical_type(ty);
 
-            if ty.is_inline_pointer() {
-                return Some(QualType::unqualified(self.reconstruct_pointee(ty)));
-            } else {
-                let t = &self.types[ty.index()];
-                // Bolt ⚡: Match on reference to avoid cloning the large TypeKind enum.
-                if let TypeKind::Alias(inner) = &t.kind {
-                    ty = *inner;
-                    continue;
-                }
-                match &t.kind {
-                    TypeKind::Pointer { pointee } => return Some(*pointee),
-                    _ => return None,
-                }
-            }
+        if ty.class() != TypeClass::Pointer {
+            return None;
         }
+
+        if ty.is_inline_pointer() {
+            return Some(QualType::unqualified(self.reconstruct_pointee(ty)));
+        }
+
+        if let TypeKind::Pointer { pointee } = &self.types[ty.index()].kind {
+            return Some(*pointee);
+        }
+
+        None
     }
 
     /// Check if a type is a structure with a flexible array member (FAM).
@@ -509,133 +525,90 @@ impl TypeRegistry {
             return false;
         }
 
-        match &self.types[ty.index()].kind {
-            TypeKind::Alias(inner) => self.has_flexible_array_member(*inner),
-            TypeKind::Record { members, is_union, .. } => {
-                if *is_union {
-                    // A union has a FAM if any of its members recursively has one.
-                    members
-                        .iter()
-                        .any(|m| self.has_flexible_array_member(m.member_type.ty()))
-                } else {
-                    // A structure has a FAM if its last member is an incomplete array
-                    // OR if any member recursively has a FAM (making the whole struct VM/illegal as member).
-                    if let Some(last) = members.last()
-                        && let TypeKind::Array {
-                            size: ArraySize::Incomplete,
-                            ..
-                        } = &self.get(last.member_type.ty()).kind
-                    {
-                        return true;
-                    }
-                    // Recurse to see if any member has a FAM (nested)
-                    members
-                        .iter()
-                        .any(|m| self.has_flexible_array_member(m.member_type.ty()))
+        let ty = self.canonical_type(ty);
+        if let TypeKind::Record { members, is_union, .. } = &self.types[ty.index()].kind {
+            if *is_union {
+                // A union has a FAM if any of its members recursively has one.
+                members
+                    .iter()
+                    .any(|m| self.has_flexible_array_member(m.member_type.ty()))
+            } else {
+                // A structure has a FAM if its last member is an incomplete array
+                // OR if any member recursively has a FAM (making the whole struct VM/illegal as member).
+                if let Some(last) = members.last()
+                    && let TypeKind::Array {
+                        size: ArraySize::Incomplete,
+                        ..
+                    } = &self.get(last.member_type.ty()).kind
+                {
+                    return true;
                 }
+                // Recurse to see if any member has a FAM (nested)
+                members
+                    .iter()
+                    .any(|m| self.has_flexible_array_member(m.member_type.ty()))
             }
-            _ => false,
+        } else {
+            false
         }
     }
 
-    pub(crate) fn is_char_type(&self, mut ty: TypeRef) -> bool {
-        loop {
-            // Bolt ⚡: Use TypeClass for fast dispatch to avoid redundant bitfield decoding.
-            // This optimization reduces analysis time by skipping registry lookups for non-char types.
-            match ty.class() {
-                TypeClass::Builtin => {
-                    if let Some(b) = BuiltinType::from_u32(ty.base()) {
-                        return b.is_char();
-                    }
-                    // Fallback for registry-backed builtins (e.g. Error or synthetic types).
-                    match &self.types[ty.index()].kind {
-                        TypeKind::Builtin(b) => return b.is_char(),
-                        _ => return false,
-                    }
-                }
-                TypeClass::Alias => {
-                    if let TypeKind::Alias(inner) = &self.types[ty.index()].kind {
-                        ty = *inner;
-                    } else {
-                        return false;
-                    }
-                }
-                _ => return false,
+    pub(crate) fn is_char_type(&self, ty: TypeRef) -> bool {
+        let ty = self.canonical_type(ty);
+
+        if ty.class() == TypeClass::Builtin {
+            if let Some(b) = BuiltinType::from_u32(ty.base()) {
+                return b.is_char();
+            }
+            if let TypeKind::Builtin(b) = &self.types[ty.index()].kind {
+                return b.is_char();
             }
         }
+
+        false
     }
 
     /// Helper to get the element type if the given type is an array.
-    pub(super) fn get_array_element(&self, mut ty: TypeRef) -> Option<TypeRef> {
-        loop {
-            // Bolt ⚡: Fast path for non-array types to avoid registry lookup and match.
-            let class = ty.class();
-            if class != TypeClass::Array && class != TypeClass::Alias {
-                return None;
-            }
+    pub(super) fn get_array_element(&self, ty: TypeRef) -> Option<TypeRef> {
+        let ty = self.canonical_type(ty);
 
-            if ty.is_inline_array() {
-                return Some(self.reconstruct_element(ty));
-            }
-
-            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations in hot loops.
-            match &self.types[ty.index()].kind {
-                TypeKind::Alias(inner) => ty = *inner,
-                TypeKind::Array { element_type, .. } => return Some(*element_type),
-                _ => return None,
-            }
+        if ty.class() != TypeClass::Array {
+            return None;
         }
+
+        if ty.is_inline_array() {
+            return Some(self.reconstruct_element(ty));
+        }
+
+        if let TypeKind::Array { element_type, .. } = &self.types[ty.index()].kind {
+            return Some(*element_type);
+        }
+
+        None
     }
 
-    pub(crate) fn is_function_type(&self, mut ty: TypeRef) -> bool {
-        loop {
-            // Bolt ⚡: Fast path to avoid registry lookup for non-function types.
-            let class = ty.class();
-            if class != TypeClass::Function && class != TypeClass::Alias {
-                return false;
-            }
-
-            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations.
-            match &self.types[ty.index()].kind {
-                TypeKind::Alias(inner) => ty = *inner,
-                TypeKind::Function { .. } => return true,
-                _ => return false,
-            }
-        }
+    pub(crate) fn is_function_type(&self, ty: TypeRef) -> bool {
+        self.canonical_type(ty).class() == TypeClass::Function
     }
 
-    pub(crate) fn is_noreturn_function(&self, mut ty: TypeRef) -> bool {
-        loop {
-            // Bolt ⚡: Fast path to avoid registry lookup for non-function types.
-            let class = ty.class();
-            if class != TypeClass::Function && class != TypeClass::Alias {
-                return false;
-            }
-
-            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations.
-            match &self.types[ty.index()].kind {
-                TypeKind::Alias(inner) => ty = *inner,
-                TypeKind::Function { is_noreturn, .. } => return *is_noreturn,
-                _ => return false,
-            }
+    pub(crate) fn is_noreturn_function(&self, ty: TypeRef) -> bool {
+        let ty = self.canonical_type(ty);
+        if ty.class() == TypeClass::Function
+            && let TypeKind::Function { is_noreturn, .. } = &self.types[ty.index()].kind
+        {
+            return *is_noreturn;
         }
+        false
     }
 
-    pub(crate) fn get_complex_base(&self, mut ty: TypeRef) -> Option<TypeRef> {
-        loop {
-            // Bolt ⚡: Fast path to avoid registry lookup for non-complex types.
-            let class = ty.class();
-            if class != TypeClass::Complex && class != TypeClass::Alias {
-                return None;
-            }
-
-            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations.
-            match &self.types[ty.index()].kind {
-                TypeKind::Alias(inner) => ty = *inner,
-                TypeKind::Complex { base_type } => return Some(*base_type),
-                _ => return None,
-            }
+    pub(crate) fn get_complex_base(&self, ty: TypeRef) -> Option<TypeRef> {
+        let ty = self.canonical_type(ty);
+        if ty.class() == TypeClass::Complex
+            && let TypeKind::Complex { base_type } = &self.types[ty.index()].kind
+        {
+            return Some(*base_type);
         }
+        None
     }
 
     fn reconstruct_pointee(&self, r: TypeRef) -> TypeRef {
@@ -1133,10 +1106,7 @@ impl TypeRegistry {
     }
 
     pub(crate) fn set_transparent_union(&mut self, record: TypeRef) {
-        let mut ty = record;
-        while let TypeKind::Alias(inner) = &self.types[ty.index()].kind {
-            ty = *inner;
-        }
+        let ty = self.canonical_type(record);
         let t = &mut self.types[ty.index()];
         if let TypeKind::Record {
             is_transparent_union: trans,
@@ -1148,10 +1118,7 @@ impl TypeRegistry {
     }
 
     pub(crate) fn get_transparent_union_first_member_type(&self, ty: TypeRef) -> Option<QualType> {
-        let mut curr = ty;
-        while let TypeKind::Alias(inner) = &self.types[curr.index()].kind {
-            curr = *inner;
-        }
+        let curr = self.canonical_type(ty);
         if let TypeKind::Record {
             is_transparent_union,
             members,
@@ -1204,164 +1171,88 @@ impl TypeRegistry {
     // Layout
     // ============================================================
 
-    pub(crate) fn get_layout(&self, mut ty: TypeRef) -> Cow<'_, TypeLayout> {
-        loop {
-            if ty.is_inline_pointer() {
-                return Cow::Owned(TypeLayout {
-                    size: 8,
-                    alignment: 8,
-                    kind: LayoutKind::Scalar,
-                });
-            }
+    pub(crate) fn get_layout(&self, ty: TypeRef) -> Cow<'_, TypeLayout> {
+        let ty = self.canonical_type(ty);
+        if ty.is_inline_pointer() {
+            return Cow::Owned(TypeLayout::scalar(8, 8));
+        }
 
-            if ty.is_inline_array() {
-                let elem = self.reconstruct_element(ty);
-                let elem_layout = self.get_layout(elem);
-                let len = ty.array_len().unwrap() as u64;
-                return Cow::Owned(TypeLayout {
-                    size: elem_layout.size * len, // Potential overflow if not careful, but C rules apply
-                    alignment: elem_layout.alignment,
-                    kind: LayoutKind::Array { element: elem, len },
-                });
-            }
+        if ty.is_inline_array() {
+            let elem = self.reconstruct_element(ty);
+            let elem_layout = self.get_layout(elem);
+            let len = ty.array_len().unwrap() as u64;
+            return Cow::Owned(TypeLayout::array(
+                elem_layout.size * len,
+                elem_layout.alignment,
+                elem,
+                len,
+            ));
+        }
 
-            let idx = ty.index();
-            let repr = &self.types[idx];
-            // Bolt ⚡: Match on reference to avoid cloning the large TypeKind enum.
-            if let TypeKind::Alias(inner) = &repr.kind {
-                ty = *inner;
-            } else {
-                match repr.layout.as_ref() {
-                    Some(x) => return Cow::Borrowed(x),
-                    None => {
-                        panic!("ICE: TypeRef {ty} layout not computed. make sure layout is computed in previous phase")
-                    }
-                }
+        let idx = ty.index();
+        let repr = &self.types[idx];
+        match repr.layout.as_ref() {
+            Some(x) => Cow::Borrowed(x),
+            None => {
+                panic!("ICE: TypeRef {ty} layout not computed. make sure layout is computed in previous phase")
             }
         }
     }
 
     /// Safe version of get_layout that returns None instead of panicking when layout is missing.
     /// Used during lowering phase when layouts may not yet be computed.
-    pub(super) fn try_get_layout(&self, mut ty: TypeRef) -> Option<Cow<'_, TypeLayout>> {
-        loop {
-            if ty.is_inline_pointer() {
-                return Some(Cow::Owned(TypeLayout {
-                    size: 8,
-                    alignment: 8,
-                    kind: LayoutKind::Scalar,
-                }));
-            }
+    pub(super) fn try_get_layout(&self, ty: TypeRef) -> Option<Cow<'_, TypeLayout>> {
+        let ty = self.canonical_type(ty);
+        if ty.is_inline_pointer() {
+            return Some(Cow::Owned(TypeLayout::scalar(8, 8)));
+        }
 
-            if ty.is_inline_array() {
-                let elem = self.reconstruct_element(ty);
-                let elem_layout = self.try_get_layout(elem)?;
-                let len = ty.array_len().unwrap() as u64;
-                return Some(Cow::Owned(TypeLayout {
-                    size: elem_layout.size * len,
-                    alignment: elem_layout.alignment,
-                    kind: LayoutKind::Array { element: elem, len },
-                }));
-            }
+        if ty.is_inline_array() {
+            let elem = self.reconstruct_element(ty);
+            let elem_layout = self.try_get_layout(elem)?;
+            let len = ty.array_len().unwrap() as u64;
+            return Some(Cow::Owned(TypeLayout::array(
+                elem_layout.size * len,
+                elem_layout.alignment,
+                elem,
+                len,
+            )));
+        }
 
-            let idx = ty.index();
-            let repr = &self.types[idx];
-            // Bolt ⚡: Match on reference to avoid cloning the large TypeKind enum.
-            if let TypeKind::Alias(inner) = &repr.kind {
-                ty = *inner;
-            } else {
-                if let Some(layout) = repr.layout.as_ref() {
-                    return Some(Cow::Borrowed(layout));
-                }
+        let idx = ty.index();
+        let repr = &self.types[idx];
 
-                // Fallback for types that don't need mutation to compute
-                return match &repr.kind {
-                    TypeKind::Builtin(b) => match b {
-                        BuiltinType::Void => None,
-                        BuiltinType::Bool | BuiltinType::Char | BuiltinType::SChar | BuiltinType::UChar => {
-                            Some(Cow::Owned(TypeLayout {
-                                size: 1,
-                                alignment: 1,
-                                kind: LayoutKind::Scalar,
-                            }))
-                        }
-                        BuiltinType::Short | BuiltinType::UShort => Some(Cow::Owned(TypeLayout {
-                            size: 2,
-                            alignment: 2,
-                            kind: LayoutKind::Scalar,
-                        })),
-                        BuiltinType::Int | BuiltinType::UInt | BuiltinType::Float => Some(Cow::Owned(TypeLayout {
-                            size: 4,
-                            alignment: 4,
-                            kind: LayoutKind::Scalar,
-                        })),
-                        BuiltinType::Long | BuiltinType::ULong => {
-                            let size = match self.target_triple.pointer_width() {
-                                Ok(target_lexicon::PointerWidth::U16) => 2,
-                                Ok(target_lexicon::PointerWidth::U32) => 4,
-                                Ok(target_lexicon::PointerWidth::U64) => 8,
-                                Err(_) => 8,
-                            };
-                            Some(Cow::Owned(TypeLayout {
-                                size,
-                                alignment: size as u16,
-                                kind: LayoutKind::Scalar,
-                            }))
-                        }
-                        BuiltinType::LongLong | BuiltinType::ULongLong | BuiltinType::Double => {
-                            Some(Cow::Owned(TypeLayout {
-                                size: 8,
-                                alignment: 8,
-                                kind: LayoutKind::Scalar,
-                            }))
-                        }
-                        BuiltinType::LongDouble => Some(Cow::Owned(TypeLayout {
-                            size: 16,
-                            alignment: 16,
-                            kind: LayoutKind::Scalar,
-                        })),
-                        BuiltinType::Signed => Some(Cow::Owned(TypeLayout {
-                            size: 4,
-                            alignment: 4,
-                            kind: LayoutKind::Scalar,
-                        })),
-                        BuiltinType::VaList => Some(Cow::Owned(TypeLayout {
-                            size: 24,
-                            alignment: 8,
-                            kind: LayoutKind::Scalar,
-                        })), // x86_64 sysv va_list is 24 bytes
-                        BuiltinType::Complex => None, // Complex layout handled via TypeKind::Complex
-                    },
-                    TypeKind::Pointer { .. } => Some(Cow::Owned(TypeLayout {
-                        size: 8,
-                        alignment: 8,
-                        kind: LayoutKind::Scalar,
-                    })),
-                    TypeKind::Array {
-                        element_type,
-                        size: ArraySize::Constant(len),
-                    } => {
-                        let elem_layout = self.try_get_layout(*element_type)?;
-                        Some(Cow::Owned(TypeLayout {
-                            size: elem_layout.size * (*len as u64),
-                            alignment: elem_layout.alignment,
-                            kind: LayoutKind::Array {
-                                element: *element_type,
-                                len: *len as u64,
-                            },
-                        }))
-                    }
-                    TypeKind::Complex { base_type } => {
-                        let base_layout = self.try_get_layout(*base_type)?;
-                        Some(Cow::Owned(TypeLayout {
-                            size: base_layout.size * 2,
-                            alignment: base_layout.alignment,
-                            kind: LayoutKind::Scalar,
-                        }))
-                    }
-                    _ => None,
-                };
+        if let Some(layout) = repr.layout.as_ref() {
+            return Some(Cow::Borrowed(layout));
+        }
+
+        // Fallback for types that don't need mutation to compute
+        match &repr.kind {
+            TypeKind::Builtin(b) => self.builtin_layout(*b).map(Cow::Owned),
+            TypeKind::Pointer { .. } => {
+                let size = self.pointer_size();
+                Some(Cow::Owned(TypeLayout::scalar(size, size as u16)))
             }
+            TypeKind::Array {
+                element_type,
+                size: ArraySize::Constant(len),
+            } => {
+                let elem_layout = self.try_get_layout(*element_type)?;
+                Some(Cow::Owned(TypeLayout::array(
+                    elem_layout.size * (*len as u64),
+                    elem_layout.alignment,
+                    *element_type,
+                    *len as u64,
+                )))
+            }
+            TypeKind::Complex { base_type } => {
+                let base_layout = self.try_get_layout(*base_type)?;
+                Some(Cow::Owned(TypeLayout::scalar(
+                    base_layout.size * 2,
+                    base_layout.alignment,
+                )))
+            }
+            _ => None,
         }
     }
 
@@ -1375,11 +1266,7 @@ impl TypeRegistry {
 
     pub(crate) fn ensure_layout(&mut self, ty: TypeRef) -> Result<Cow<'_, TypeLayout>, TypeRegistryError> {
         if ty.is_inline_pointer() {
-            return Ok(Cow::Owned(TypeLayout {
-                size: 8,
-                alignment: 8,
-                kind: LayoutKind::Scalar,
-            }));
+            return Ok(Cow::Owned(TypeLayout::scalar(8, 8)));
         }
 
         if ty.is_inline_array() {
@@ -1389,11 +1276,7 @@ impl TypeRegistry {
             let len = ty.array_len().unwrap() as u64;
             let size = elem_layout.size * len;
 
-            return Ok(Cow::Owned(TypeLayout {
-                size,
-                alignment: elem_layout.alignment,
-                kind: LayoutKind::Array { element: elem, len },
-            }));
+            return Ok(Cow::Owned(TypeLayout::array(size, elem_layout.alignment, elem, len)));
         }
 
         let idx = ty.index();
@@ -1419,192 +1302,74 @@ impl TypeRegistry {
     }
 
     fn compute_layout_internal(&mut self, ty: TypeRef) -> Result<TypeLayout, TypeRegistryError> {
-        // Bolt ⚡: Optimization: Extract only necessary metadata from TypeKind
-        // to avoid cloning the full enum (which contains Arc pointers and is large).
-        // This releases the borrow on self early.
-        let task = {
-            let type_info = self.get(ty);
-            match &type_info.kind {
-                TypeKind::Builtin(b) => LayoutTask::Builtin(*b),
-                TypeKind::Pointer { .. } => LayoutTask::Pointer,
-                TypeKind::Complex { base_type } => LayoutTask::Complex(*base_type),
-                TypeKind::Array { element_type, size } => match size {
-                    ArraySize::Constant(len) => LayoutTask::Array(*element_type, *len),
-                    _ => LayoutTask::Unsupported("incomplete/VLA array layout"),
-                },
-                TypeKind::Function { .. } => LayoutTask::Function,
-                TypeKind::Record {
-                    members,
-                    is_complete,
-                    is_union,
-                    packing,
-                    alignment,
-                    ..
-                } => {
-                    if !is_complete {
-                        LayoutTask::Incomplete
-                    } else {
-                        LayoutTask::Record(Arc::clone(members), *is_union, *packing, *alignment)
-                    }
-                }
-                TypeKind::Enum { base_type, .. } => LayoutTask::Enum(*base_type),
-                TypeKind::Alias(inner) => LayoutTask::Alias(*inner),
-                TypeKind::AutoType => LayoutTask::Unsupported("__auto_type layout"),
-                TypeKind::TypeofExpr(_) => LayoutTask::Unsupported("typeof expr layout"),
-                TypeKind::TypeofUnqualExpr(_) => LayoutTask::Unsupported("typeof_unqual expr layout"),
-                TypeKind::NullptrT => LayoutTask::NullptrT,
-                TypeKind::Error => LayoutTask::Unsupported("error layout"),
-            }
-        };
+        let kind = self.get(ty).kind.clone();
 
-        let layout = match task {
-            LayoutTask::Builtin(b) => match b {
-                BuiltinType::Void => {
+        let layout = match kind {
+            TypeKind::Builtin(b) => match self.builtin_layout(b) {
+                Some(layout) => layout,
+                None if b == BuiltinType::Void => {
                     return Err(TypeRegistryError::SizeOfIncompleteType { ty });
                 }
-                BuiltinType::Bool | BuiltinType::Char | BuiltinType::SChar | BuiltinType::UChar => TypeLayout {
-                    size: 1,
-                    alignment: 1,
-                    kind: LayoutKind::Scalar,
-                },
-                BuiltinType::Short | BuiltinType::UShort => TypeLayout {
-                    size: 2,
-                    alignment: 2,
-                    kind: LayoutKind::Scalar,
-                },
-                BuiltinType::Int | BuiltinType::UInt | BuiltinType::Float => TypeLayout {
-                    size: 4,
-                    alignment: 4,
-                    kind: LayoutKind::Scalar,
-                },
-                BuiltinType::Long | BuiltinType::ULong => {
-                    // long is usually pointer width
-                    let size = match self.target_triple.pointer_width() {
-                        Ok(PointerWidth::U16) => 2,
-                        Ok(PointerWidth::U32) => 4,
-                        Ok(PointerWidth::U64) => 8,
-                        Err(_) => 8, // Default to 64-bit if unknown
-                    };
-                    TypeLayout {
-                        size,
-                        alignment: size as u16,
-                        kind: LayoutKind::Scalar,
-                    }
-                }
-                BuiltinType::LongLong | BuiltinType::ULongLong | BuiltinType::Double => TypeLayout {
-                    size: 8,
-                    alignment: 8,
-                    kind: LayoutKind::Scalar,
-                },
-                BuiltinType::LongDouble => TypeLayout {
-                    size: 16,
-                    alignment: 16,
-                    kind: LayoutKind::Scalar,
-                },
-                BuiltinType::Signed => TypeLayout {
-                    size: 4,
-                    alignment: 4,
-                    kind: LayoutKind::Scalar,
-                },
-                BuiltinType::VaList => TypeLayout {
-                    size: 24,
-                    alignment: 8,
-                    kind: LayoutKind::RecordFields {
-                        fields: Arc::from([
-                            FieldLayout {
-                                offset: 0,
-                                bit_width: None,
-                                bit_offset: None,
-                                storage_size: 4,
-                            },
-                            FieldLayout {
-                                offset: 4,
-                                bit_width: None,
-                                bit_offset: None,
-                                storage_size: 4,
-                            },
-                            FieldLayout {
-                                offset: 8,
-                                bit_width: None,
-                                bit_offset: None,
-                                storage_size: 8,
-                            },
-                            FieldLayout {
-                                offset: 16,
-                                bit_width: None,
-                                bit_offset: None,
-                                storage_size: 8,
-                            },
-                        ]),
-                    },
-                },
-                BuiltinType::Complex => {
+                None => {
                     return Err(TypeRegistryError::UnsupportedFeature {
                         feature: "Complex builtin type (marker only)",
                     });
                 }
             },
 
-            LayoutTask::Pointer => {
-                let size = match self.target_triple.pointer_width() {
-                    Ok(PointerWidth::U16) => 2,
-                    Ok(PointerWidth::U32) => 4,
-                    Ok(PointerWidth::U64) => 8,
-                    Err(_) => 8,
-                };
-                TypeLayout {
-                    size,
-                    alignment: size as u16,
-                    kind: LayoutKind::Scalar,
-                }
+            TypeKind::Pointer { .. } | TypeKind::NullptrT => {
+                let size = self.pointer_size();
+                TypeLayout::scalar(size, size as u16)
             }
 
-            LayoutTask::Complex(base_type) => {
+            TypeKind::Complex { base_type } => {
                 let base_layout = self.ensure_layout(base_type)?;
-                TypeLayout {
-                    size: base_layout.size * 2,
-                    alignment: base_layout.alignment,
-                    kind: LayoutKind::Scalar,
-                }
+                TypeLayout::scalar(base_layout.size * 2, base_layout.alignment)
             }
 
-            LayoutTask::Array(element_type, len) => {
-                let element_layout = self.ensure_layout(element_type)?;
-                let total_size = element_layout.size * len as u64;
-                TypeLayout {
-                    size: total_size,
-                    alignment: element_layout.alignment,
-                    kind: LayoutKind::Array {
-                        element: element_type,
-                        len: len as u64,
-                    },
+            TypeKind::Array { element_type, size } => match size {
+                ArraySize::Constant(len) => {
+                    let element_layout = self.ensure_layout(element_type)?;
+                    TypeLayout::array(
+                        element_layout.size * len as u64,
+                        element_layout.alignment,
+                        element_type,
+                        len as u64,
+                    )
                 }
-            }
+                _ => {
+                    return Err(TypeRegistryError::UnsupportedFeature {
+                        feature: "incomplete/VLA array layout",
+                    });
+                }
+            },
 
-            LayoutTask::Function => {
+            TypeKind::Function { .. } => {
                 return Err(TypeRegistryError::SizeOfFunctionType);
             }
 
-            LayoutTask::Record(members, is_union, packing, alignment) => {
+            TypeKind::Record {
+                members,
+                is_complete,
+                is_union,
+                packing,
+                alignment,
+                ..
+            } => {
+                if !is_complete {
+                    return Err(TypeRegistryError::SizeOfIncompleteType { ty });
+                }
                 self.compute_record_layout(&members, is_union, packing, alignment)?
             }
 
-            LayoutTask::Enum(base_type) => self.ensure_layout(base_type)?.into_owned(),
+            TypeKind::Enum { base_type, .. } | TypeKind::Alias(base_type) => {
+                self.ensure_layout(base_type)?.into_owned()
+            }
 
-            LayoutTask::Alias(inner) => self.ensure_layout(inner)?.into_owned(),
-            LayoutTask::Incomplete => {
-                return Err(TypeRegistryError::SizeOfIncompleteType { ty });
-            }
-            LayoutTask::Unsupported(feature) => {
-                return Err(TypeRegistryError::UnsupportedFeature { feature });
-            }
-            LayoutTask::NullptrT => {
-                let ptr_size = self.target_triple.pointer_width().unwrap().bytes() as u64;
-                TypeLayout {
-                    size: ptr_size,
-                    alignment: ptr_size as u16,
-                    kind: LayoutKind::Scalar,
-                }
+            _ => {
+                return Err(TypeRegistryError::UnsupportedFeature {
+                    feature: "unsupported layout",
+                });
             }
         };
 
@@ -1692,12 +1457,7 @@ impl TypeRegistry {
                 // Let's compute offset.
                 let align_u64 = elem_layout.alignment as u64;
                 let offset = (current_size + align_u64 - 1) & !(align_u64 - 1);
-                field_layouts.push(FieldLayout {
-                    offset,
-                    bit_width: None,
-                    bit_offset: None,
-                    storage_size: 0, // FAM has no storage size in this context
-                });
+                field_layouts.push(FieldLayout::new(offset, 0)); // FAM has no storage size in this context
 
                 // We do NOT update current_size with FAM size (which is effectively 0 or variable).
                 // But we might update current_size to offset?
@@ -1887,12 +1647,7 @@ impl TypeRegistry {
 
                 let align_u64 = member_align as u64;
                 let offset = (current_size + align_u64 - 1) & !(align_u64 - 1);
-                field_layouts.push(FieldLayout {
-                    offset,
-                    bit_width: None,
-                    bit_offset: None,
-                    storage_size: layout.size,
-                });
+                field_layouts.push(FieldLayout::new(offset, layout.size));
                 current_size = offset + layout.size;
             }
         }
@@ -1901,13 +1656,11 @@ impl TypeRegistry {
         let align_u64 = max_align as u64;
         let final_size = (current_size + align_u64 - 1) & !(align_u64 - 1);
 
-        Ok(TypeLayout {
-            size: final_size,
-            alignment: max_align,
-            kind: LayoutKind::RecordFields {
-                fields: Arc::from(field_layouts),
-            },
-        })
+        Ok(TypeLayout::record_fields(
+            final_size,
+            max_align,
+            Arc::from(field_layouts),
+        ))
     }
 
     pub(crate) fn decay(&mut self, qt: QualType, quals: TypeQuals) -> QualType {
@@ -1933,11 +1686,12 @@ impl TypeRegistry {
     }
 
     pub(crate) fn canonical_type(&self, mut ty: TypeRef) -> TypeRef {
-        if ty.class() != crate::semantic::types::TypeClass::Alias {
-            return ty;
-        }
-        while let TypeKind::Alias(inner) = &self.types[ty.index()].kind {
-            ty = *inner;
+        while ty.class() == crate::semantic::types::TypeClass::Alias {
+            if let TypeKind::Alias(inner) = &self.types[ty.index()].kind {
+                ty = *inner;
+            } else {
+                break;
+            }
         }
         ty
     }
@@ -2233,8 +1987,7 @@ impl TypeRegistry {
 
     pub(crate) fn is_complete(&self, mut ty: TypeRef) -> bool {
         loop {
-            // Bolt ⚡: Use TypeClass for fast dispatch to avoid redundant bitfield decoding.
-            // This optimization reduces analysis time by providing early exits for common complete types.
+            ty = self.canonical_type(ty);
             match ty.class() {
                 TypeClass::Pointer => return true,
                 TypeClass::Array => {
@@ -2254,7 +2007,6 @@ impl TypeRegistry {
                     if let Some(b) = BuiltinType::from_u32(ty.base()) {
                         return b != BuiltinType::Void;
                     }
-                    // Handle NullptrT which is also TypeClass::Builtin but not in BuiltinType enum.
                     return match &self.types[ty.index()].kind {
                         TypeKind::NullptrT => true,
                         TypeKind::Builtin(BuiltinType::Void) => false,
@@ -2267,13 +2019,6 @@ impl TypeRegistry {
                         _ => true,
                     };
                 }
-                TypeClass::Alias => {
-                    if let TypeKind::Alias(inner) = &self.types[ty.index()].kind {
-                        ty = *inner;
-                    } else {
-                        return true;
-                    }
-                }
                 _ => return true,
             }
         }
@@ -2285,7 +2030,7 @@ impl TypeRegistry {
                 return true;
             }
 
-            let ty = qt.ty();
+            let ty = self.canonical_type(qt.ty());
             // Pointers only have recursive constness if the pointer itself is const (handled above).
             if ty.is_pointer() {
                 return false;
@@ -2303,9 +2048,6 @@ impl TypeRegistry {
 
             // Bolt ⚡: Direct registry access avoids Cow<Type> allocations.
             match &self.types[ty.index()].kind {
-                TypeKind::Alias(inner) => {
-                    qt = QualType::new(*inner, qt.quals());
-                }
                 TypeKind::Record { members, .. } => {
                     return members.iter().any(|m| self.is_const_recursive(m.member_type));
                 }
@@ -2319,6 +2061,7 @@ impl TypeRegistry {
 
     pub(crate) fn is_variably_modified(&self, mut ty: TypeRef) -> bool {
         loop {
+            ty = self.canonical_type(ty);
             // Bolt ⚡: Use TypeClass for fast dispatch to avoid redundant bitfield decoding.
             // This optimization reduces analysis time by early-exiting for types that are never variably modified.
             match ty.class() {
@@ -2365,13 +2108,7 @@ impl TypeRegistry {
                     }
                     return false;
                 }
-                TypeClass::Alias => {
-                    if let TypeKind::Alias(inner) = &self.types[ty.index()].kind {
-                        ty = *inner;
-                    } else {
-                        return false;
-                    }
-                }
+                _ => return false,
             }
         }
     }
@@ -2382,6 +2119,7 @@ impl TypeRegistry {
     /// This distinction matters for C11 6.5.2.5p1 (compound literals).
     pub(crate) fn is_vla_type(&self, mut ty: TypeRef) -> bool {
         loop {
+            ty = self.canonical_type(ty);
             if ty.is_inline_pointer() || ty.builtin().is_some() {
                 return false;
             }
@@ -2390,7 +2128,6 @@ impl TypeRegistry {
                 continue;
             }
             match &self.types[ty.index()].kind {
-                TypeKind::Alias(inner) => ty = *inner,
                 TypeKind::Array { element_type, size } => {
                     if matches!(size, ArraySize::Variable(_)) {
                         return true;
@@ -2460,21 +2197,6 @@ impl TypeRegistry {
 // ================================================================
 // Helper types
 // ================================================================
-
-/// Internal task used to extract information from TypeKind without cloning it.
-enum LayoutTask {
-    Builtin(BuiltinType),
-    Pointer,
-    Array(TypeRef, usize),
-    Complex(TypeRef),
-    Function,
-    Record(Arc<[RecordMember]>, bool, Option<u32>, Option<u16>),
-    Enum(TypeRef),
-    Alias(TypeRef),
-    Incomplete,
-    NullptrT,
-    Unsupported(&'static str),
-}
 
 /// Key for canonicalizing function types.
 /// Bolt ⚡: Uses SmallVec to avoid heap allocations during function type lookups.

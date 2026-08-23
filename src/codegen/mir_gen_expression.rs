@@ -165,11 +165,7 @@ impl<'a> MirGen<'a> {
     ) -> Operand {
         match node_kind {
             NodeKind::SizeOfExpr(inner_expr) => {
-                let ty = self
-                    .ast
-                    .get_resolved_type(*inner_expr)
-                    .expect("SizeOf operand type missing")
-                    .ty();
+                let ty = self.ast.qual_type_of(*inner_expr).ty();
                 self.visit_type_query(ty, true)
             }
             NodeKind::SizeOfType(qt) => self.visit_type_query(qt.ty(), true),
@@ -190,11 +186,7 @@ impl<'a> MirGen<'a> {
                     }
                 }
 
-                let ty = self
-                    .ast
-                    .get_resolved_type(*inner_expr)
-                    .expect("AlignOf operand type missing")
-                    .ty();
+                let ty = self.ast.qual_type_of(*inner_expr).ty();
                 self.visit_type_query(ty, false)
             }
             _ => unreachable!(),
@@ -534,8 +526,8 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_unary_op(&mut self, op: UnaryOp, expr: NodeRef, mir_ty: TypeId) -> Operand {
-        let ty = self.ast.get_resolved_type(expr).unwrap();
-        if ty.is_complex() && !matches!(op, UnaryOp::AddrOf | UnaryOp::Deref) {
+        let qt = self.ast.qual_type_of(expr);
+        if qt.is_complex() && !matches!(op, UnaryOp::AddrOf | UnaryOp::Deref) {
             return self.visit_complex_unary_op(op, expr, mir_ty);
         }
 
@@ -886,16 +878,14 @@ impl<'a> MirGen<'a> {
 
         // Use visit_expression_as_place to properly resolve the destination place
         let place = self.visit_expression_as_place(left);
-
         let rhs_op = self.visit_expression(right, true);
-
-        let lhs_ty = self.ast.get_resolved_type(left).unwrap();
+        let lhs_qt = self.ast.qual_type_of(left);
 
         if let Some(compound_op) = op.without_assignment() {
             self.visit_compound_assignment(compound_op, place, rhs_op, left, right, mir_ty)
         } else {
             // Simple assignment, just use the RHS
-            if lhs_ty.is_atomic() {
+            if lhs_qt.is_atomic() {
                 let ptr = Operand::AddressOf(Box::new(place.clone()));
                 self.add_stmt(MirStmt::AtomicStore(ptr, rhs_op.clone(), AtomicMemOrder::SeqCst));
             } else {
@@ -957,9 +947,8 @@ impl<'a> MirGen<'a> {
         _right: NodeRef,
         mir_ty: TypeId,
     ) -> Operand {
-        let lhs_ty = self.ast.get_resolved_type(left).unwrap();
-
-        if lhs_ty.is_atomic() {
+        let lhs_qt = self.ast.qual_type_of(left);
+        if lhs_qt.is_atomic() {
             let ptr = Operand::AddressOf(Box::new(place.clone()));
             let mir_op = match compound_op {
                 BinaryOp::Add => Some(BinaryIntOp::Add),
@@ -1295,21 +1284,21 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_inc_dec_expr(&mut self, expr: NodeRef, is_inc: bool, is_post: bool, need_value: bool) -> Operand {
-        let operand = self.visit_expression(expr, true);
-        let operand_ty = self.ast.get_resolved_type(expr).unwrap();
-        let mir_ty = self.lower_type(operand_ty.ty());
+        let op = self.visit_expression(expr, true);
+        let qt = self.ast.qual_type_of(expr);
+        let mir_ty = self.lower_type(qt.ty());
 
         if self.ast.get_value_category(expr) != Some(ValueCategory::LValue) {
             panic!("Inc/Dec operand must be an lvalue");
         }
 
-        let place = if let Operand::Copy(place) = operand {
+        let place = if let Operand::Copy(place) = op {
             place
         } else {
             panic!("Inc/Dec operand is not a place");
         };
 
-        if operand_ty.is_atomic() {
+        if qt.is_atomic() {
             return self.visit_atomic_inc_dec(*place, mir_ty, is_inc, is_post);
         }
 
@@ -1323,7 +1312,7 @@ impl<'a> MirGen<'a> {
         };
 
         // Determine MIR operation and Rvalue
-        let rval = self.create_inc_dec_rvalue(Operand::Copy(place.clone()), operand_ty.ty(), is_inc);
+        let rval = self.create_inc_dec_rvalue(Operand::Copy(place.clone()), qt.ty(), is_inc);
 
         // Perform the assignment
         if is_post && !need_value {

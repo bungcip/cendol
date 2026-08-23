@@ -1,6 +1,7 @@
 use crate::semantic::{QualType, TypeRef, TypeRegistry};
 use crate::source_manager::{FileKind, SourceManager, SourceSpan};
-use hashbrown::HashSet;
+// Bolt ⚡: Use `FxHashSet` (aliased as `HashSet`) to eliminate SipHash hashing overhead for warning flag lookups.
+use rustc_hash::FxHashSet as HashSet;
 use std::io::{IsTerminal, Write};
 
 use annotate_snippets::renderer::DecorStyle;
@@ -65,7 +66,7 @@ impl Default for DiagnosticEngine {
             error_limit_reached: false,
             warning_limit_reached: false,
             stream_muted: 0,
-            disabled_warnings: HashSet::new(),
+            disabled_warnings: HashSet::default(),
             diagnostic_stack: Vec::new(),
             renderer,
             writer: std::sync::Mutex::new(Box::new(std::io::stderr())),
@@ -76,7 +77,7 @@ impl Default for DiagnosticEngine {
 
 impl DiagnosticEngine {
     pub(crate) fn from_warnings(warnings: &[String]) -> Self {
-        let mut disabled_warnings = HashSet::new();
+        let mut disabled_warnings = HashSet::default();
 
         // gnu-case-range is disabled by default
         disabled_warnings.insert("gnu-case-range".to_string());

@@ -58,3 +58,8 @@
 
 **Learning:** `hashbrown::HashSet` defaults to standard SipHash for DOS protection. In `src/diagnostic.rs` and `src/ast/dumper.rs`, `HashSet` is used for looking up disabled warning flag strings and tracking unique AST `TypeRef` IDs. Replacing `hashbrown::HashSet` with `rustc_hash::FxHashSet` completely eliminates SipHash hashing overhead. Note that when aliasing `FxHashSet as HashSet`, initialize instances with `HashSet::default()` rather than `HashSet::new()` to ensure `FxHasher` is used.
 **Action:** Use `rustc_hash::FxHashSet` constructed with `HashSet::default()` for set-based lookups and unique ID collection across compiler diagnostic and AST passes.
+
+## 2026-03-29 - Collection Pre-Allocation in Cranelift IR Generation
+
+**Learning:** During Cranelift IR lowering in `src/codegen/clif_gen.rs`, multiple data structures (`pointee_to_pointer`, `data_id_map`, `func_id_map`, `clif_blocks`, `clif_stack_slots`, signature vectors, and inline assembly vectors) were initialized with default empty capacities, causing repeated dynamic re-allocations and map rehashings during compilation. Pre-allocating capacities based on known counts (`mir.types.len()`, `reachable_globals.len()`, `reachable_functions.len()`, `func.blocks.len()`, `func.params.len()`) completely eliminates allocation churn during MIR to Cranelift IR code generation.
+**Action:** Pre-allocate capacities using `Vec::with_capacity` or `.reserve()` for collections during compiler lowering passes whenever lower/upper bounds are available from input AST or MIR structures.

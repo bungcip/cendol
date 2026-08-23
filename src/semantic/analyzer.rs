@@ -2443,10 +2443,8 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             BuiltinFunctionKind::FrameAddress => {
-                if i == 0 {
-                    if self.const_ctx().eval_int(arg_node).is_none() {
-                        self.report_error(arg_node, SemanticError::BuiltinFrameAddressNotConstant);
-                    }
+                if i == 0 && self.const_ctx().eval_int(arg_node).is_none() {
+                    self.report_error(arg_node, SemanticError::BuiltinFrameAddressNotConstant);
                 }
             }
             BuiltinFunctionKind::AddOverflow | BuiltinFunctionKind::SubOverflow | BuiltinFunctionKind::MulOverflow => {

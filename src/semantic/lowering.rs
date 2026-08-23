@@ -1388,7 +1388,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn visit_function_definition(&mut self, func_def: &PFunctionDef, node: NodeRef, span: SourceSpan) {
         let mut spec_info = self.visit_decl_specs(&func_def.specifiers, span);
-        let mut base_qt = spec_info.base_type.unwrap_or_else(|| self.registry.unqualified_int);
+        let mut base_qt = spec_info.base_type.unwrap_or(self.registry.unqualified_int);
         base_qt = self.merge_quals_with_check(base_qt, spec_info.quals, span);
 
         let mut final_qt = self.apply_declarator(
@@ -2059,7 +2059,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn visit_type(&mut self, ty: PType, span: SourceSpan) -> QualType {
         self.lower_type(ty, span, false)
-            .unwrap_or_else(|_| self.registry.unqualified_error)
+            .unwrap_or(self.registry.unqualified_error)
     }
 
     fn lower_type(&mut self, pty: PType, span: SourceSpan, in_param: bool) -> Result<QualType, SemanticDiag> {
@@ -3567,7 +3567,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         if let Some(mode) = info.mode {
-            let base_qt = info.base_type.unwrap_or_else(|| self.registry.unqualified_int);
+            let base_qt = info.base_type.unwrap_or(self.registry.unqualified_int);
             if let Some(ty) = self.resolve_mode_type(mode, base_qt.ty()) {
                 info.base_type = Some(QualType::new(ty, base_qt.quals()));
             }
@@ -3601,7 +3601,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             let decayed_qt = self
                 .lower_type(param.ty, span, true)
-                .unwrap_or_else(|_| self.registry.unqualified_error);
+                .unwrap_or(self.registry.unqualified_error);
 
             let pname = param.name;
 
@@ -3767,7 +3767,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             return None;
         }
 
-        let base = spec_info.base_type.unwrap_or_else(|| self.registry.unqualified_int);
+        let base = spec_info.base_type.unwrap_or(self.registry.unqualified_int);
         let qualified_base = self.merge_quals_with_check(base, spec_info.quals, id.span);
 
         let member_type = self.apply_declarator(

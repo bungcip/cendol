@@ -97,7 +97,7 @@ impl<'a> MirGen<'a> {
             _ if node_kind.is_type_query() => self.visit_type_query_expression(&node_kind, expr, mir_ty, need_value),
             NodeKind::StatementExpr(stmt, result_expr) => self.visit_gnu_stmt_expr(*stmt, *result_expr, need_value),
             NodeKind::Cast(_ty, operand) => self.visit_cast(*operand, mir_ty),
-            NodeKind::CompoundLiteral(ty, init) => self.visit_compound_literal(*ty, *init),
+            NodeKind::CompoundLiteral(ty, init) => self.visit_compound_literal(ty.ty(), *init),
             _ if node_kind.is_builtin() => self.visit_builtin_expression(&node_kind, expr, mir_ty, need_value),
             NodeKind::MemberAccess(obj, field_name, is_arrow) => self.visit_member_access(*obj, *field_name, *is_arrow),
             NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
@@ -523,7 +523,7 @@ impl<'a> MirGen<'a> {
                 }
                 lit @ LitVal::Float { .. } => ConstValueKind::Float(lit.as_f64()),
                 LitVal::String { value, prefix } => {
-                    return Some(self.visit_literal_string(value.as_slice(), *prefix, ty));
+                    return Some(self.visit_literal_string(value.as_slice(), *prefix, ty.ty()));
                 }
             };
 

@@ -734,7 +734,7 @@ impl<'a> MirGen<'a> {
         let initial_value_id = v.initializer.and_then(|init| {
             has_initializer = true;
             initializer_node = Some(init);
-            self.eval_init_to_const(init, symbol.type_info)
+            self.eval_init_to_const(init, symbol.type_info.ty())
         });
         self.func_state = saved_state;
 
@@ -794,7 +794,7 @@ impl<'a> MirGen<'a> {
         }
 
         if let Some(initializer) = v.initializer {
-            let init_operand = self.visit_init(initializer, qt, Some(Place::Local(local_id)));
+            let init_operand = self.visit_init(initializer, qt.ty(), Some(Place::Local(local_id)));
             self.emit_assignment(Place::Local(local_id), init_operand);
         }
     }
@@ -845,7 +845,7 @@ impl<'a> MirGen<'a> {
         // Initialize if needed
         if let Some(initializer) = init {
             let deref_place = Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(ptr_local_id)))));
-            let init_operand = self.visit_init(initializer, qt, Some(deref_place.clone()));
+            let init_operand = self.visit_init(initializer, qt.ty(), Some(deref_place.clone()));
             self.emit_assignment(deref_place, init_operand);
         }
     }

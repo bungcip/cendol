@@ -1076,3 +1076,36 @@ fn test_logic_not_on_function_allowed() {
         CompilePhase::Mir,
     );
 }
+
+#[test]
+fn test_incomplete_deref_statement_error() {
+    let source = r#"
+        typedef struct _x x;
+        void test(x *p) {
+            *p;
+        }
+    "#;
+    run_fail_with_message(source, "incomplete type 'struct _x'");
+}
+
+#[test]
+fn test_union_cast_extension() {
+    let source = r#"
+        typedef union { int x; } t;
+        void test(int n) {
+            ((t)n);
+        }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_union_cast_invalid_type_rejected() {
+    let source = r#"
+        typedef union { float x; } t;
+        void test(int n) {
+            ((t)n);
+        }
+    "#;
+    run_fail_with_message(source, "expected scalar type");
+}

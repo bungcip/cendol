@@ -164,6 +164,7 @@ pub mod guardian_break_not_in_loop_or_switch;
 pub mod guardian_case_not_in_switch;
 pub mod guardian_continue_not_in_loop;
 pub mod guardian_duplicate_case;
+pub mod guardian_indirection_requires_pointer;
 pub mod guardian_invalid_function_specifier;
 mod guardian_invalid_number_of_arguments;
 pub mod guardian_invalid_storage_class_for_function;

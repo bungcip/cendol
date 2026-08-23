@@ -348,3 +348,8 @@ Action: Add `guardian_expected_array_type.rs` to validate this invariant, ensuri
 
 Learning: Checking for switch case duplication is done efficiently in Cendol using an `IntervalMap` via binary search (`partition_point`). Case labels must be unique *within the same switch statement scope*. Nested switch statements create separate case scopes, allowing identical case labels in inner and outer switches without conflicting.
 Action: Add explicit verification tests to confirm that nested switch scopes appropriately isolate case and default labels and do not produce false positive `DuplicateCase` semantic errors.
+
+2024-05-18 - [Indirection Requires Pointer Operand]
+
+Learning: In C, the dereference operator (`*`) must only be applied to an operand of pointer type. Cendol checks this during semantic analysis (`SemanticLowering`/`Mir` phases). If applied to a non-pointer type like `int`, the compiler correctly rejects the code and emits `SemanticError::IndirectionRequiresPointer`. Ensuring that this is caught and the error is accurately reported at the correct source span is an important invariant for catching improper pointer arithmetics and misuse of the indirection operator early.
+Action: Add `guardian_indirection_requires_pointer.rs` to validate this invariant, ensuring that applying `*` to a primitive like `int` correctly triggers the "indirection requires pointer operand" error and points to the right position in the AST.

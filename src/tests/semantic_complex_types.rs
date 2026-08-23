@@ -619,3 +619,49 @@ fn test_imag_lvalue_rejected() {
     "#;
     run_fail_with_message(source, "Expression is not assignable");
 }
+
+#[test]
+fn test_invalid_real_imag_operands() {
+    run_fail_with_message(
+        r#"
+        struct S { int x; };
+        int main() {
+            struct S s;
+            __real__ s;
+        }
+        "#,
+        "Invalid operand for unary operation",
+    );
+
+    run_fail_with_message(
+        r#"
+        struct S { int x; };
+        int main() {
+            struct S s;
+            __imag__ s;
+        }
+        "#,
+        "Invalid operand for unary operation",
+    );
+
+    run_fail_with_message(
+        r#"
+        int main() {
+            int x;
+            int *p = &x;
+            __real__ p;
+        }
+        "#,
+        "Invalid operand for unary operation",
+    );
+
+    run_fail_with_message(
+        r#"
+        void foo() {}
+        int main() {
+            __imag__ foo();
+        }
+        "#,
+        "Invalid operand for unary operation",
+    );
+}

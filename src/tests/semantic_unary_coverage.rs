@@ -44,7 +44,7 @@ fn test_unary_minus_on_struct() {
 }
 
 #[test]
-fn test_invalid_inc_dec_on_arrays() {
+fn test_invalid_inc_dec() {
     run_fail_with_message(
         r#"
         void test() {
@@ -82,10 +82,7 @@ fn test_invalid_inc_dec_on_arrays() {
         "#,
         "Expression is not assignable (not an lvalue)",
     );
-}
 
-#[test]
-fn test_invalid_inc_dec_on_functions() {
     run_fail_with_message(
         r#"
         void foo(void) {}

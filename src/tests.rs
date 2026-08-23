@@ -177,6 +177,7 @@ pub mod parser_struct_pragmas;
 pub mod semantic_binary_conversion;
 pub mod semantic_binary_invalid_operands;
 pub mod semantic_cleanup_coverage;
+pub mod semantic_const_eval_statement_expr;
 pub mod semantic_gnu_local_label;
 pub mod semantic_mir_label_addr;
 pub mod semantic_types_compatible;

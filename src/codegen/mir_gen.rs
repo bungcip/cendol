@@ -527,7 +527,6 @@ impl<'a> MirGen<'a> {
     }
 
     pub(super) fn evaluate_constant_i64(&mut self, expr: NodeRef, error_msg: &str) -> i64 {
-
         self.const_ctx().eval_int(expr).expect(error_msg)
     }
 

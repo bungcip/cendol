@@ -8,8 +8,8 @@ use crate::{
     diagnostic::{DiagnosticEngine, DiagnosticLevel},
     lang_options::{CStandard, LangOptions, PedanticMode},
     semantic::{
-        ArraySize, BuiltinFunctionKind, BuiltinType, FunctionParam, QualType, RecordMember, TypeKind, TypeQuals,
-        TypeRef, TypeRegistry,
+        ArraySize, BuiltinFunctionKind, BuiltinType, QualType, RecordMember, TypeKind, TypeQuals, TypeRef,
+        TypeRegistry,
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticDiag, SemanticError},
@@ -22,7 +22,6 @@ use crate::{
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use std::iter::Peekable;
-use std::sync::Arc;
 
 struct CaseRangeInterval {
     start: i64,
@@ -41,18 +40,6 @@ struct SwitchCtx {
     cond_type: QualType,
     orig_cond_type: QualType,
     vla_state: (NodeRef, usize),
-}
-
-/// Internal task used to extract information from TypeKind without cloning it.
-enum TypeAnalysisTask {
-    Record(Arc<[RecordMember]>, bool),
-    Array(TypeRef, ArraySize),
-    Function {
-        return_type: TypeRef,
-        parameters: Arc<[FunctionParam]>,
-        is_variadic: bool,
-    },
-    None,
 }
 
 /// Context for the current function being analyzed.
@@ -76,6 +63,8 @@ pub struct SemanticInfo {
     pub choose_expressions: FxHashMap<usize, NodeRef>, // Maps NodeIndex of BuiltinChooseExpr to selected branch
     pub offsetof_results: FxHashMap<usize, i64>,       // Maps NodeIndex of BuiltinOffsetof to computed offset
     pub anonymous_tags: FxHashMap<TypeRef, NameId>,    // Maps TypeRef to its stable anonymous name ($anonN)
+    pub const_eval_results: std::cell::RefCell<FxHashMap<usize, Option<i64>>>,
+    pub const_eval_float_results: std::cell::RefCell<FxHashMap<usize, Option<f64>>>,
 }
 
 impl SemanticInfo {
@@ -88,6 +77,8 @@ impl SemanticInfo {
             choose_expressions: FxHashMap::default(),
             offsetof_results: FxHashMap::default(),
             anonymous_tags: FxHashMap::default(),
+            const_eval_results: std::cell::RefCell::new(FxHashMap::default()),
+            const_eval_float_results: std::cell::RefCell::new(FxHashMap::default()),
         }
     }
 }
@@ -250,7 +241,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     return;
                 }
                 if !qt.is_void() && !self.registry.is_complete(qt.ty()) {
-                    self.report_error(node, SemanticError::IncompleteType { ty: qt });
+                    self.report_error(node, SemanticError::IncompleteType(qt));
                 }
             }
 
@@ -259,23 +250,8 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn get_analysis_task(&self, qt: QualType) -> TypeAnalysisTask {
-        let type_info = self.registry.get(qt.ty());
-        match &type_info.kind {
-            TypeKind::Record { members, is_union, .. } => TypeAnalysisTask::Record(Arc::clone(members), *is_union),
-            TypeKind::Array { element_type, size, .. } => TypeAnalysisTask::Array(*element_type, *size),
-            TypeKind::Function {
-                return_type,
-                parameters,
-                is_variadic,
-                ..
-            } => TypeAnalysisTask::Function {
-                return_type: *return_type,
-                parameters: Arc::clone(parameters),
-                is_variadic: *is_variadic,
-            },
-            _ => TypeAnalysisTask::None,
-        }
+    fn get_type_kind(&self, qt: QualType) -> TypeKind {
+        self.registry.get(qt.ty()).kind.clone()
     }
 
     fn is_string_literal(&self, node: NodeRef) -> bool {
@@ -355,46 +331,11 @@ impl<'a> SemanticAnalyzer<'a> {
             return;
         }
 
-        // Bolt ⚡: Extract only needed info from TypeKind while holding a reference
-        // to avoid cloning the entire Kind (which contains Arcs and large Record/Enum data).
-        // For TypeofExpr, we must release the borrow before updating the registry.
-        enum Task {
-            Array(TypeRef, Option<NodeRef>),
-            Pointer(QualType),
-            Function(TypeRef, Arc<[FunctionParam]>),
-            Complex(TypeRef),
-            Typeof(NodeRef, bool), // bool is true for unqual
-            Alias(TypeRef),
-            None,
-        }
-
-        let task = match &self.registry.get(ty).kind {
-            TypeKind::Array { element_type, size } => {
-                let vla_expr = if let ArraySize::Variable(expr) = size {
-                    Some(*expr)
-                } else {
-                    None
-                };
-                Task::Array(*element_type, vla_expr)
-            }
-            TypeKind::Pointer { pointee } => Task::Pointer(*pointee),
-            TypeKind::Function {
-                return_type,
-                parameters,
-                ..
-            } => Task::Function(*return_type, Arc::clone(parameters)),
-            TypeKind::Complex { base_type } => Task::Complex(*base_type),
-            TypeKind::TypeofExpr(expr) => Task::Typeof(*expr, false),
-            TypeKind::TypeofUnqualExpr(expr) => Task::Typeof(*expr, true),
-            TypeKind::Alias(inner) => Task::Alias(*inner),
-            _ => Task::None,
-        };
-
-        match task {
-            Task::Array(element_type, vla_expr) => {
-                if let Some(expr) = vla_expr {
-                    if let Some(qt) = self.visit_node(expr)
-                        && !qt.is_integer()
+        match self.get_type_kind(qt) {
+            TypeKind::Array { element_type, size, .. } => {
+                if let ArraySize::Variable(expr) = size {
+                    if let Some(expr_qt) = self.visit_node(expr)
+                        && !expr_qt.is_integer()
                     {
                         self.report_error(expr, SemanticError::ArraySizeNotInteger);
                     }
@@ -408,34 +349,42 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 self.visit_type_exprs(QualType::unqualified(element_type));
             }
-            Task::Pointer(pointee) => {
+            TypeKind::Pointer { pointee } => {
                 self.visit_type_exprs(pointee);
             }
-            Task::Function(return_type, parameters) => {
+            TypeKind::Function {
+                return_type,
+                parameters,
+                ..
+            } => {
                 self.visit_type_exprs(QualType::unqualified(return_type));
                 for param in parameters.iter() {
                     self.visit_type_exprs(param.param_type);
                 }
             }
-            Task::Complex(base_type) => {
+            TypeKind::Complex { base_type } => {
                 self.visit_type_exprs(QualType::unqualified(base_type));
             }
-            Task::Typeof(expr, unqual) => {
-                let mut resolved_qt = self
+            TypeKind::TypeofExpr(expr) => {
+                let resolved_qt = self
                     .visit_node(expr)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
-                if unqual {
-                    resolved_qt = QualType::unqualified(resolved_qt.ty());
-                }
                 self.registry.types[ty.index()].kind = TypeKind::Alias(resolved_qt.ty());
             }
-            Task::Alias(inner) => {
+            TypeKind::TypeofUnqualExpr(expr) => {
+                let resolved_qt = self
+                    .visit_node(expr)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error));
+                let resolved_qt = QualType::unqualified(resolved_qt.ty());
+                self.registry.types[ty.index()].kind = TypeKind::Alias(resolved_qt.ty());
+            }
+            TypeKind::Alias(inner) => {
                 self.visit_type_exprs(QualType::unqualified(inner));
             }
             // For Records and Enums, we don't need to traverse members because
             // they cannot contain VLAs (C11 6.7.2.1).
             // Even if they did, the members would be visited during their declaration processing.
-            Task::None => {}
+            _ => {}
         }
     }
 
@@ -800,7 +749,7 @@ impl<'a> SemanticAnalyzer<'a> {
             self.report_error(node, SemanticError::NotAnLvalue);
             false
         } else if !self.registry.is_complete(qt.ty()) {
-            self.report_error(node, SemanticError::IncompleteType { ty: qt });
+            self.report_error(node, SemanticError::IncompleteType(qt));
             false
         } else if self.registry.is_const_recursive(qt) {
             self.report_error(node, SemanticError::AssignmentToReadOnly);
@@ -1914,13 +1863,9 @@ impl<'a> SemanticAnalyzer<'a> {
             return;
         }
 
-        // Bolt ⚡: Avoid cloning the entire TypeKind by extracting only the necessary parts.
-        // We use a scoped block to ensure the Cow<Type> is dropped before calling other methods.
-        let task = self.get_analysis_task(target_qt);
-
-        match task {
-            TypeAnalysisTask::Record(members, is_union) => self.visit_record_init(list, target_qt, &members, is_union),
-            TypeAnalysisTask::Array(element_type, size) => self.visit_array_init(list, target_qt, element_type, &size),
+        match self.get_type_kind(target_qt) {
+            TypeKind::Record { members, is_union, .. } => self.visit_record_init(list, target_qt, &members, is_union),
+            TypeKind::Array { element_type, size, .. } => self.visit_array_init(list, target_qt, element_type, &size),
             _ => {
                 for item in list.init_start.range(list.init_len) {
                     self.visit_node(self.unwrap_init_item(item).0);
@@ -2136,12 +2081,11 @@ impl<'a> SemanticAnalyzer<'a> {
     where
         I: Iterator<Item = NodeRef>,
     {
-        // Bolt ⚡: Extract needed info without cloning the entire TypeKind.
-        let task = self.get_analysis_task(target_qt);
+        let type_kind = self.get_type_kind(target_qt);
 
         match designator {
             Designator::FieldName(name) => {
-                let TypeAnalysisTask::Record(members, is_union) = task else {
+                let TypeKind::Record { members, is_union, .. } = type_kind else {
                     self.report_error(node, SemanticError::FieldNameNotInStructOrUnionInitializer);
                     iter.next();
                     return true;
@@ -2170,7 +2114,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 true
             }
             Designator::ArrayIndex(e) | Designator::ArrayRange(e, _) => {
-                let TypeAnalysisTask::Array(element_type, size) = task else {
+                let TypeKind::Array { element_type, size, .. } = type_kind else {
                     self.report_error(node, SemanticError::ArrayIndexInNonArrayInitializer);
                     iter.next();
                     return true;
@@ -2220,11 +2164,8 @@ impl<'a> SemanticAnalyzer<'a> {
     where
         I: Iterator<Item = NodeRef>,
     {
-        // Bolt ⚡: Optimized to avoid cloning TypeKind.
-        let task = self.get_analysis_task(target_qt);
-
-        match task {
-            TypeAnalysisTask::Record(members, is_union) => {
+        match self.get_type_kind(target_qt) {
+            TypeKind::Record { members, is_union, .. } => {
                 for member in members.iter() {
                     self.consume_inits(member.member_type, iter, 0);
                     if iter.peek().is_none() || self.unwrap_init_item(*iter.peek().unwrap()).2 > 0 || is_union {
@@ -2232,7 +2173,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
                 }
             }
-            TypeAnalysisTask::Array(element_type, size) => {
+            TypeKind::Array { element_type, size, .. } => {
                 let element_qt = QualType::new(element_type, target_qt.quals());
                 let max_len = if let ArraySize::Constant(len) = size {
                     Some(len)
@@ -2316,12 +2257,12 @@ impl<'a> SemanticAnalyzer<'a> {
         let func_qt = self.visit_node(call_expr.callee)?;
         let actual_func_qt = self.resolve_actual_function_type(func_qt);
 
-        let task = self.get_analysis_task(actual_func_qt);
-        match task {
-            TypeAnalysisTask::Function {
+        match self.get_type_kind(actual_func_qt) {
+            TypeKind::Function {
                 return_type,
                 parameters,
                 is_variadic,
+                ..
             } => {
                 let mut atomic_pointee = None;
                 let arg_count = call_expr.arg_len as usize;
@@ -2702,12 +2643,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         if let TypeKind::Record { is_complete: false, .. } = &self.registry.get(record_ty).kind {
-            self.report_error(
-                node,
-                SemanticError::IncompleteType {
-                    ty: QualType::unqualified(record_ty),
-                },
-            );
+            self.report_error(node, SemanticError::IncompleteType(QualType::unqualified(record_ty)));
             return None;
         }
 
@@ -2819,9 +2755,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let sym = self.symbol_table.get_symbol(data.symbol);
                 self.visit_type_exprs(sym.type_info);
 
-                if let TypeAnalysisTask::Function { parameters, .. } = self.get_analysis_task(sym.type_info) {
-                    // Bolt ⚡: Iterate directly over the parameters Arc to avoid redundant Vec allocation.
-                    // This is safe because parameters is a local Arc clone and doesn't borrow from self.
+                if let TypeKind::Function { parameters, .. } = self.get_type_kind(sym.type_info) {
                     for p in parameters.iter() {
                         let _ = self.registry.ensure_layout(p.param_type.ty());
                     }
@@ -2835,8 +2769,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_function_definition(&mut self, data: &FunctionDef, node: NodeRef) -> Option<QualType> {
         let symbol = self.symbol_table.get_symbol(data.symbol);
-        let ret_type = if let TypeAnalysisTask::Function { return_type, .. } = self.get_analysis_task(symbol.type_info)
-        {
+        let ret_type = if let TypeKind::Function { return_type, .. } = self.get_type_kind(symbol.type_info) {
             return_type
         } else {
             self.registry.type_error

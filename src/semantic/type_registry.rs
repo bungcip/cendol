@@ -68,7 +68,7 @@ impl TypeRegistryError {
             TypeRegistryError::FlexibleArrayNotLast => SemanticError::FlexibleArrayNotLast,
             TypeRegistryError::FlexibleArrayInEmptyStruct => SemanticError::FlexibleArrayInEmptyStruct,
             TypeRegistryError::MemberHasFunctionType { name } => SemanticError::MemberHasFunctionType { name: *name },
-            TypeRegistryError::IncompleteMemberType { ty } => SemanticError::IncompleteType { ty: *ty },
+            TypeRegistryError::IncompleteMemberType { ty } => SemanticError::IncompleteType(*ty),
             TypeRegistryError::UnsupportedFeature { feature } => SemanticError::UnsupportedFeature { feature },
         }
     }

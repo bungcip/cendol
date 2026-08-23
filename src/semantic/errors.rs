@@ -261,9 +261,7 @@ pub enum SemanticError {
     },
     NonConstantAlignment,
     AssignmentToReadOnly,
-    IncompleteType {
-        ty: QualType,
-    },
+    IncompleteType(QualType),
     IncompleteReturnType,
     EnumForwardDeclaration,
     IncompatiblePointerComparison {
@@ -702,7 +700,7 @@ impl DiagDisplay for SemanticError {
             }
             SemanticError::NonConstantAlignment => write!(f, "requested alignment is not a constant expression"),
             SemanticError::AssignmentToReadOnly => write!(f, "cannot assign to read-only location"),
-            SemanticError::IncompleteType { ty } => {
+            SemanticError::IncompleteType(ty) => {
                 write!(f, "incomplete type '{}'", f.display_qual_type(*ty))
             }
             SemanticError::IncompleteReturnType => write!(f, "function has incomplete return type"),

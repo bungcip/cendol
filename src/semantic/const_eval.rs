@@ -285,6 +285,31 @@ impl<'a> ConstEvalCtx<'a> {
     }
 
     pub(crate) fn eval_int(&self, expr_node: NodeRef) -> Option<i64> {
+        let idx = expr_node.index();
+        if let Some(cached) = self.semantic_info.const_eval_results.borrow().get(&idx) {
+            return *cached;
+        }
+
+        let result = self.eval_int_uncached(expr_node);
+        self.semantic_info.const_eval_results.borrow_mut().insert(idx, result);
+        result
+    }
+
+    pub(crate) fn eval_float(&self, expr_node: NodeRef) -> Option<f64> {
+        let idx = expr_node.index();
+        if let Some(cached) = self.semantic_info.const_eval_float_results.borrow().get(&idx) {
+            return *cached;
+        }
+
+        let result = self.eval_float_uncached(expr_node);
+        self.semantic_info
+            .const_eval_float_results
+            .borrow_mut()
+            .insert(idx, result);
+        result
+    }
+
+    fn eval_int_uncached(&self, expr_node: NodeRef) -> Option<i64> {
         let node_kind = self.ast.get_kind(expr_node);
         match node_kind {
             NodeKind::Literal(lit) => match lit.get_val() {
@@ -419,7 +444,7 @@ impl<'a> ConstEvalCtx<'a> {
         }
     }
 
-    pub(crate) fn eval_float(&self, expr: NodeRef) -> Option<f64> {
+    fn eval_float_uncached(&self, expr: NodeRef) -> Option<f64> {
         match self.ast.get_kind(expr) {
             NodeKind::Literal(lit) => match lit.get_val() {
                 lit @ LitVal::Float { .. } => {

@@ -298,7 +298,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     ) -> QualType {
         // C11 6.7.6.2 Array declarators
         if !self.registry.is_complete(element_qt.ty()) || element_qt.is_function() {
-            self.report_error(span, SemanticError::IncompleteType { ty: element_qt });
+            self.report_error(span, SemanticError::IncompleteType(element_qt));
         }
 
         if self.registry.has_flexible_array_member(element_qt.ty()) {
@@ -632,7 +632,7 @@ fn finalize_tentative_definitions(
             let kind = if entry.type_info.ty().builtin() == Some(BuiltinType::Void) {
                 SemanticError::VariableOfVoidType
             } else {
-                SemanticError::IncompleteType { ty: entry.type_info }
+                SemanticError::IncompleteType(entry.type_info)
             };
             let error = SemanticDiag::new(entry.def_span, kind);
             for d in error.into_diagnostic(registry) {
@@ -2011,7 +2011,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let has_no_linkage = !is_global && storage != StorageClass::Extern;
         if has_no_linkage && !self.registry.is_complete(qt.ty()) {
-            self.report_error(span, SemanticError::IncompleteType { ty: qt });
+            self.report_error(span, SemanticError::IncompleteType(qt));
         }
 
         self.ast.set_kind(
@@ -3614,10 +3614,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             if !self.registry.is_complete(decayed_qt.ty()) {
                 if decayed_qt.is_void() {
                     if !(params.len() == 1 && pname.is_none()) {
-                        self.report_error(span, SemanticError::IncompleteType { ty: decayed_qt });
+                        self.report_error(span, SemanticError::IncompleteType(decayed_qt));
                     }
                 } else if is_definition {
-                    self.report_error(span, SemanticError::IncompleteType { ty: decayed_qt });
+                    self.report_error(span, SemanticError::IncompleteType(decayed_qt));
                 }
             }
 

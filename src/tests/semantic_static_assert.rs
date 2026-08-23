@@ -3,44 +3,31 @@ use crate::lang_options::CStandard;
 use crate::tests::test_utils::{run_fail_with_message, run_fail_with_message_and_std, run_pass, run_pass_with_std};
 
 #[test]
-fn test_static_assert_in_function() {
+fn test_static_assert_valid_scopes() {
+    // Top level
+    run_pass(r#"_Static_assert(1, "msg");"#, CompilePhase::Mir);
+    // In function
     run_pass(r#"void foo() { _Static_assert(1, "msg"); }"#, CompilePhase::Mir);
-}
-
-#[test]
-fn test_static_assert_in_struct() {
+    // In struct
     run_pass(r#"struct S { int x; _Static_assert(1, "msg"); };"#, CompilePhase::Mir);
+    // In union
+    run_pass(r#"union U { int x; _Static_assert(1, "msg"); }; "#, CompilePhase::Mir);
 }
 
 #[test]
-fn test_static_assert_c23_one_arg() {
+fn test_static_assert_c23_features() {
     run_pass_with_std("_Static_assert(1 == 1);", CompilePhase::Mir, CStandard::C23);
-}
-
-#[test]
-fn test_static_assert_keyword() {
     run_pass_with_std(r#"static_assert(1 == 1, "msg");"#, CompilePhase::Mir, CStandard::C23);
     run_pass_with_std("static_assert(1 == 1);", CompilePhase::Mir, CStandard::C23);
-}
-
-#[test]
-fn test_static_assert_c23_fail_no_msg() {
     run_fail_with_message_and_std("_Static_assert(1 == 0);", "static assertion failed", CStandard::C23);
+    run_fail_with_message_and_std("static_assert(0);", "static assertion failed", CStandard::C23);
 }
 
 #[test]
-fn test_static_assert_fail_with_msg() {
-    run_fail_with_message(r#"_Static_assert(1 == 0, "failure message");"#, "failure message");
-}
-
-#[test]
-fn test_static_assert_c11_no_message_succeeds() {
+fn test_static_assert_c11_features() {
     // Current default is C11, but we allow single argument as extension
     run_pass("_Static_assert(1);", CompilePhase::Mir);
-}
 
-#[test]
-fn test_static_assert_c11_keyword_fails() {
     // In C11, 'static_assert' is not a keyword, so it should be an undeclared identifier or similar
     run_fail_with_message(
         r#"int main() { static_assert(1, "ok"); }"#,
@@ -49,26 +36,12 @@ fn test_static_assert_c11_keyword_fails() {
 }
 
 #[test]
-fn test_static_assert_keyword_fail_no_msg() {
-    run_fail_with_message_and_std("static_assert(0);", "static assertion failed", CStandard::C23);
-}
-
-#[test]
-fn test_static_assert_in_union() {
-    run_pass(r#"union U { int x; _Static_assert(1, "msg"); }; "#, CompilePhase::Mir);
-}
-
-#[test]
-fn test_static_assert_at_top_level() {
-    run_pass(r#"_Static_assert(1, "msg");"#, CompilePhase::Mir);
+fn test_static_assert_failures() {
+    run_fail_with_message(r#"_Static_assert(1 == 0, "failure message");"#, "failure message");
     run_fail_with_message(
         r#"_Static_assert(0, "This should fail");"#,
         "static assertion failed: This should fail",
     );
-}
-
-#[test]
-fn test_static_assert_non_constant() {
     run_fail_with_message(
         r#"
         void foo() {

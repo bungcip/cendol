@@ -71,7 +71,6 @@ pub mod semantic_parsed_declarator_coverage;
 pub mod semantic_parsed_types_coverage;
 pub mod semantic_pedantic_gnu_extensions;
 pub mod semantic_pragma_pack;
-pub mod semantic_regr_real_imag;
 pub mod semantic_return;
 pub mod semantic_return_check;
 pub mod semantic_scope;

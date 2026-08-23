@@ -5,7 +5,7 @@ use crate::ast::{Designator, NodeKind, NodeRef};
 use crate::codegen::mir_gen::MirGen;
 use crate::mir::{ConstValueId, ConstValueKind, MirArrayLayout, MirStmt, MirType, Operand, Place, Rvalue, TypeId};
 use crate::semantic::literal_utils::lower_string_literal;
-use crate::semantic::{ArraySize, FieldLayout, QualType, RecordMember, TypeKind, TypeRef};
+use crate::semantic::{ArraySize, FieldLayout, RecordMember, TypeKind, TypeRef};
 use std::iter::Peekable;
 
 struct ArrayInitArgs {

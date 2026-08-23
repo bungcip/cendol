@@ -527,8 +527,8 @@ impl<'a> MirGen<'a> {
     }
 
     pub(super) fn evaluate_constant_i64(&mut self, expr: NodeRef, error_msg: &str) -> i64 {
-        let val = self.const_ctx().eval_int(expr).expect(error_msg);
-        val as i64
+
+        self.const_ctx().eval_int(expr).expect(error_msg)
     }
 
     pub(super) fn lower_condition(&mut self, condition: NodeRef) -> Operand {

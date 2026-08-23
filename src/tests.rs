@@ -171,6 +171,7 @@ mod guardian_invalid_unary_operand;
 pub mod guardian_jump_into_scope_vla;
 mod guardian_lvalue_assignment;
 pub mod guardian_pointer_assignment_nested_qualifiers;
+pub mod guardian_return_constraints;
 pub mod guardian_switch_multiple_default;
 mod guardian_zero_or_negative_size_array;
 pub mod parser_struct_pragmas;

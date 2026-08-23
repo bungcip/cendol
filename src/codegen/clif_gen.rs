@@ -581,10 +581,10 @@ fn lower_call_signature(
     ctx: &SignatureLoweringContext,
 ) -> (Signature, bool) {
     let mut sig = Signature::new(call_conv);
-    let mut return_types = Vec::new();
+    let mut return_types = Vec::with_capacity(1);
     let has_hidden_ptr = lower_abi_return(ctx.mir.get_type(return_type_id), ctx.mir, &mut sig, &mut return_types);
 
-    let mut actual_param_types = Vec::new();
+    let mut actual_param_types = Vec::with_capacity(param_types.len() + args.len() + 1);
     if has_hidden_ptr {
         actual_param_types.push(types::I64);
     }
@@ -2385,10 +2385,10 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             use cranelift::codegen::ir::{AsmConstraintKind, AsmOperand, InlineAsmData};
             use cranelift::prelude::*;
 
-            let mut asm_operands = Vec::new();
+            let mut asm_operands = Vec::with_capacity(outputs.len() + inputs.len());
 
             // Collect outputs
-            let mut output_values = Vec::new();
+            let mut output_values = Vec::with_capacity(outputs.len());
             for (constraint, place) in outputs {
                 let constraint_str = match constraint.get_val() {
                     LitVal::String { value, .. } => String::from_utf8_lossy(&value).into_owned(),
@@ -2412,7 +2412,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             }
 
             // Collect inputs
-            let mut input_values = Vec::new();
+            let mut input_values = Vec::with_capacity(inputs.len());
             for (constraint, operand) in inputs {
                 let constraint_str = match constraint.get_val() {
                     LitVal::String { value, .. } => String::from_utf8_lossy(&value).into_owned(),
@@ -2437,7 +2437,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             }
 
             // Collect clobbers
-            let mut clobber_strings = Vec::new();
+            let mut clobber_strings = Vec::with_capacity(clobbers.len());
             for clobber in clobbers {
                 let clobber_str = match clobber.get_val() {
                     LitVal::String { value, .. } => String::from_utf8_lossy(&value).into_owned(),
@@ -2588,10 +2588,10 @@ fn lower_function_signature(func: &MirFunction, mir: &MirProgram, sig: &mut Sign
     sig.returns.clear();
     sig.is_variadic = func.is_variadic;
 
-    let mut return_types = Vec::new();
+    let mut return_types = Vec::with_capacity(1);
     let has_hidden_return_ptr = lower_abi_return(mir.get_type(func.return_type), mir, sig, &mut return_types);
 
-    let mut param_types = Vec::new();
+    let mut param_types = Vec::with_capacity(func.params.len() + 1);
     if has_hidden_return_ptr {
         param_types.push(types::I64);
     }
@@ -2611,6 +2611,7 @@ fn emit_stack_slots(
     clif_stack_slots: &mut HashMap<LocalId, StackSlot>,
 ) {
     clif_stack_slots.clear(); // Clear for each function
+    clif_stack_slots.reserve(func.locals.len() + func.params.len());
 
     // Combine locals and params for slot allocation
     // Bolt ⚡: Optimization: Iterate directly without allocating a temporary Vec.
@@ -2721,19 +2722,17 @@ impl ClifGen {
             emit_kind: EmitKind::Object,
             func_id_map: HashMap::default(),
             data_id_map: HashMap::default(),
-            pointee_to_pointer: mir
-                .types
-                .iter()
-                .enumerate()
-                .filter_map(|(i, ty)| {
+            pointee_to_pointer: {
+                // Bolt ⚡: Pre-allocate capacity based on total MIR types to avoid rehashing.
+                let mut map = HashMap::with_capacity_and_hasher(mir.types.len(), Default::default());
+                for (i, ty) in mir.types.iter().enumerate() {
                     let id = TypeId::new((i + 1) as u32).unwrap();
                     if let MirType::Pointer { pointee } = ty {
-                        Some((*pointee, id))
-                    } else {
-                        None
+                        map.insert(*pointee, id);
                     }
-                })
-                .collect(),
+                }
+                map
+            },
             mir,
         }
     }
@@ -2742,6 +2741,10 @@ impl ClifGen {
         self.emit_kind = emit_kind;
 
         let (reachable_functions, reachable_globals) = self.analyze_reachability();
+
+        // Bolt ⚡: Pre-allocate map capacities to avoid rehashing during declaration passes.
+        self.data_id_map.reserve(reachable_globals.len());
+        self.func_id_map.reserve(reachable_functions.len());
 
         // Pass 1: Declare reachable global variables
         for &global_id in &self.mir.module.globals {
@@ -2855,7 +2858,8 @@ impl ClifGen {
             // but we can avoid the extra clone/collect if we use a different approach.
             // Actually, keys() returns &String, so collect() into Vec<&String> is cheap.
             // But we can still optimize the loop.
-            let mut func_names: Vec<&String> = self.compiled_functions.keys().collect();
+            let mut func_names: Vec<&String> = Vec::with_capacity(self.compiled_functions.len());
+            func_names.extend(self.compiled_functions.keys());
             func_names.sort();
 
             for func_name in func_names {
@@ -2884,6 +2888,7 @@ impl ClifGen {
 
         // PHASE 1️⃣ — Create all Cranelift blocks first (no instructions)
         self.clif_blocks.clear();
+        self.clif_blocks.reserve(func.blocks.len());
 
         for &block_id in &func.blocks {
             self.clif_blocks.insert(block_id, builder.create_block());

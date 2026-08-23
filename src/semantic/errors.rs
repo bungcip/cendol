@@ -416,6 +416,7 @@ pub enum SemanticError {
         new: QualType,
     },
     AutoTypeNotAllowed(/* context: */ &'static str),
+    BuiltinFrameAddressNotConstant,
     BuiltinPrefetchNotConstant {
         arg: &'static str,
     },
@@ -1000,6 +1001,9 @@ impl DiagDisplay for SemanticError {
             ),
             SemanticError::AutoTypeNotAllowed(context) => {
                 write!(f, "__auto_type is not allowed in {}", context)
+            }
+            SemanticError::BuiltinFrameAddressNotConstant => {
+                write!(f, "argument to '__builtin_frame_address' must be a constant integer")
             }
             SemanticError::BuiltinPrefetchNotConstant { arg } => {
                 write!(f, "argument '{}' to '__builtin_prefetch' must be a constant", arg)

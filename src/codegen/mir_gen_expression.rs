@@ -202,7 +202,7 @@ impl<'a> MirGen<'a> {
     ) -> Operand {
         match node_kind {
             NodeKind::BuiltinOffsetof(..) | NodeKind::BuiltinTypesCompatibleP(..) => {
-                let val = self.const_ctx().eval_int(expr).expect("Builtin should be constant");
+                let val = self.evaluate_constant_i64(expr, "Builtin should be constant");
                 let kind = if self.mb.get_type(mir_ty).is_float() {
                     ConstValueKind::Float(val as f64)
                 } else {
@@ -1665,7 +1665,7 @@ impl<'a> MirGen<'a> {
             }
             BuiltinFunctionKind::FrameAddress => {
                 let arg = call_expr.arg_start;
-                let level = self.const_ctx().eval_int(arg).unwrap_or(0) as u32;
+                let level = self.evaluate_constant_i64(arg, "level must be constant") as u32;
                 let rval = Rvalue::BuiltinFrameAddress(level);
                 Some(self.emit_rvalue_to_operand(rval, mir_ty))
             }
@@ -1731,13 +1731,13 @@ impl<'a> MirGen<'a> {
                 let addr = self.visit_expression(arg_start, true);
 
                 let rw = if call_expr.arg_len > 1 {
-                    self.const_ctx().eval_int(arg_start.add_offset(1)).unwrap_or(0) as u32
+                    self.evaluate_constant_i64(arg_start.add_offset(1), "rw must be constant") as u32
                 } else {
                     0
                 };
 
                 let locality = if call_expr.arg_len > 2 {
-                    self.const_ctx().eval_int(arg_start.add_offset(2)).unwrap_or(3) as u32
+                    self.evaluate_constant_i64(arg_start.add_offset(2), "locality must be constant") as u32
                 } else {
                     3
                 };

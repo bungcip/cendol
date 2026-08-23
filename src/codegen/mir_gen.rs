@@ -526,6 +526,11 @@ impl<'a> MirGen<'a> {
         val as usize
     }
 
+    pub(super) fn evaluate_constant_i64(&mut self, expr: NodeRef, error_msg: &str) -> i64 {
+        let val = self.const_ctx().eval_int(expr).expect(error_msg);
+        val as i64
+    }
+
     pub(super) fn lower_condition(&mut self, condition: NodeRef) -> Operand {
         let cond_operand = self.visit_expression(condition, true);
         // Apply conversions for condition (should be boolean)
@@ -1329,7 +1334,7 @@ impl<'a> MirGen<'a> {
         let kind = *self.ast.get_kind(node);
         match kind {
             NodeKind::Case(expr, stmt) => {
-                let val_i64 = self.const_ctx().eval_int(expr).expect("Case label must be constant");
+                let val_i64 = self.evaluate_constant_i64(expr, "Case label must be constant");
                 let qt = self.ast.qual_type_of(expr);
                 let mir_ty = self.lower_type(qt.ty());
                 let val = self.create_constant(mir_ty, ConstValueKind::Int(val_i64));
@@ -1337,15 +1342,12 @@ impl<'a> MirGen<'a> {
                 self.collect_switch_cases_recursive(stmt, cases);
             }
             NodeKind::CaseRange(start, end, stmt) => {
-                let start_i64 = self
-                    .const_ctx()
-                    .eval_int(start)
-                    .expect("Case range start must be constant");
+                let start_i64 = self.evaluate_constant_i64(start, "Case range start must be constant");
                 let start_qt = self.ast.qual_type_of(start);
                 let start_mir_ty = self.lower_type(start_qt.ty());
                 let start_val = self.create_constant(start_mir_ty, ConstValueKind::Int(start_i64));
 
-                let end_i64 = self.const_ctx().eval_int(end).expect("Case range end must be constant");
+                let end_i64 = self.evaluate_constant_i64(end, "Case range end must be constant");
                 let end_qt = self.ast.qual_type_of(end);
                 let end_mir_ty = self.lower_type(end_qt.ty());
                 let end_val = self.create_constant(end_mir_ty, ConstValueKind::Int(end_i64));

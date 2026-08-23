@@ -28,7 +28,6 @@ fn test_compound_assignment_truncation() {
     type %t1 = struct foo { a: %t2 }
     type %t2 = u8
     type %t3 = ptr<%t1>
-    type %t4 = i32
 
     fn test8(%param0: ptr<%t1>, %param1: u64) -> u64
     {
@@ -65,7 +64,6 @@ fn test_compound_assignment_truncation_16() {
     type %t1 = struct foo { b: %t2 }
     type %t2 = u16
     type %t3 = ptr<%t1>
-    type %t4 = i32
 
     fn test16(%param0: ptr<%t1>, %param1: u64) -> u64
     {

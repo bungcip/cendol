@@ -10,8 +10,8 @@ use crate::mir::{
 use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::symbol_table::{Symbol, SymbolClass};
 use crate::semantic::{
-    ArraySize, BuiltinType, Conversion, DefinitionState, FunctionParam, QualType, ScopeId, SymbolKind, SymbolRef,
-    SymbolTable, TypeKind, TypeRef, TypeRegistry,
+    ArraySize, BuiltinType, Conversion, DefinitionState, FunctionParam, ScopeId, SymbolKind, SymbolRef, SymbolTable,
+    TypeKind, TypeRef, TypeRegistry,
 };
 use crate::source_manager::SourceManager;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -180,7 +180,7 @@ impl<'a> MirGen<'a> {
 
         let entry = self.symbol_table.get_symbol(sym);
         let qt = entry.type_info;
-        let mir_ty = self.lower_qual_type(qt);
+        let mir_ty = self.lower_type(qt.ty());
         self.visit_variable(sym, mir_ty);
 
         *self
@@ -230,7 +230,7 @@ impl<'a> MirGen<'a> {
 
         if let Some((return_type, parameters, is_variadic)) = fn_data {
             let return_mir_type = self.lower_type(return_type);
-            let param_mir_types = parameters.iter().map(|p| self.lower_qual_type(p.param_type)).collect();
+            let param_mir_types = parameters.iter().map(|p| self.lower_type(p.param_type.ty())).collect();
 
             let func_id = self.define_or_declare_function(
                 target_name,
@@ -529,9 +529,9 @@ impl<'a> MirGen<'a> {
     pub(super) fn lower_condition(&mut self, condition: NodeRef) -> Operand {
         let cond_operand = self.visit_expression(condition, true);
         // Apply conversions for condition (should be boolean)
-        let cond_ty = self.ast.qual_type_of(condition);
-        let cond_mir_ty = self.lower_qual_type(cond_ty);
-        let converted = self.apply_conversions(cond_operand, condition, cond_mir_ty);
+        let qt = self.ast.qual_type_of(condition);
+        let mir_ty = self.lower_type(qt.ty());
+        let converted = self.apply_conversions(cond_operand, condition, mir_ty);
         self.cast_operand_to_bool(converted)
     }
 
@@ -664,7 +664,7 @@ impl<'a> MirGen<'a> {
         let sym = var_decl.symbol;
         let symbol = self.symbol_table.get_symbol(sym);
         let qt = symbol.type_info;
-        let mir_type_id = self.lower_qual_type(qt);
+        let mir_type_id = self.lower_type(qt.ty());
 
         self.visit_variable(sym, mir_type_id);
     }
@@ -774,7 +774,7 @@ impl<'a> MirGen<'a> {
         if let Some(align) = v.alignment
             && align > 16
         {
-            self.visit_aligned_local(sym, name, mir_type_id, qt, v.initializer, align);
+            self.visit_aligned_local(sym, name, mir_type_id, qt.ty(), v.initializer, align);
             return;
         }
 
@@ -806,7 +806,7 @@ impl<'a> MirGen<'a> {
             return func_id;
         }
 
-        let func_ty_id = self.lower_qual_type(symbol_entry.type_info);
+        let func_ty_id = self.lower_type(symbol_entry.type_info.ty());
         let func_ty = self.mb.get_type(func_ty_id).clone();
         if let MirType::Function {
             return_type,
@@ -826,7 +826,7 @@ impl<'a> MirGen<'a> {
         sym: SymbolRef,
         name: NameId,
         mir_type_id: TypeId,
-        qt: QualType,
+        ty: TypeRef,
         init: Option<NodeRef>,
         alignment: u16,
     ) {
@@ -845,7 +845,7 @@ impl<'a> MirGen<'a> {
         // Initialize if needed
         if let Some(initializer) = init {
             let deref_place = Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(ptr_local_id)))));
-            let init_operand = self.visit_init(initializer, qt.ty(), Some(deref_place.clone()));
+            let init_operand = self.visit_init(initializer, ty, Some(deref_place.clone()));
             self.emit_assignment(deref_place, init_operand);
         }
     }
@@ -1330,8 +1330,8 @@ impl<'a> MirGen<'a> {
         match kind {
             NodeKind::Case(expr, stmt) => {
                 let val_i64 = self.const_ctx().eval_int(expr).expect("Case label must be constant");
-                let expr_ty = self.ast.qual_type_of(expr);
-                let mir_ty = self.lower_qual_type(expr_ty);
+                let qt = self.ast.qual_type_of(expr);
+                let mir_ty = self.lower_type(qt.ty());
                 let val = self.create_constant(mir_ty, ConstValueKind::Int(val_i64));
                 cases.push((node, Some(val), None));
                 self.collect_switch_cases_recursive(stmt, cases);
@@ -1341,13 +1341,13 @@ impl<'a> MirGen<'a> {
                     .const_ctx()
                     .eval_int(start)
                     .expect("Case range start must be constant");
-                let start_ty = self.ast.qual_type_of(start);
-                let start_mir_ty = self.lower_qual_type(start_ty);
+                let start_qt = self.ast.qual_type_of(start);
+                let start_mir_ty = self.lower_type(start_qt.ty());
                 let start_val = self.create_constant(start_mir_ty, ConstValueKind::Int(start_i64));
 
                 let end_i64 = self.const_ctx().eval_int(end).expect("Case range end must be constant");
-                let end_ty = self.ast.qual_type_of(end);
-                let end_mir_ty = self.lower_qual_type(end_ty);
+                let end_qt = self.ast.qual_type_of(end);
+                let end_mir_ty = self.lower_type(end_qt.ty());
                 let end_val = self.create_constant(end_mir_ty, ConstValueKind::Int(end_i64));
 
                 cases.push((node, Some(start_val), Some(end_val)));
@@ -1381,10 +1381,6 @@ impl<'a> MirGen<'a> {
         let rvalue = Rvalue::Use(operand);
         let stmt = MirStmt::Assign(place, rvalue);
         self.add_stmt(stmt);
-    }
-
-    pub(super) fn lower_qual_type(&mut self, qt: QualType) -> TypeId {
-        self.lower_type(qt.ty())
     }
 
     pub(super) fn lower_type(&mut self, ty: TypeRef) -> TypeId {
@@ -1421,7 +1417,7 @@ impl<'a> MirGen<'a> {
                 self.cache_type(ty, mir_type)
             }
             TypeKind::Pointer { pointee } => {
-                let mir_type = self.lower_pointer_type(pointee);
+                let mir_type = self.lower_pointer_type(pointee.ty());
                 self.cache_type(ty, mir_type)
             }
             TypeKind::Array { element_type, size } => {
@@ -1564,9 +1560,9 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn lower_pointer_type(&mut self, pointee: QualType) -> MirType {
+    fn lower_pointer_type(&mut self, pointee: TypeRef) -> MirType {
         MirType::Pointer {
-            pointee: self.lower_qual_type(pointee),
+            pointee: self.lower_type(pointee),
         }
     }
 
@@ -1621,7 +1617,7 @@ impl<'a> MirGen<'a> {
         let return_type = self.lower_type(return_type);
         let mut params = Vec::new();
         for p in parameters {
-            let param_ty_id = self.lower_qual_type(p.param_type);
+            let param_ty_id = self.lower_type(p.param_type.ty());
             // Adjust array parameters to pointers (C standard).
             // This is especially important for VaList which treats itself as an array but is passed as a pointer.
             // Sema handles explicit arrays, but BuiltinType::VaList is lowered to Array here.
@@ -1690,7 +1686,7 @@ impl<'a> MirGen<'a> {
             for (idx, m) in flat_members.iter().enumerate() {
                 let name = m.name.unwrap_or_else(|| NameId::new(format!("__anon_{}", idx)));
                 field_names.push(name);
-                field_types.push(self.lower_qual_type(m.member_type));
+                field_types.push(self.lower_type(m.member_type.ty()));
 
                 let fl = &flat_fields[idx];
                 field_layouts.push(MirFieldLayout::from(fl).signed(self.registry.get(m.member_type.ty()).is_signed()));
@@ -1787,7 +1783,7 @@ impl<'a> MirGen<'a> {
             Conversion::PointerDecay { to } => self.lower_type(*to),
             Conversion::LValueToRValue | Conversion::QualifierAdjust { .. } => {
                 let qt = self.ast.qual_type_of(node);
-                self.lower_qual_type(qt.strip_all())
+                self.lower_type(qt.ty())
             }
         };
 

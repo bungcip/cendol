@@ -32,15 +32,15 @@ impl<'a> MirGen<'a> {
             NodeKind::IndexAccess(arr, idx) => self.visit_index_access_as_place(*arr, *idx),
             NodeKind::UnaryOp(UnaryOp::Deref, operand) => {
                 let op = self.visit_expression(*operand, true);
-                let op_ty = self.ast.qual_type_of(*operand);
-                let mir_ty = self.lower_qual_type(op_ty);
+                let qt = self.ast.qual_type_of(*operand);
+                let mir_ty = self.lower_type(qt.ty());
                 let conv = self.apply_conversions(op, *operand, mir_ty);
                 self.deref_operand(conv)
             }
             NodeKind::UnaryOp(UnaryOp::Real, operand) => {
                 let base_place = self.visit_expression_as_place(*operand);
-                let operand_ty = self.ast.qual_type_of(*operand);
-                if operand_ty.is_complex() {
+                let qt = self.ast.qual_type_of(*operand);
+                if qt.is_complex() {
                     Place::StructField(Box::new(base_place), 0, None)
                 } else {
                     base_place
@@ -48,8 +48,8 @@ impl<'a> MirGen<'a> {
             }
             NodeKind::UnaryOp(UnaryOp::Imag, operand) => {
                 let base_place = self.visit_expression_as_place(*operand);
-                let operand_ty = self.ast.qual_type_of(*operand);
-                if operand_ty.is_complex() {
+                let qt = self.ast.qual_type_of(*operand);
+                if qt.is_complex() {
                     Place::StructField(Box::new(base_place), 1, None)
                 } else {
                     let op = self.visit_expression(expr, true);
@@ -64,17 +64,17 @@ impl<'a> MirGen<'a> {
     }
 
     fn ensure_place_fallback(&mut self, op: Operand, expr: NodeRef) -> Place {
-        let ty = self.ast.qual_type_of(expr);
-        let mir_ty = self.lower_qual_type(ty);
+        let qt = self.ast.qual_type_of(expr);
+        let mir_ty = self.lower_type(qt.ty());
         self.ensure_place(op, mir_ty)
     }
 
     pub(crate) fn visit_expression(&mut self, expr: NodeRef, need_value: bool) -> Operand {
         let qt = self.ast.qual_type_of(expr);
         let node_kind = *self.ast.get_kind(expr);
-        let mir_ty = self.lower_qual_type(qt);
+        let mir_ty = self.lower_type(qt.ty());
 
-        if let Some(const_op) = self.try_constant_fold(expr, &node_kind, qt) {
+        if let Some(const_op) = self.try_constant_fold(expr, &node_kind, qt.ty()) {
             return if need_value {
                 self.apply_conversions(const_op, expr, mir_ty)
             } else {
@@ -83,7 +83,9 @@ impl<'a> MirGen<'a> {
         }
 
         let operand = match &node_kind {
-            NodeKind::Literal(_) => self.visit_literal(&node_kind, qt).expect("Failed to lower literal"),
+            NodeKind::Literal(_) => self
+                .visit_literal(&node_kind, qt.ty())
+                .expect("Failed to lower literal"),
             NodeKind::Ident(_, sym) => self.visit_ident(*sym),
             NodeKind::UnaryOp(op, operand) => self.visit_unary_op(*op, *operand, mir_ty),
             NodeKind::PostIncrement(operand) => self.visit_inc_dec_expr(*operand, true, true, need_value),
@@ -218,7 +220,7 @@ impl<'a> MirGen<'a> {
             }
             NodeKind::BuiltinChooseExpr(..) => self.visit_builtin_choose_expr(need_value, expr),
             NodeKind::GenericSelection(..) => self.visit_generic_selection(need_value, expr),
-            NodeKind::BuiltinVaArg(ty, expr) => self.visit_builtin_va_arg(*ty, *expr),
+            NodeKind::BuiltinVaArg(ty, expr) => self.visit_builtin_va_arg(ty.ty(), *expr),
             NodeKind::BuiltinComplex(real, imag) => {
                 let real_op = self.visit_expression(*real, true);
                 let imag_op = self.visit_expression(*imag, true);
@@ -234,12 +236,12 @@ impl<'a> MirGen<'a> {
             }
             NodeKind::BuiltinBitCast(ty, expr) => {
                 let operand = self.visit_expression(*expr, true);
-                let target_mir_ty = self.lower_qual_type(*ty);
+                let target_mir_ty = self.lower_type(ty.ty());
                 Operand::Cast(target_mir_ty, Box::new(operand))
             }
             NodeKind::BuiltinConvertVector(expr, ty) => {
                 let operand = self.visit_expression(*expr, true);
-                let target_mir_ty = self.lower_qual_type(*ty);
+                let target_mir_ty = self.lower_type(ty.ty());
                 // For now, treat convertvector as a cast.
                 // In the future, this might need a more specialized MIR op.
                 Operand::Cast(target_mir_ty, Box::new(operand))
@@ -248,7 +250,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn try_constant_fold(&mut self, expr: NodeRef, kind: &NodeKind, qt: QualType) -> Option<Operand> {
+    fn try_constant_fold(&mut self, expr: NodeRef, kind: &NodeKind, ty: TypeRef) -> Option<Operand> {
         // Attempt constant folding for arithmetic/logical operations that are not simple literals
         if !matches!(
             kind,
@@ -264,7 +266,7 @@ impl<'a> MirGen<'a> {
         if let NodeKind::BuiltinComplex(real, imag) = kind
             && let (Some(rv), Some(iv)) = (self.const_ctx().eval_float(*real), self.const_ctx().eval_float(*imag))
         {
-            let ty_id = self.lower_qual_type(qt);
+            let ty_id = self.lower_type(ty);
             let MirType::Record { field_types, .. } = self.mb.get_type(ty_id) else {
                 return None;
             };
@@ -278,9 +280,9 @@ impl<'a> MirGen<'a> {
         }
 
         // Try floating-point constant folding first for float types
-        if qt.is_floating() && !qt.is_complex() {
+        if ty.is_floating() && !ty.is_complex() {
             if let Some(val) = self.const_ctx().eval_float(expr) {
-                let ty_id = self.lower_qual_type(qt);
+                let ty_id = self.lower_type(ty);
                 return Some(Operand::Constant(
                     self.create_constant(ty_id, ConstValueKind::Float(val)),
                 ));
@@ -290,7 +292,7 @@ impl<'a> MirGen<'a> {
 
         // Integer constant folding
         if let Some(val) = self.const_ctx().eval_int(expr) {
-            let ty_id = self.lower_qual_type(qt);
+            let ty_id = self.lower_type(ty);
             let mir_type = self.mb.get_type(ty_id);
             let truncated_val = mir_type.truncate_int(val);
             return Some(Operand::Constant(
@@ -499,8 +501,8 @@ impl<'a> MirGen<'a> {
         self.emit_cast(operand_op, mir_ty)
     }
 
-    fn visit_literal(&mut self, node_kind: &NodeKind, ty: QualType) -> Option<Operand> {
-        let mir_ty = self.lower_qual_type(ty);
+    fn visit_literal(&mut self, node_kind: &NodeKind, ty: TypeRef) -> Option<Operand> {
+        let mir_ty = self.lower_type(ty);
         let NodeKind::Literal(literal_id) = node_kind else {
             return None;
         };
@@ -523,7 +525,7 @@ impl<'a> MirGen<'a> {
                 }
                 lit @ LitVal::Float { .. } => ConstValueKind::Float(lit.as_f64()),
                 LitVal::String { value, prefix } => {
-                    return Some(self.visit_literal_string(value.as_slice(), *prefix, ty.ty()));
+                    return Some(self.visit_literal_string(value.as_slice(), *prefix, ty));
                 }
             };
 
@@ -718,7 +720,7 @@ impl<'a> MirGen<'a> {
         let lhs = self.visit_expression(left, true);
         let rhs = self.visit_expression(right, true);
 
-        let (rval, _op_ty) = self.visit_binary_arithmetic_logic(op, lhs, rhs, left, right, mir_ty);
+        let (rval, _op_ty) = self.visit_binary_arithmetic_logic(op, lhs, rhs, mir_ty);
         self.emit_rvalue_to_operand(rval, mir_ty)
     }
 
@@ -727,12 +729,10 @@ impl<'a> MirGen<'a> {
         op: BinaryOp,
         lhs: Operand,
         rhs: Operand,
-        left_expr: NodeRef,
-        right_expr: NodeRef,
         context_ty: TypeId,
     ) -> (Rvalue, TypeId) {
         // Handle pointer arithmetic
-        if let Some(rval) = self.visit_pointer_arithmetic(op, lhs.clone(), rhs.clone(), left_expr, right_expr) {
+        if let Some(rval) = self.visit_pointer_arithmetic(op, lhs.clone(), rhs.clone()) {
             let res_ty = match &rval {
                 Rvalue::PtrAdd(base, _) | Rvalue::PtrSub(base, _) => self.get_operand_type(base),
                 Rvalue::PtrDiff(..) => self.lower_type(self.registry.type_long),
@@ -838,55 +838,9 @@ impl<'a> MirGen<'a> {
         Operand::Copy(Box::new(res_place))
     }
 
-    fn unwrap_cast_if_int(&mut self, op: Operand) -> Operand {
-        match op {
-            Operand::Cast(ty, inner) => {
-                let inner_ty = self.get_operand_type(&inner);
-                if self.mb.get_type(inner_ty).is_int() {
-                    return *inner;
-                }
-
-                let unwrapped = self.unwrap_cast_if_int(*inner);
-                let unwrapped_ty = self.get_operand_type(&unwrapped);
-                if self.mb.get_type(unwrapped_ty).is_int() {
-                    unwrapped
-                } else {
-                    Operand::Cast(ty, Box::new(unwrapped))
-                }
-            }
-            Operand::Constant(const_id) => {
-                if let ConstValueKind::Int(val) = self.mb.get_constant(const_id).kind {
-                    self.create_int_operand(val)
-                } else {
-                    Operand::Constant(const_id)
-                }
-            }
-            _ => op,
-        }
-    }
-
-    fn visit_pointer_arithmetic(
-        &mut self,
-        op: BinaryOp,
-        lhs: Operand,
-        rhs: Operand,
-        left_expr: NodeRef,
-        right_expr: NodeRef,
-    ) -> Option<Rvalue> {
-        // Lower types and apply conversions locally to check for pointer arithmetic
-        // We use the operand's own type as the target for conversion to avoid forcing
-        // implicit casts to the result type (which causes issues for Ptr + Int -> Ptr)
-        let lhs_ty = self.ast.qual_type_of(left_expr);
-        let rhs_ty = self.ast.qual_type_of(right_expr);
-
-        let lhs_mir_target = self.lower_qual_type(lhs_ty);
-        let rhs_mir_target = self.lower_qual_type(rhs_ty);
-
-        let lhs_converted = self.apply_conversions(lhs, left_expr, lhs_mir_target);
-        let rhs_converted = self.apply_conversions(rhs, right_expr, rhs_mir_target);
-
-        let lhs_mir_ty = self.get_operand_type(&lhs_converted);
-        let rhs_mir_ty = self.get_operand_type(&rhs_converted);
+    fn visit_pointer_arithmetic(&mut self, op: BinaryOp, lhs: Operand, rhs: Operand) -> Option<Rvalue> {
+        let lhs_mir_ty = self.get_operand_type(&lhs);
+        let rhs_mir_ty = self.get_operand_type(&rhs);
 
         let lhs_type_info = self.mb.get_type(lhs_mir_ty);
         let rhs_type_info = self.mb.get_type(rhs_mir_ty);
@@ -894,42 +848,19 @@ impl<'a> MirGen<'a> {
         match op {
             BinaryOp::Add => {
                 if lhs_type_info.is_pointer() && rhs_type_info.is_int() {
-                    Some(self.create_pointer_arithmetic_rvalue(lhs_converted, rhs_converted, BinaryOp::Add))
+                    Some(self.create_pointer_arithmetic_rvalue(lhs, rhs, BinaryOp::Add))
                 } else if rhs_type_info.is_pointer() && lhs_type_info.is_int() {
-                    Some(self.create_pointer_arithmetic_rvalue(rhs_converted, lhs_converted, BinaryOp::Add))
-                } else if lhs_type_info.is_pointer() && rhs_type_info.is_pointer() {
-                    // Try unwrapping implicit casts (Analyzer might have casted Int to Ptr)
-                    let lhs_unwrapped = self.unwrap_cast_if_int(lhs_converted.clone());
-                    let rhs_unwrapped = self.unwrap_cast_if_int(rhs_converted.clone());
-
-                    let lhs_u_ty = self.get_operand_type(&lhs_unwrapped);
-                    let rhs_u_ty = self.get_operand_type(&rhs_unwrapped);
-
-                    if self.mb.get_type(lhs_u_ty).is_pointer() && self.mb.get_type(rhs_u_ty).is_int() {
-                        Some(self.create_pointer_arithmetic_rvalue(lhs_unwrapped, rhs_unwrapped, BinaryOp::Add))
-                    } else if self.mb.get_type(rhs_u_ty).is_pointer() && self.mb.get_type(lhs_u_ty).is_int() {
-                        Some(self.create_pointer_arithmetic_rvalue(rhs_unwrapped, lhs_unwrapped, BinaryOp::Add))
-                    } else {
-                        None
-                    }
+                    Some(self.create_pointer_arithmetic_rvalue(rhs, lhs, BinaryOp::Add))
                 } else {
                     None
                 }
             }
             BinaryOp::Sub => {
                 if lhs_type_info.is_pointer() {
-                    if rhs_type_info.is_pointer() {
-                        // Check if rhs is casted from int (Analyzer might have casted Int to Ptr)
-                        let rhs_unwrapped = self.unwrap_cast_if_int(rhs_converted.clone());
-                        let rhs_u_ty_id = self.get_operand_type(&rhs_unwrapped);
-
-                        if self.mb.get_type(rhs_u_ty_id).is_int() {
-                            Some(self.create_pointer_arithmetic_rvalue(lhs_converted, rhs_unwrapped, BinaryOp::Sub))
-                        } else {
-                            Some(Rvalue::PtrDiff(lhs_converted, rhs_converted))
-                        }
-                    } else if rhs_type_info.is_int() {
-                        Some(self.create_pointer_arithmetic_rvalue(lhs_converted, rhs_converted, BinaryOp::Sub))
+                    if rhs_type_info.is_int() {
+                        Some(self.create_pointer_arithmetic_rvalue(lhs, rhs, BinaryOp::Sub))
+                    } else if rhs_type_info.is_pointer() {
+                        Some(Rvalue::PtrDiff(lhs, rhs))
                     } else {
                         None
                     }
@@ -1023,7 +954,7 @@ impl<'a> MirGen<'a> {
         place: Place,
         rhs_op: Operand,
         left: NodeRef,
-        right: NodeRef,
+        _right: NodeRef,
         mir_ty: TypeId,
     ) -> Operand {
         let lhs_ty = self.ast.get_resolved_type(left).unwrap();
@@ -1044,8 +975,7 @@ impl<'a> MirGen<'a> {
                 let old_val = self.emit_rvalue_to_operand(rval, mir_ty);
                 // AtomicFetchOp returns old value. Compound assignment evaluates to NEW value.
                 // Re-apply operation to old value to get new value for the expression result.
-                let (new_val_rval, _) =
-                    self.visit_binary_arithmetic_logic(compound_op, old_val, rhs_op, left, right, mir_ty);
+                let (new_val_rval, _) = self.visit_binary_arithmetic_logic(compound_op, old_val, rhs_op, mir_ty);
                 return self.emit_rvalue_to_operand(new_val_rval, mir_ty);
             }
         }
@@ -1054,7 +984,7 @@ impl<'a> MirGen<'a> {
         // Use the already-evaluated place to read the current value.
         let lhs_copy = Operand::Copy(Box::new(place.clone()));
 
-        let (rval, op_ty) = self.visit_binary_arithmetic_logic(compound_op, lhs_copy, rhs_op, left, right, mir_ty);
+        let (rval, op_ty) = self.visit_binary_arithmetic_logic(compound_op, lhs_copy, rhs_op, mir_ty);
         let result_op = self.emit_rvalue_to_operand(rval, op_ty);
 
         let truncated_op = self.emit_cast(result_op, mir_ty);
@@ -1200,7 +1130,7 @@ impl<'a> MirGen<'a> {
                 Some(
                     qt_params
                         .into_iter()
-                        .map(|qt| self.lower_qual_type(qt))
+                        .map(|qt| self.lower_type(qt.ty()))
                         .collect::<smallvec::SmallVec<[TypeId; 8]>>(),
                 )
             } else {
@@ -1217,8 +1147,8 @@ impl<'a> MirGen<'a> {
 
             // Apply conversions for function arguments if needed
             // The resolved type of CallArg is same as inner expr.
-            let arg_ty = self.ast.qual_type_of(arg);
-            let arg_mir_ty = self.lower_qual_type(arg_ty);
+            let arg_qt = self.ast.qual_type_of(arg);
+            let arg_mir_ty = self.lower_type(arg_qt.ty());
 
             // Use the parameter type as the target type for conversions, if available
             let target_mir_ty = if let Some(ref param_types_vec) = param_types {
@@ -1257,23 +1187,23 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_member_access_as_place(&mut self, obj: NodeRef, field_name: NameId, is_arrow: bool) -> Place {
-        let mut obj_qt = self.ast.qual_type_of(obj);
+        let mut qt = self.ast.qual_type_of(obj);
 
         // Handle implicit conversions (like array-to-pointer decay) for arrow access
         let record_ty = if is_arrow {
             if let Some(conversions) = self.ast.semantic_info.conversions.get(&obj.index()) {
                 for conv in conversions {
                     if let Conversion::PointerDecay { to } = conv {
-                        obj_qt = QualType::unqualified(*to);
+                        qt = QualType::unqualified(*to);
                     }
                 }
             }
             self.registry
-                .get_pointee(obj_qt.ty())
+                .get_pointee(qt.ty())
                 .expect("ICE: Arrow access on non-pointer type")
                 .ty()
         } else {
-            obj_qt.ty()
+            qt.ty()
         };
 
         if !record_ty.is_record() {
@@ -1322,14 +1252,14 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_index_access_as_place(&mut self, arr: NodeRef, idx: NodeRef) -> Place {
-        let arr_ty = self.ast.qual_type_of(arr);
-        let idx_ty = self.ast.qual_type_of(idx);
+        let arr_qt = self.ast.qual_type_of(arr);
+        let idx_qt = self.ast.qual_type_of(idx);
 
         // Handle both arr[idx] and idx[arr] (subscripting is commutative in C)
         // One must be a pointer/array, the other must be an integer
-        let (sequence, index) = if arr_ty.is_array() || arr_ty.is_pointer() {
+        let (sequence, index) = if arr_qt.is_array() || arr_qt.is_pointer() {
             (arr, idx)
-        } else if idx_ty.is_array() || idx_ty.is_pointer() {
+        } else if idx_qt.is_array() || idx_qt.is_pointer() {
             (idx, arr)
         } else {
             panic!("ICE: Index access: neither operand is an array or pointer type");
@@ -1338,7 +1268,7 @@ impl<'a> MirGen<'a> {
         // In C, arr[idx] is equivalent to *(arr + idx)
         // However, for global initialization, we prefer to stay as ArrayIndex if possible
         // to avoid emitting instructions (PtrAdd) that would require temporary locals.
-        let arr_operand = if self.func_state.is_none() && arr_ty.is_array() {
+        let arr_operand = if self.func_state.is_none() && arr_qt.is_array() {
             let p = self.visit_expression_as_place(sequence);
             Operand::Copy(Box::new(p))
         } else {
@@ -1357,8 +1287,8 @@ impl<'a> MirGen<'a> {
             self.deref_operand(result_op)
         } else {
             // Array-based indexing: use Place::ArrayIndex
-            let arr_ty = self.ast.qual_type_of(sequence);
-            let mir_ty = self.lower_qual_type(arr_ty);
+            let arr_qt = self.ast.qual_type_of(sequence);
+            let mir_ty = self.lower_type(arr_qt.ty());
             let arr_place = self.ensure_place(arr_operand, mir_ty);
             Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))
         }
@@ -1367,7 +1297,7 @@ impl<'a> MirGen<'a> {
     fn visit_inc_dec_expr(&mut self, expr: NodeRef, is_inc: bool, is_post: bool, need_value: bool) -> Operand {
         let operand = self.visit_expression(expr, true);
         let operand_ty = self.ast.get_resolved_type(expr).unwrap();
-        let mir_ty = self.lower_qual_type(operand_ty);
+        let mir_ty = self.lower_type(operand_ty.ty());
 
         if self.ast.get_value_category(expr) != Some(ValueCategory::LValue) {
             panic!("Inc/Dec operand must be an lvalue");
@@ -1380,7 +1310,7 @@ impl<'a> MirGen<'a> {
         };
 
         if operand_ty.is_atomic() {
-            return self.visit_atomic_inc_dec(expr, *place, mir_ty, is_inc, is_post);
+            return self.visit_atomic_inc_dec(*place, mir_ty, is_inc, is_post);
         }
 
         // If it's post-inc/dec and we need the value, save the old value
@@ -1393,7 +1323,7 @@ impl<'a> MirGen<'a> {
         };
 
         // Determine MIR operation and Rvalue
-        let rval = self.create_inc_dec_rvalue(Operand::Copy(place.clone()), operand_ty, is_inc);
+        let rval = self.create_inc_dec_rvalue(Operand::Copy(place.clone()), operand_ty.ty(), is_inc);
 
         // Perform the assignment
         if is_post && !need_value {
@@ -1423,14 +1353,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn visit_atomic_inc_dec(
-        &mut self,
-        expr: NodeRef,
-        place: Place,
-        mir_ty: TypeId,
-        is_inc: bool,
-        is_post: bool,
-    ) -> Operand {
+    fn visit_atomic_inc_dec(&mut self, place: Place, mir_ty: TypeId, is_inc: bool, is_post: bool) -> Operand {
         let ptr = Operand::AddressOf(Box::new(place));
         let op = if is_inc { BinaryIntOp::Add } else { BinaryIntOp::Sub };
         let step = self.create_int_operand(1);
@@ -1441,12 +1364,12 @@ impl<'a> MirGen<'a> {
             old_val
         } else {
             let bin_op = if is_inc { BinaryOp::Add } else { BinaryOp::Sub };
-            let (new_val_rval, _) = self.visit_binary_arithmetic_logic(bin_op, old_val, step, expr, expr, mir_ty);
+            let (new_val_rval, _) = self.visit_binary_arithmetic_logic(bin_op, old_val, step, mir_ty);
             self.emit_rvalue_to_operand(new_val_rval, mir_ty)
         }
     }
 
-    fn create_inc_dec_rvalue(&mut self, operand: Operand, operand_ty: QualType, is_inc: bool) -> Rvalue {
+    fn create_inc_dec_rvalue(&mut self, operand: Operand, operand_ty: TypeRef, is_inc: bool) -> Rvalue {
         let one_const = self.create_int_operand(1);
         let minus_one_const = self.create_int_operand(-1);
 
@@ -1454,7 +1377,7 @@ impl<'a> MirGen<'a> {
             let op = if is_inc { BinaryOp::Add } else { BinaryOp::Sub };
             self.create_pointer_arithmetic_rvalue(operand, one_const, op)
         } else if operand_ty.is_complex() {
-            let mir_ty = self.lower_qual_type(operand_ty);
+            let mir_ty = self.lower_type(operand_ty);
             let (real, imag) = self.get_complex_components(operand, mir_ty);
             let element_ty = match self.mb.get_type(mir_ty) {
                 MirType::Record { field_types, .. } => field_types[0],
@@ -1467,7 +1390,7 @@ impl<'a> MirGen<'a> {
 
             Rvalue::StructLiteral(vec![(0, res_real), (1, imag)])
         } else {
-            let mir_ty_id = self.lower_qual_type(operand_ty);
+            let mir_ty_id = self.lower_type(operand_ty);
             let mir_ty = self.mb.get_type(mir_ty_id);
 
             if mir_ty.is_float() {
@@ -1503,10 +1426,10 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn visit_builtin_va_arg(&mut self, qt: QualType, expr: NodeRef) -> Operand {
+    fn visit_builtin_va_arg(&mut self, ty: TypeRef, expr: NodeRef) -> Operand {
         let ap_op = self.visit_expression(expr, true);
         let ap = self.ensure_valist_place(ap_op);
-        let mir_ty = self.lower_qual_type(qt);
+        let mir_ty = self.lower_type(ty);
         let rval = Rvalue::BuiltinVaArg(ap, mir_ty);
         self.emit_rvalue_to_operand(rval, mir_ty)
     }

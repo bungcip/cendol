@@ -1920,27 +1920,22 @@ impl TypeRegistry {
         qt
     }
 
-    pub(crate) fn canonical_qual_type(&self, qt: QualType) -> QualType {
-        let mut ty = qt.ty();
-
-        // Bolt ⚡: Fast path for non-alias types.
-        // Pointers, arrays, builtins, records, and enums are terminal types
-        // that do not require an alias resolution loop.
+    pub(crate) fn canonical_type(&self, mut ty: TypeRef) -> TypeRef {
         if ty.class() != crate::semantic::types::TypeClass::Alias {
-            return qt;
+            return ty;
         }
-
-        // All inline types are non-alias terminal types, handled above.
-        // Registry aliases can be recursive (typedef to another typedef).
-        // Bolt ⚡: Match on reference to avoid cloning the large TypeKind enum.
         while let TypeKind::Alias(inner) = &self.types[ty.index()].kind {
             ty = *inner;
         }
-        QualType::new(ty, qt.quals())
+        ty
     }
 
-    pub(crate) fn canonical_type(&self, ty: TypeRef) -> TypeRef {
-        self.canonical_qual_type(QualType::unqualified(ty)).ty()
+    pub(crate) fn canonical_qual_type(&self, qt: QualType) -> QualType {
+        let ty = qt.ty();
+        if ty.class() != crate::semantic::types::TypeClass::Alias {
+            return qt;
+        }
+        QualType::new(self.canonical_type(ty), qt.quals())
     }
 
     pub(crate) fn is_compatible(&self, mut a: QualType, mut b: QualType) -> bool {

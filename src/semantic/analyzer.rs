@@ -1572,8 +1572,17 @@ impl<'a> SemanticAnalyzer<'a> {
 
         let (result_qt, common_qt) = self.analyze_binary_operation_types(lhs, op, lhs_promoted, rhs_promoted)?;
 
+        let is_pointer_arithmetic =
+            matches!(op, BinaryOp::Add | BinaryOp::Sub) && (lhs_promoted.is_pointer() || rhs_promoted.is_pointer());
+
         // For arithmetic/comparison operations, operands should be converted to a common type.
-        let lhs_target = common_qt.ty();
+        // However, in pointer arithmetic, the integer operand is NOT cast to a pointer.
+        let lhs_target = if is_pointer_arithmetic && lhs_promoted.is_integer() {
+            lhs_promoted.ty()
+        } else {
+            common_qt.ty()
+        };
+
         if lhs_promoted.ty() != lhs_target || self.is_numeric_literal(lhs) {
             // Check if this conversion is already the last one to avoid duplicates
             // resolve_binary_operation_types might be called multiple times in some complex nested scenarios
@@ -1589,7 +1598,11 @@ impl<'a> SemanticAnalyzer<'a> {
             }
         }
 
-        let rhs_target = common_qt.ty();
+        let rhs_target = if is_pointer_arithmetic && rhs_promoted.is_integer() {
+            rhs_promoted.ty()
+        } else {
+            common_qt.ty()
+        };
         if rhs_promoted.ty() != rhs_target || self.is_numeric_literal(rhs) {
             let needs_push = match self.semantic_info.conversions.get(&rhs.index()).and_then(|v| v.last()) {
                 Some(Conversion::IntegerCast { to, .. }) => *to != rhs_target,

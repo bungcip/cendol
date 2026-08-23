@@ -796,10 +796,7 @@ fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut Body
                         params,
                         is_variadic,
                     } => (
-                        (
-                            *return_type,
-                            params.iter().copied().collect::<smallvec::SmallVec<[TypeId; 8]>>(),
-                        ),
+                        (*return_type, smallvec::SmallVec::from_slice(params)),
                         false,
                         *is_variadic,
                     ),
@@ -810,10 +807,7 @@ fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut Body
                     params,
                     is_variadic,
                 } => (
-                    (
-                        *return_type,
-                        params.iter().copied().collect::<smallvec::SmallVec<[TypeId; 8]>>(),
-                    ),
+                    (*return_type, smallvec::SmallVec::from_slice(params)),
                     true,
                     *is_variadic,
                 ),

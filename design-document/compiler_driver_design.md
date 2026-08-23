@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Cendol compiler driver orchestrates the entire compilation pipeline, from source file input through native code generation and linking. It provides a command-line interface using a custom parser that natively supports GCC/Clang-style single-dash long options and manages the transition between different data representations (Source -> PPToken -> Token -> ParsedAst -> Ast -> MIR -> Object).
+The Cendol compiler driver orchestrates the entire compilation pipeline, from source file input through native code generation and linking. It provides a command-line interface using a custom parser that natively supports GCC/Clang-style single-dash long options and manages the transition between different data representations (Source -> PPToken -> Token -> PAst -> Ast -> MIR -> Object).
 
 ## Responsibilities
 
@@ -32,8 +32,8 @@ The `CompilerDriver` (in `src/driver/compiler.rs`) acts as the state container f
 1.  **Initialize**: Load configuration and setup the `SourceManager`.
 2.  **Preprocess**: Execute the `Preprocessor` to expand macros and handle directives.
 3.  **Lex**: Convert `PPToken` stream into `Token` stream.
-4.  **Parse**: Build a syntactic `ParsedAst`.
-5.  **Lower**: Transform `ParsedAst` into a semantic `Ast`, populating symbols and types.
+4.  **Parse**: Build a syntactic `PAst`.
+5.  **Lower**: Transform `PAst` into a semantic `Ast`, populating symbols and types.
 6.  **Analyze**: Perform type checking and side-table population (`SemanticInfo`).
 7.  **MIR Gen**: Lower the analyzed `Ast` to `MirModule`.
 8.  **Codegen**: Generate native code using the `ClifGen` (Cranelift) backend.

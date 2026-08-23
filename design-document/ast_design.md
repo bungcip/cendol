@@ -6,11 +6,11 @@ Cendol uses a unique Two-Stage AST architecture, optimized for both memory effic
 
 ## The Two-Stage Approach
 
-### 1. Syntactic AST (`ParsedAst`)
+### 1. Syntactic AST (`PAst`)
 Produced directly by the parser.
 - **Goal**: Rapidly capture the source structure without semantic overhead.
-- **Nodes**: `ParsedNode`.
-- **References**: `ParsedNodeRef`.
+- **Nodes**: `PNode`.
+- **References**: `PNodeRef`.
 - **Properties**: Purely syntactic; identifiers are just names (`NameId`), and types are just syntactic specifiers.
 
 ### 2. Semantic AST (`Ast`)

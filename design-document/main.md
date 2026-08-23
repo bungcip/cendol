@@ -23,7 +23,7 @@ This document outlines the design for Cendol, a high-performance C23 compiler wr
 ### Design Goals
 - **Performance**: Minimize memory allocations and maximize cache locality using flattened data structures.
 - **Standards Compliance**: Comprehensive C23 support including new literal types, digit separators, and enhanced preprocessor features.
-- **Modularity**: Clear separation between purely syntactic (`ParsedAst`) and semantically resolved (`Ast`) representation.
+- **Modularity**: Clear separation between purely syntactic (`PAst`) and semantically resolved (`Ast`) representation.
 - **Extensibility**: Backend-agnostic design with a typed MIR that serves as the bridge to native code generation.
 
 ## Architecture Overview
@@ -67,10 +67,10 @@ Transforms C source code by handling macro expansion, conditional compilation, a
 Converts the `PPToken` stream into a lexical `Token` stream. Recognizes C23 binary literals, digit separators, and new keywords like `nullptr`, `constexpr`, and `static_assert`.
 
 ### 3. Parser Phase
-Constructs a `ParsedAst` using Pratt parsing for expressions and recursive descent for statements. Handles the syntactic structure of declarations without resolving symbols or types.
+Constructs a `PAst` using Pratt parsing for expressions and recursive descent for statements. Handles the syntactic structure of declarations without resolving symbols or types.
 
 ### 4. Semantic Lowering Phase
-Transforms the purely syntactic `ParsedAst` into a semantic `Ast`. This phase resolves identifiers to symbols, computes types for declarations (pointers, arrays, functions), and manages hierarchical scopes.
+Transforms the purely syntactic `PAst` into a semantic `Ast`. This phase resolves identifiers to symbols, computes types for declarations (pointers, arrays, functions), and manages hierarchical scopes.
 
 ### 5. Semantic Analysis Phase
 Performs type checking and validation on the `Ast`. It computes types for all expression nodes, resolves implicit conversions (decay, promotion), and validates C23 semantic constraints. Results are stored in the `SemanticInfo` side table.

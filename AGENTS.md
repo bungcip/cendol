@@ -80,28 +80,28 @@ pub fn some_internal_helper() { ... }
 Cendol uses a **two-AST architecture** with a lowering phase between them:
 
 ```
-Parser  →  ParsedAst  →  Semantic Lowering  →  Ast  →  Semantic Analyzer  →  MIR Gen
+Parser  →  PAst  →  Semantic Lowering  →  Ast  →  Semantic Analyzer  →  MIR Gen
               ↑                   ↑                ↑
        purely syntactic    resolves types,    type-resolved,
        no symbol lookup    scopes, symbols    enriched with
                                               semantic info
 ```
 
-### ParsedAst (Syntactic AST)
+### PAst (Syntactic AST)
 
 Defined in `src/ast/parsed.rs`. Produced by the **Parser**. Contains only syntactic information — no type resolution, no symbol lookup, no scope tracking.
 
 ```rust
-pub struct ParsedAst {
-    pub nodes: Vec<ParsedNode>,          // Syntactic nodes
-    pub parsed_types: ParsedTypeArena,   // Type syntax storage
+pub struct PAst {
+    pub nodes: Vec<PNode>,          // Syntactic nodes
+    pub parsed_types: PTypeArena,   // Type syntax storage
 }
 ```
 
-- Uses `ParsedNodeRef` (a `NonZeroU32`) for child references.
-- Node kinds are `ParsedNodeKind` — identifiers are just `Ident(NameId)` with no symbol resolution.
-- Declarations store raw specifiers (`ThinVec<ParsedDeclSpecifier>`) and declarators (`ParsedDeclarator`).
-- Uses `Vec` for variable-length children (e.g., `CompoundStatement(Vec<ParsedNodeRef>)`).
+- Uses `PNodeRef` (a `NonZeroU32`) for child references.
+- Node kinds are `PNodeKind` — identifiers are just `Ident(NameId)` with no symbol resolution.
+- Declarations store raw specifiers (`ThinVec<DeclSpec>`) and declarators (`DeclaratorRef`).
+- Uses `Box<[PNodeRef]>` or `Vec` for variable-length children (e.g., `CompoundStmt(Box<[PNodeRef]>, ScopeId)`).
 
 ### Ast (Semantic AST)
 
@@ -126,24 +126,24 @@ pub struct Ast {
 
 ### Key Differences
 
-| Aspect           | `ParsedAst`                              | `Ast`                                          |
+| Aspect           | `PAst`                                   | `Ast`                                          |
 | ---------------- | ---------------------------------------- | ---------------------------------------------- |
 | Produced by      | Parser                                   | Semantic Lowering                              |
 | Identifiers      | `Ident(NameId)`                          | `Ident(NameId, SymbolRef)`                     |
-| Declarations     | `Declaration(ParsedDecl)`                | `VarDecl`, `FunctionDecl`, `TypedefDecl`, etc. |
-| Types            | `ParsedType` (syntactic)                 | `QualType` / `TypeRef` (resolved)              |
-| Children storage | `Vec<ParsedNodeRef>`                     | `NodeRef` + length (flattened)                 |
+| Declarations     | `Declaration(PDecl)`                     | `VarDecl`, `FunctionDecl`, `TypedefDecl`, etc. |
+| Types            | `PType` (syntactic)                      | `QualType` / `TypeRef` (resolved)              |
+| Children storage | `Box<[PNodeRef]>`                        | `NodeRef` + length (flattened)                 |
 | Node data        | Heap-allocated (`Vec`, `Box`, `ThinVec`) | `Copy` structs (cache-friendly)                |
-| Scopes           | None                                     | `ScopeId` on scope-bearing nodes               |
+| Scopes           | `ScopeId` on some nodes                  | `ScopeId` on scope-bearing nodes               |
 
 ### Semantic Lowering (`src/semantic/lowering.rs`)
 
-The `LowerCtx` struct orchestrates the conversion from `ParsedAst` → `Ast`:
+The `LowerCtx` struct orchestrates the conversion from `PAst` → `Ast`:
 
 - **Type Resolution**: Converts `TypeSpec` → `QualType` via `TypeRegistry`.
 - **Symbol Insertion**: Populates `SymbolTable` with resolved declarations.
 - **Scope Construction**: Creates and manages `ScopeId` for block/function/file scopes.
-- **Declarator Processing**: Recursively applies `ParsedDeclarator` chains (pointers, arrays, functions) to build final types.
+- **Declarator Processing**: Recursively applies `DeclaratorRef` chains (pointers, arrays, functions) to build final types.
 - **Constraint Checking**: Enforces C11 rules on storage classes, qualifiers, and declarations.
 
 ## Error Handling
@@ -368,7 +368,7 @@ When writing tests, choose the minimum phase needed to validate your assertion.
 1. **Parser changes**: Add to the appropriate submodule in `src/parser/`. Update `TokenKind` if new keywords are needed.
 2. **AST nodes**: Add new variants to `NodeKind` in `src/ast/nodes.rs`.
 3. **Semantic rules**: Add error variants to `SemanticErrorKind` in `src/semantic/errors.rs`, implement checks in `src/semantic/analyzer.rs`.
-4. **AST lowering**: Update `src/semantic/lowering.rs` to lower new ParsedAst nodes into AST nodes.
+4. **AST lowering**: Update `src/semantic/lowering.rs` to lower new PAst nodes into AST nodes.
 5. **MIR generation**: Update `src/codegen/mir_gen.rs` (`MirGen`) to generate MIR from the new AST nodes.
 6. **Code generation**: Update `src/codegen/clif_gen.rs` to handle new MIR constructs.
 7. **Tests**: Create test file(s) in `src/tests/`, register in `src/tests.rs`, use the established helpers.

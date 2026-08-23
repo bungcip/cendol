@@ -2,11 +2,11 @@
 
 ## Overview Diagram
 
-The lowering phase acts as the bridge between the purely syntactic `ParsedAst` and the semantically meaningful `Ast`.
+The lowering phase acts as the bridge between the purely syntactic `PAst` and the semantically meaningful `Ast`.
 
 ```mermaid
 flowchart TD
-    A[ParsedAst] --> B[LowerCtx]
+    A[PAst] --> B[LowerCtx]
     B --> C[Symbol Insertion]
     B --> D[Type Resolution]
     B --> E[Scope Management]
@@ -23,9 +23,9 @@ When the lowerer encounters a declaration, it follows this sequence:
 
 ```mermaid
 flowchart TD
-    A[ParsedNode::Declaration] --> B[lower_decl_specifiers]
+    A[PNode::Declaration] --> B[lower_decl_specifiers]
     B --> C[DeclSpecInfo]
-    C --> D[forEach ParsedInitDeclarator]
+    C --> D[forEach PInitDeclarator]
     D --> E[apply_parsed_declarator]
     E --> F[Final QualType]
     F --> G[Define Symbol]

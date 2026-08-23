@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Cendol parser consumes lexical tokens and constructs a `ParsedAst`. It is designed for high performance and strict C23 grammar compliance.
+The Cendol parser consumes lexical tokens and constructs a `PAst`. It is designed for high performance and strict C23 grammar compliance.
 
 ## Parsing Strategy
 
@@ -14,7 +14,7 @@ The parser uses a hybrid approach:
 
 - **Syntactic Validation**: Ensure the token stream follows C23 grammar rules.
 - **Disambiguation**: Resolve the "typedef name" vs "identifier" ambiguity using a `TypeDefContext`.
-- **AST Construction**: Populate the `ParsedAst` vectors with nodes and syntactic types.
+- **AST Construction**: Populate the `PAst` vectors with nodes and syntactic types.
 - **Error Recovery**: Synchronize to statement/block boundaries after a syntax error to report multiple diagnostics.
 
 ## Disambiguation and Context

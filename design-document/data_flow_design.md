@@ -10,8 +10,8 @@ The transformation of source code into machine code in Cendol involves a sequenc
 | :--- | :--- | :--- | :--- |
 | **Preprocessing** | Source Bytes | `PPToken` Stream | Text -> Macros/Includes handled |
 | **Lexing** | `PPToken` Stream | `Token` Stream | Syntax classification |
-| **Parsing** | `Token` Stream | `ParsedAst` | Linear -> Hierarchical (Syntactic) |
-| **Lowering** | `ParsedAst` | `Ast` | Syntactic -> Semantic (Symbols/Types) |
+| **Parsing** | `Token` Stream | `PAst` | Linear -> Hierarchical (Syntactic) |
+| **Lowering** | `PAst` | `Ast` | Syntactic -> Semantic (Symbols/Types) |
 | **Analysis** | `Ast` | `SemanticInfo` | Validation & Annotation |
 | **MIR Gen** | `Ast` + `SemanticInfo` | `MirModule` | High-level -> Intermediate IR |
 | **Codegen** | `MirModule` | Object Bytes | IR -> Machine Code |

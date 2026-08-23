@@ -381,7 +381,8 @@
 
 (spec (RegMemImm.Imm simm32) (provide
       (= result
-            (bvor (bvshl #b10 62)(zero_ext 64 simm32)))))
+            (bvor
+                  #x8000000000000000 (zero_ext 64 simm32)))))
 
 (spec (RegMemImm.Mem addr) (provide
       (= result
@@ -1312,6 +1313,12 @@
 
 (decl pure use_fma () bool)
 (extern constructor use_fma use_fma)
+
+(decl pure use_avx_vnni () bool)
+(extern constructor use_avx_vnni use_avx_vnni)
+
+(decl pure use_avx512vnni () bool)
+(extern constructor use_avx512vnni use_avx512vnni)
 
 (decl pure has_sse3 () bool)
 (extern constructor has_sse3 has_sse3)
@@ -2946,6 +2953,16 @@
 
 (decl x64_pmaddubsw (Xmm XmmMem128) Xmm)
 (rule (x64_pmaddubsw src1 src2) (x64_pmaddubsw_a_or_avx src1 src2))
+
+;; AVX-VNNI `vpdpbusd acc, uns, sgn`: acc += dot(u8 lanes of `uns`, i8 lanes of
+;; `sgn`) grouped 16->4. `acc` is the read-write accumulator.
+(decl x64_vpdpbusd (Xmm Xmm XmmMem128) Xmm)
+(rule (x64_vpdpbusd acc uns sgn) (x64_vpdpbusd_a acc uns sgn))
+
+;; EVEX AVX512-VNNI form of the same op, for hosts with AVX512VNNI+AVX512VL but
+;; not the VEX AVX-VNNI (e.g. Ice Lake, Cascade Lake).
+(decl x64_vpdpbusd_evex (Xmm Xmm XmmMem128) Xmm)
+(rule (x64_vpdpbusd_evex acc uns sgn) (x64_vpdpbusd_b acc uns sgn))
 
 ;; Helper for creating `insertps` instructions.
 (decl x64_insertps (Xmm XmmMem32 u8) Xmm)

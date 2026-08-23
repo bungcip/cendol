@@ -62,12 +62,18 @@ def main():
 
         # 3. Generate patch of our changes
         print("Generating diff of our local modifications...")
-        # git diff --no-index returns 1 if there are differences, so we don't check exit code here
+        # To get good paths in the patch, we copy both to temp dir side-by-side
+        our_copy_dir = os.path.join(temp_dir, "our_cranelift")
+        shutil.copytree(LOCAL_CRANELIFT_DIR, our_copy_dir)
+        
+        base_cranelift_dir = os.path.join(temp_dir, "base_cranelift")
+        shutil.copytree(os.path.join(base_clone_dir, "cranelift"), base_cranelift_dir)
+        
         diff_res = run_command([
             "git", "diff", "--no-index",
-            os.path.join(base_clone_dir, "cranelift"),
-            LOCAL_CRANELIFT_DIR
-        ], check=False)
+            "base_cranelift",
+            "our_cranelift"
+        ], cwd=temp_dir, check=False)
         
         if diff_res.returncode == 0:
             print("No local changes detected in the fork. Just updating upstream source...")
@@ -81,16 +87,15 @@ def main():
         # 4. Replace local Cranelift directory with target upstream cranelift
         print(f"Replacing local {LOCAL_CRANELIFT_DIR} with {target_version} upstream...")
         if os.path.exists(LOCAL_CRANELIFT_DIR):
-            # Keep the UPSTREAM_VERSION file path valid
             shutil.rmtree(LOCAL_CRANELIFT_DIR)
         shutil.copytree(os.path.join(target_clone_dir, "cranelift"), LOCAL_CRANELIFT_DIR)
 
         # 5. Apply the generated patch of our changes
         if has_changes:
             print("Applying local modifications patch...")
-            # We use git apply with --directory to apply the diff to the newly copied directory
+            # We use -p2 to strip 'a/base_cranelift/' and '--directory=crates/cranelift' to apply it there.
             apply_res = run_command([
-                "git", "apply", "--reject", "--whitespace=nowarn", patch_file
+                "git", "apply", "-p2", "--directory=crates/cranelift", "--reject", "--whitespace=nowarn", patch_file
             ], check=False)
             
             if apply_res.returncode != 0:

@@ -187,6 +187,14 @@ impl Context for IsleContext<'_, '_, MInst, AArch64Backend> {
         }
     }
 
+    fn use_i8mm(&mut self, _: Inst) -> Option<()> {
+        if self.backend.isa_flags.has_i8mm() {
+            Some(())
+        } else {
+            None
+        }
+    }
+
     fn use_fp16(&mut self) -> bool {
         self.backend.isa_flags.has_fp16()
     }
@@ -824,6 +832,15 @@ impl Context for IsleContext<'_, '_, MInst, AArch64Backend> {
     }
 
     fn uimm12_scaled_from_i64(&mut self, val: i64, ty: Type) -> Option<UImm12Scaled> {
+        UImm12Scaled::maybe_from_i64(val, ty)
+    }
+
+    /// Like `uimm12_scaled_from_i64`, but rejects a zero value so `base + index
+    /// + 0` keeps its single-instruction `RegExtended` amode.
+    fn uimm12_scaled_nonzero_from_i64(&mut self, val: i64, ty: Type) -> Option<UImm12Scaled> {
+        if val == 0 {
+            return None;
+        }
         UImm12Scaled::maybe_from_i64(val, ty)
     }
 

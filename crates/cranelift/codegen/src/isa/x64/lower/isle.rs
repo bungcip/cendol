@@ -518,6 +518,14 @@ impl Context for IsleContext<'_, '_, MInst, X64Backend> {
         self.backend.x64_flags.has_avx() && self.backend.x64_flags.has_fma()
     }
 
+    fn use_avx_vnni(&mut self) -> bool {
+        self.backend.x64_flags.has_avx() && self.backend.x64_flags.has_avx_vnni()
+    }
+
+    fn use_avx512vnni(&mut self) -> bool {
+        self.backend.x64_flags.has_avx512vl() && self.backend.x64_flags.has_avx512vnni()
+    }
+
     #[inline]
     fn has_sse3(&mut self) -> bool {
         self.backend.x64_flags.has_sse3()

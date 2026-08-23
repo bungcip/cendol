@@ -1,13 +1,12 @@
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, format_err};
 use clap::{ArgAction, Parser};
 use cranelift_codegen_meta::{generate_isle, isle::get_isle_compilations};
 use cranelift_isle_veri::runner::{Filter, Runner, SolverBackend, SolverRule};
-
-/// Configuration file applied by default when no `--config` is given.
-const DEFAULT_CONFIG: &str = "cranelift/isle/veri/configs/aarch64-fast.args";
+use cranelift_isle_veri_caching::{Cache, CacheMode};
 
 #[derive(Parser)]
 // Allow a single-valued argument to appear more than once, with the last
@@ -96,6 +95,32 @@ struct Opts {
     /// Dump debug output.
     #[arg(long)]
     debug: bool,
+
+    /// Read cached SMT query results from this directory (read-only).
+    ///
+    /// Cache hits found here are served without invoking the solver. In
+    /// `read-write` mode, entries used from the source are also copied into
+    /// the destination (see `--cache-dest-dir`).
+    #[arg(long)]
+    cache_source_dir: Option<std::path::PathBuf>,
+
+    /// Write (and read) cached SMT query results in this directory.
+    ///
+    /// New results (solver invocations on a cache miss) are written here, as
+    /// are entries retained from the source. Required in `read-write` mode.
+    #[arg(long)]
+    cache_dest_dir: Option<std::path::PathBuf>,
+
+    /// Cache mode.
+    ///
+    /// - `read-write` (default): serve hits from the source and destination
+    ///   caches; on a miss, invoke the solver and write the result to the
+    ///   destination. Requires `--cache-dest-dir`.
+    /// - `read-only-enforcing`: serve hits from the source cache only and fail
+    ///   the run on any miss (never invokes the solver). Requires
+    ///   `--cache-source-dir`.
+    #[arg(long, default_value = "read-write")]
+    cache_mode: CacheMode,
 }
 
 impl Opts {
@@ -157,11 +182,11 @@ fn main() -> Result<()> {
     // Expand any `--config` files into the argument list before parsing.
     // Configuration arguments are placed ahead of the arguments given on the
     // command line so that the command line takes precedence.
+    // No configuration file is applied unless one is asked for: a run should
+    // only ever have the filters and exclusions that are visible in its own
+    // command line.
     let raw: Vec<String> = std::env::args().collect();
-    let mut config_paths = collect_config_paths(&raw[1..]);
-    if config_paths.is_empty() {
-        config_paths.push(std::path::PathBuf::from(DEFAULT_CONFIG));
-    }
+    let config_paths = collect_config_paths(&raw[1..]);
     let opts = if config_paths.is_empty() {
         Opts::parse()
     } else {
@@ -263,9 +288,45 @@ fn main() -> Result<()> {
     runner.skip_solver(opts.skip_solver);
     runner.debug(opts.debug);
 
+    // Setup caching if any cache directory is provided.
+    let caching = opts.cache_source_dir.is_some() || opts.cache_dest_dir.is_some();
+    if caching {
+        match opts.cache_mode {
+            CacheMode::ReadOnlyEnforcing if opts.cache_source_dir.is_none() => {
+                return Err(format_err!(
+                    "--cache-mode read-only-enforcing requires --cache-source-dir"
+                ));
+            }
+            CacheMode::ReadWrite if opts.cache_dest_dir.is_none() => {
+                return Err(format_err!(
+                    "--cache-mode read-write requires --cache-dest-dir"
+                ));
+            }
+            _ => {}
+        }
+        let cache = Cache::open(
+            opts.cache_source_dir.clone(),
+            opts.cache_dest_dir.clone(),
+            opts.cache_mode,
+        );
+        runner.set_cache(Arc::new(cache));
+    }
+
     // Summarize what is being excluded and where output is going before
     // starting verification.
     println!("========================== Verification configuration =========================");
+    println!(
+        "Config files:       {}",
+        if config_paths.is_empty() {
+            "none".to_string()
+        } else {
+            config_paths
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
+    );
     println!("Number of threads:  {}", rayon::current_num_threads());
     println!("Working directory:  {}", work_dir.display());
     println!("Log directory:      {}", log_dir.display());
@@ -307,6 +368,19 @@ fn main() -> Result<()> {
         }
     }
     println!("==========================");
+
+    // Print cache config.
+    if caching {
+        let dir_str = |d: &Option<std::path::PathBuf>| match d {
+            Some(p) => p.display().to_string(),
+            None => "(none)".to_string(),
+        };
+        println!("Cache mode:         {:?}", opts.cache_mode);
+        println!("Cache source:       {}", dir_str(&opts.cache_source_dir));
+        println!("Cache destination:  {}", dir_str(&opts.cache_dest_dir));
+    } else {
+        println!("Cache:              off");
+    }
 
     runner.run()?;
 

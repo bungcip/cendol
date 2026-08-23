@@ -412,6 +412,23 @@
                         c))))
       (sdot c a b))
 
+;; With FEAT_I8MM, fold the same tree in its mixed unsigned-by-signed form
+;; into a single `usdot`. This is the shape quantized inference produces —
+;; unsigned activations against signed weights — and it differs from the
+;; `sdot` case above only in that one operand widens unsigned.
+(rule 9 (lower (and (use_i8mm)
+                    (has_type $I32X4
+                      (iadd _
+                        (iadd_pairwise _
+                          (iadd_pairwise _
+                            (swiden_low _ lo @ (imul _ (uwiden_low _ a) (swiden_low _ b)))
+                            (swiden_high _ lo))
+                          (iadd_pairwise _
+                            (swiden_low _ hi @ (imul _ (uwiden_high _ a) (swiden_high _ b)))
+                            (swiden_high _ hi)))
+                        c))))
+      (usdot c a b))
+
 ;;;; Rules for `iabs` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (rule -1 (lower (iabs ty @ (multi_lane _ _) x))
@@ -1574,7 +1591,7 @@
 ;; Shift for vector types.
 (rule -3 (lower (ishl (ty_vec128 ty) x y))
       (let ((size VectorSize (vector_size ty))
-            (masked_shift_amt Reg (and_imm $I32 y (shift_mask ty)))
+            (masked_shift_amt Reg (and_imm $I32 (lo_reg y) (shift_mask ty)))
             (shift Reg (vec_dup masked_shift_amt size)))
         (sshl x shift size)))
 (rule -2 (lower (ishl (ty_vec128 ty) x (iconst _ (u64_from_imm64 n))))
@@ -1645,7 +1662,7 @@
 ;; the input anyway.
 (rule -4 (lower (ushr (ty_vec128 ty) x y))
       (let ((size VectorSize (vector_size ty))
-            (masked_shift_amt Reg (and_imm $I32 y (shift_mask ty)))
+            (masked_shift_amt Reg (and_imm $I32 (lo_reg y) (shift_mask ty)))
             (shift Reg (vec_dup (sub $I64 (zero_reg) masked_shift_amt) size)))
         (ushl x shift size)))
 (rule -3 (lower (ushr (ty_vec128 ty) x (iconst _ (u64_from_imm64 n))))
@@ -1703,7 +1720,7 @@
 ;; input anyway.
 (rule -3 (lower (sshr (ty_vec128 ty) x y))
       (let ((size VectorSize (vector_size ty))
-            (masked_shift_amt Reg (and_imm $I32 y (shift_mask ty)))
+            (masked_shift_amt Reg (and_imm $I32 (lo_reg y) (shift_mask ty)))
             (shift Reg (vec_dup (sub $I64 (zero_reg) masked_shift_amt) size)))
         (sshl x shift size)))
 (rule -2 (lower (sshr (ty_vec128 ty) x (iconst _ (u64_from_imm64 n))))

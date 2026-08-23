@@ -3,9 +3,9 @@ use crate::ast::*;
 use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::{LangOptions, SignedOverflowMode, Visibility};
 use crate::mir::{
-    AtomicMemOrder, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, GlobalDecl, GlobalId, LocalId,
-    MirArrayLayout, MirBlockId, MirBuilder, MirFieldLayout, MirFunctionId, MirLinkage, MirProgram, MirRecordLayout,
-    MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
+    AtomicMemOrder, BinaryFloatOp, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, GlobalDecl, GlobalId,
+    LocalId, MirArrayLayout, MirBlockId, MirBuilder, MirFieldLayout, MirFunctionId, MirLinkage, MirProgram,
+    MirRecordLayout, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
 };
 use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::symbol_table::{Symbol, SymbolClass};
@@ -513,8 +513,8 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(super) fn operand_to_const_id_strict(&mut self, op: Operand, msg: &str) -> ConstValueId {
-        if let Some(id) = self.operand_to_const_id(&op) {
+    pub(super) fn operand_to_const(&mut self, op: Operand, msg: &str) -> ConstValueId {
+        if let Some(id) = self.try_operand_to_const(&op) {
             id
         } else {
             panic!("{} - Operand: {:?}", msg, op);
@@ -893,7 +893,7 @@ impl<'a> MirGen<'a> {
         let elem_mir_ty = self.lower_type(element_type);
 
         // 2. Compute total byte size: total_size = count * element_size
-        let total_size_op = self.emit_rvalue_to_operand(
+        let total_size_op = self.emit_rvalue(
             Rvalue::BinaryIntOp(crate::mir::BinaryIntOp::Mul, count_op, elem_size_op),
             size_t_ty,
         );
@@ -1037,7 +1037,7 @@ impl<'a> MirGen<'a> {
                 // because cleanups might modify the variables used in the return expression.
                 if self.has_any_cleanups() && !matches!(op, Operand::Constant(_)) {
                     let mir_ty = self.get_operand_type(&op);
-                    op = self.emit_rvalue_to_operand(Rvalue::Use(op), mir_ty);
+                    op = self.emit_rvalue(Rvalue::Use(op), mir_ty);
                 }
                 Some(op)
             }
@@ -1797,7 +1797,7 @@ impl<'a> MirGen<'a> {
                     _ => operand.clone(),
                 };
                 let rval = Rvalue::AtomicLoad(ptr_operand, AtomicMemOrder::SeqCst);
-                return self.emit_rvalue_to_operand(rval, target_type_id);
+                return self.emit_rvalue(rval, target_type_id);
             }
         }
 
@@ -1813,7 +1813,7 @@ impl<'a> MirGen<'a> {
             | Conversion::PointerCast { .. }
             | Conversion::FloatingCast { .. } => {
                 // Fold constant casts if types are compatible
-                if let Some(const_id) = self.operand_to_const_id(&operand) {
+                if let Some(const_id) = self.try_operand_to_const(&operand) {
                     let mir_type = self.mb.get_type(to_mir_type);
                     let const_val = &self.mb.get_constants()[const_id.index()];
 
@@ -2048,8 +2048,7 @@ impl<'a> MirGen<'a> {
                 // Real to Complex
                 let res_real = self.emit_cast(operand, to_element_mir_ty);
                 let zero_const = self.create_constant(to_element_mir_ty, ConstValueKind::Float(0.0));
-                let res_imag =
-                    self.emit_rvalue_to_operand(Rvalue::Use(Operand::Constant(zero_const)), to_element_mir_ty);
+                let res_imag = self.emit_rvalue(Rvalue::Use(Operand::Constant(zero_const)), to_element_mir_ty);
 
                 self.emit_complex_struct(res_real, res_imag, to_mir_ty)
             }
@@ -2093,7 +2092,8 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(super) fn emit_rvalue_to_operand(&mut self, rvalue: Rvalue, type_id: TypeId) -> Operand {
+    /// Emit an Rvalue and return an Operand representing the result.
+    pub(super) fn emit_rvalue(&mut self, rvalue: Rvalue, type_id: TypeId) -> Operand {
         if self.mb.get_type(type_id).is_void() {
             // For void expressions, just return a dummy operand.
             // Any side effects in the Rvalue's operands were already emitted.
@@ -2110,11 +2110,11 @@ impl<'a> MirGen<'a> {
 
     fn try_fold_rvalue_to_const(&mut self, rvalue: &Rvalue, type_id: TypeId) -> Option<ConstValueId> {
         match rvalue {
-            Rvalue::Use(op) => self.operand_to_const_id(op),
+            Rvalue::Use(op) => self.try_operand_to_const(op),
             Rvalue::StructLiteral(fields) => {
                 let mut const_fields = Vec::with_capacity(fields.len());
                 for (idx, op) in fields {
-                    let const_id = self.operand_to_const_id(op)?;
+                    let const_id = self.try_operand_to_const(op)?;
                     const_fields.push((*idx, const_id));
                 }
                 Some(self.create_constant(type_id, ConstValueKind::StructLiteral(const_fields)))
@@ -2122,14 +2122,14 @@ impl<'a> MirGen<'a> {
             Rvalue::ArrayLiteral(elements) => {
                 let mut const_elements = Vec::with_capacity(elements.len());
                 for op in elements {
-                    let const_id = self.operand_to_const_id(op)?;
+                    let const_id = self.try_operand_to_const(op)?;
                     const_elements.push(const_id);
                 }
                 Some(self.create_constant(type_id, ConstValueKind::ArrayLiteral(const_elements)))
             }
             Rvalue::PtrAdd(base, offset) | Rvalue::PtrSub(base, offset) => {
-                let base_const_id = self.operand_to_const_id(base)?;
-                let offset_const_id = self.operand_to_const_id(offset)?;
+                let base_const_id = self.try_operand_to_const(base)?;
+                let offset_const_id = self.try_operand_to_const(offset)?;
                 let base_const = self.mb.get_constant(base_const_id).clone();
                 let offset_const = self.mb.get_constant(offset_const_id).clone();
 
@@ -2183,30 +2183,24 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(super) fn emit_float_binop(
-        &mut self,
-        op: crate::mir::BinaryFloatOp,
-        lhs: Operand,
-        rhs: Operand,
-        ty: TypeId,
-    ) -> Operand {
-        self.emit_rvalue_to_operand(Rvalue::BinaryFloatOp(op, lhs, rhs), ty)
+    pub(super) fn emit_float_binop(&mut self, op: BinaryFloatOp, lhs: Operand, rhs: Operand, ty: TypeId) -> Operand {
+        self.emit_rvalue(Rvalue::BinaryFloatOp(op, lhs, rhs), ty)
     }
 
-    pub(super) fn emit_float_unop(&mut self, op: crate::mir::UnaryFloatOp, operand: Operand, ty: TypeId) -> Operand {
-        self.emit_rvalue_to_operand(Rvalue::UnaryFloatOp(op, operand), ty)
+    pub(super) fn emit_float_unop(&mut self, op: UnaryFloatOp, operand: Operand, ty: TypeId) -> Operand {
+        self.emit_rvalue(Rvalue::UnaryFloatOp(op, operand), ty)
     }
 
     pub(super) fn emit_complex_struct(&mut self, real: Operand, imag: Operand, ty: TypeId) -> Operand {
-        self.emit_rvalue_to_operand(Rvalue::StructLiteral(vec![(0, real), (1, imag)]), ty)
+        self.emit_rvalue(Rvalue::StructLiteral(vec![(0, real), (1, imag)]), ty)
     }
 
-    pub(super) fn operand_to_const_id(&mut self, operand: &Operand) -> Option<ConstValueId> {
+    pub(super) fn try_operand_to_const(&mut self, operand: &Operand) -> Option<ConstValueId> {
         match operand {
             Operand::Constant(id) => Some(*id),
             Operand::Cast(ty, inner) => {
                 // Recursively try to get constant from inner operand
-                if let Some(inner_const_id) = self.operand_to_const_id(inner) {
+                if let Some(inner_const_id) = self.try_operand_to_const(inner) {
                     let inner_const = self.mb.get_constant(inner_const_id).clone();
                     let mir_type = self.mb.get_type(*ty);
                     let truncated_kind = match inner_const.kind {
@@ -2478,7 +2472,7 @@ impl<'a> MirGen<'a> {
 
         // If cond < mid_value, go to left tree, else go to right tree (which includes mid_value)
         let lt_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Lt, cond_op.clone(), cast_start_op);
-        let lt_op = self.emit_rvalue_to_operand(lt_rvalue, bool_ty_id);
+        let lt_op = self.emit_rvalue(lt_rvalue, bool_ty_id);
 
         let left_tree_block = self.create_block();
         let right_tree_block = self.create_block();
@@ -2522,19 +2516,19 @@ impl<'a> MirGen<'a> {
 
             // x >= start
             let ge_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Ge, cond_op.clone(), cast_start_op);
-            let ge_op = self.emit_rvalue_to_operand(ge_rvalue, bool_ty_id);
+            let ge_op = self.emit_rvalue(ge_rvalue, bool_ty_id);
 
             // x <= end
             let le_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Le, cond_op.clone(), cast_end_op);
-            let le_op = self.emit_rvalue_to_operand(le_rvalue, bool_ty_id);
+            let le_op = self.emit_rvalue(le_rvalue, bool_ty_id);
 
             // (x >= start) && (x <= end)
             let and_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::BitAnd, ge_op, le_op);
-            self.emit_rvalue_to_operand(and_rvalue, bool_ty_id)
+            self.emit_rvalue(and_rvalue, bool_ty_id)
         } else {
             // x == val
             let eq_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Eq, cond_op.clone(), cast_start_op);
-            self.emit_rvalue_to_operand(eq_rvalue, bool_ty_id)
+            self.emit_rvalue(eq_rvalue, bool_ty_id)
         }
     }
 }

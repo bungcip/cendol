@@ -248,8 +248,8 @@ impl Ast {
     }
 
     /// Get the value category for a node (reads from attached semantic_info)
-    pub(crate) fn get_value_category(&self, node: NodeRef) -> Option<ValueCategory> {
-        self.semantic_info.value_categories.get(node.index()).copied()
+    pub(crate) fn get_category(&self, node: NodeRef) -> ValueCategory {
+        self.semantic_info.value_categories[node.index()]
     }
 
     /// get selected expression of generic selection

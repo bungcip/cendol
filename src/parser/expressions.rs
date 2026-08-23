@@ -3,7 +3,7 @@
 //! This module handles all expression parsing logic, including the Pratt parser
 //! implementation for operator precedence and associativity.
 
-use crate::ast::{parsed::*, *};
+use crate::ast::*;
 use crate::parser::type_builder::parse_type_name;
 use crate::parser::{ParseDiag, ParseError, Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};

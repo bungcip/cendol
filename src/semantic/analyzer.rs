@@ -88,6 +88,7 @@ pub enum ValueCategory {
     LValue,
     #[default]
     RValue,
+    FunctionDesignator,
 }
 
 /// Implicit Conversions
@@ -234,7 +235,7 @@ impl<'a> SemanticAnalyzer<'a> {
     /// Internal helper to apply lvalue-to-rvalue conversion to a node.
     /// This is private because it is only used during the semantic analysis pass.
     fn apply_lvalue_conversion(&mut self, node: NodeRef) {
-        if self.semantic_info.value_categories[node.index()] == ValueCategory::LValue {
+        if self.is_lvalue(node) {
             // C11 6.3.2.1p2: Lvalue-to-rvalue conversion does not apply to array or function types.
             if let Some(qt) = self.semantic_info.types[node.index()] {
                 if qt.is_array() || qt.is_function() {
@@ -245,7 +246,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
 
-            self.semantic_info.value_categories[node.index()] = ValueCategory::RValue;
+            self.set_category(node, ValueCategory::RValue);
             self.push_conversion(node, Conversion::LValueToRValue);
         }
     }
@@ -517,10 +518,18 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    fn get_category(&self, node: NodeRef) -> ValueCategory {
+        self.semantic_info.value_categories[node.index()]
+    }
+
+    fn set_category(&mut self, node: NodeRef, category: ValueCategory) {
+        self.semantic_info.value_categories[node.index()] = category;
+    }
+
     /// ⚡ Bolt: Checks if the node is an LValue.
     /// This function is optimized to use the already-computed value category from the side table.
     fn is_lvalue(&self, node: NodeRef) -> bool {
-        self.semantic_info.value_categories[node.index()] == ValueCategory::LValue
+        self.get_category(node) == ValueCategory::LValue
     }
 
     fn is_numeric_literal(&self, node: NodeRef) -> bool {
@@ -1099,7 +1108,8 @@ impl<'a> SemanticAnalyzer<'a> {
 
         match op {
             UnaryOp::AddrOf => {
-                if !self.is_lvalue(expr) {
+                let is_func = self.get_category(expr) == ValueCategory::FunctionDesignator;
+                if !self.is_lvalue(expr) && !is_func {
                     self.report_error(node, SemanticError::NotAnLvalue);
                     return None;
                 }
@@ -1119,26 +1129,37 @@ impl<'a> SemanticAnalyzer<'a> {
                 let actual_qt = self.decay(expr, operand_qt);
 
                 if actual_qt.is_pointer() {
-                    // Bolt ⚡: Eagerly set value category to LValue for dereference.
-                    self.semantic_info.value_categories[node.index()] = ValueCategory::LValue;
-                    self.registry.get_pointee(actual_qt.ty())
+                    let pointee = self.registry.get_pointee(actual_qt.ty());
+                    if let Some(p) = pointee {
+                        if p.is_function() {
+                            self.set_category(node, ValueCategory::FunctionDesignator);
+                        } else {
+                            // Bolt ⚡: Eagerly set value category to LValue for dereference.
+                            self.set_category(node, ValueCategory::LValue);
+                        }
+                    }
+                    pointee
                 } else {
                     self.report_error(node, SemanticError::IndirectionRequiresPointer { ty: actual_qt });
                     None
                 }
             }
             UnaryOp::Real | UnaryOp::Imag => {
-                if let TypeKind::Complex { base_type } = &self.registry.get(operand_qt.ty()).kind {
-                    // Bolt ⚡: Eagerly set value category to LValue for __real__/__imag__ on complex LValue.
-                    if self.semantic_info.value_categories[expr.index()] == ValueCategory::LValue {
-                        self.semantic_info.value_categories[node.index()] = ValueCategory::LValue;
+                let complex_base = if let TypeKind::Complex { base_type } = &self.registry.get(operand_qt.ty()).kind {
+                    Some(*base_type)
+                } else {
+                    None
+                };
+
+                if let Some(base_type) = complex_base {
+                    if self.is_lvalue(expr) {
+                        self.set_category(node, ValueCategory::LValue);
                     }
-                    Some(QualType::new(*base_type, operand_qt.quals()))
+                    Some(QualType::new(base_type, operand_qt.quals()))
                 } else if self.require_arithmetic(node, operand_qt) {
                     if op == UnaryOp::Real {
-                        // Bolt ⚡: Eagerly set value category to LValue for __real__ on real LValue.
-                        if self.semantic_info.value_categories[expr.index()] == ValueCategory::LValue {
-                            self.semantic_info.value_categories[node.index()] = ValueCategory::LValue;
+                        if self.is_lvalue(expr) {
+                            self.set_category(node, ValueCategory::LValue);
                         }
                         Some(operand_qt)
                     } else {
@@ -2641,8 +2662,8 @@ impl<'a> SemanticAnalyzer<'a> {
             }
 
             // Bolt ⚡: Eagerly set value category to LValue if arrow or base is LValue.
-            if is_arrow || self.semantic_info.value_categories[obj.index()] == ValueCategory::LValue {
-                self.semantic_info.value_categories[node.index()] = ValueCategory::LValue;
+            if is_arrow || self.is_lvalue(*obj) {
+                self.set_category(node, ValueCategory::LValue);
             }
 
             return Some(ty);
@@ -2683,7 +2704,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         // Bolt ⚡: Eagerly set value category to LValue for index access.
-        self.semantic_info.value_categories[node.index()] = ValueCategory::LValue;
+        self.set_category(node, ValueCategory::LValue);
 
         let pointee = self.registry.get_pointee(sequence_qt.ty()).unwrap();
 
@@ -3132,9 +3153,15 @@ impl<'a> SemanticAnalyzer<'a> {
         match kind {
             NodeKind::Literal(l) => self.visit_literal(*l, node),
             NodeKind::Ident(_, sym) => {
-                // Bolt ⚡: Eagerly set value category to LValue for variables and functions.
-                if matches!(sym.class(), SymbolClass::Variable | SymbolClass::Function) {
-                    self.semantic_info.value_categories[node.index()] = ValueCategory::LValue;
+                // Bolt ⚡: Eagerly set value category for variables and functions.
+                match sym.class() {
+                    SymbolClass::Variable => {
+                        self.set_category(node, ValueCategory::LValue);
+                    }
+                    SymbolClass::Function => {
+                        self.set_category(node, ValueCategory::FunctionDesignator);
+                    }
+                    _ => {}
                 }
                 let symbol = self.symbol_table.get_symbol(*sym);
                 // Use symbol.type_info for all symbols including enum constants.
@@ -3230,7 +3257,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let res = self.visit_node(selected);
 
         // Bolt ⚡: Propagate value category from the selected expression.
-        self.semantic_info.value_categories[node.index()] = self.semantic_info.value_categories[selected.index()];
+        self.set_category(node, self.get_category(selected));
 
         res
     }
@@ -3393,7 +3420,7 @@ impl<'a> SemanticAnalyzer<'a> {
             let _ = self.registry.ensure_layout(array_type);
 
             // Bolt ⚡: Eagerly set value category to LValue for string literals.
-            self.semantic_info.value_categories[node.index()] = ValueCategory::LValue;
+            self.set_category(node, ValueCategory::LValue);
 
             return Some(QualType::new(array_type, TypeQuals::empty()));
         }
@@ -3612,7 +3639,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
 
             // Bolt ⚡: Propagate value category from the selected expression.
-            self.semantic_info.value_categories[node.index()] = self.semantic_info.value_categories[expr.index()];
+            self.set_category(node, self.get_category(expr));
 
             self.semantic_info.types.get(expr.index()).and_then(|t| *t)
         } else {
@@ -3853,7 +3880,7 @@ impl<'a> SemanticAnalyzer<'a> {
         self.visit_init(init, qt);
 
         // Bolt ⚡: Eagerly set value category to LValue for compound literals.
-        self.semantic_info.value_categories[node.index()] = ValueCategory::LValue;
+        self.set_category(node, ValueCategory::LValue);
 
         Some(qt)
     }

@@ -462,7 +462,7 @@ impl<'a> MirGen<'a> {
             Operand::Copy(Box::new(place))
         } else {
             let rval = create_rvalue(data);
-            self.emit_rvalue_to_operand(rval, mir_ty)
+            self.emit_rvalue(rval, mir_ty)
         }
     }
 
@@ -495,7 +495,7 @@ impl<'a> MirGen<'a> {
             |this, fields| {
                 let const_fields = fields
                     .into_iter()
-                    .map(|(idx, op)| (idx, this.operand_to_const_id_strict(op, "Global struct init error")))
+                    .map(|(idx, op)| (idx, this.operand_to_const(op, "Global struct init error")))
                     .collect();
                 ConstValueKind::StructLiteral(const_fields)
             },
@@ -516,7 +516,7 @@ impl<'a> MirGen<'a> {
             |this, elems| {
                 let const_elements = elems
                     .into_iter()
-                    .map(|op| this.operand_to_const_id_strict(op, "Global array init error"))
+                    .map(|op| this.operand_to_const(op, "Global array init error"))
                     .collect();
                 ConstValueKind::ArrayLiteral(const_elements)
             },
@@ -704,7 +704,7 @@ impl<'a> MirGen<'a> {
 
     pub(super) fn eval_init_to_const(&mut self, init: NodeRef, ty: TypeRef) -> Option<crate::mir::ConstValueId> {
         let operand = self.visit_init(init, ty, None);
-        self.operand_to_const_id(&operand)
+        self.try_operand_to_const(&operand)
     }
 
     fn visit_brace_elision(

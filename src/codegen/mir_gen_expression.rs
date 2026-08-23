@@ -332,7 +332,7 @@ impl<'a> MirGen<'a> {
 
             if need_value && self.has_any_cleanups() && !matches!(op, Operand::Constant(_)) {
                 let mir_ty = self.get_operand_type(&op);
-                op = self.emit_rvalue_to_operand(Rvalue::Use(op), mir_ty);
+                op = self.emit_rvalue(Rvalue::Use(op), mir_ty);
             }
 
             let cleanup = self.func_state_mut().scope_cleanup.pop().unwrap();
@@ -356,7 +356,7 @@ impl<'a> MirGen<'a> {
             return operand;
         }
 
-        if let Some(const_id) = self.operand_to_const_id(&operand) {
+        if let Some(const_id) = self.try_operand_to_const(&operand) {
             let const_val = self.mb.get_constants().get(const_id.index()).unwrap();
 
             let is_true = match &const_val.kind {
@@ -466,7 +466,7 @@ impl<'a> MirGen<'a> {
 
             // total_size = count * element_size
             let rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Mul, count_as_size_t, element_size_operand);
-            self.emit_rvalue_to_operand(rvalue, size_t_mir_ty)
+            self.emit_rvalue(rvalue, size_t_mir_ty)
         } else {
             // Shouldn't happen, but fallback
             self.create_dummy_operand()
@@ -554,10 +554,10 @@ impl<'a> MirGen<'a> {
                 if matches!(op, UnaryOp::LogicNot) && is_float {
                     let zero = Operand::Constant(self.create_constant(operand_ty, ConstValueKind::Float(0.0)));
                     let rval = Rvalue::BinaryFloatOp(BinaryFloatOp::Eq, operand, zero);
-                    self.emit_rvalue_to_operand(rval, mir_ty)
+                    self.emit_rvalue(rval, mir_ty)
                 } else {
                     let rval = mir_gen_ops::emit_unary_rvalue(op, operand, is_float);
-                    self.emit_rvalue_to_operand(rval, mir_ty)
+                    self.emit_rvalue(rval, mir_ty)
                 }
             }
         }
@@ -713,7 +713,7 @@ impl<'a> MirGen<'a> {
         let rhs = self.visit_expression(right, true);
 
         let (rval, _op_ty) = self.visit_binary_arithmetic_logic(op, lhs, rhs, mir_ty);
-        self.emit_rvalue_to_operand(rval, mir_ty)
+        self.emit_rvalue(rval, mir_ty)
     }
 
     fn visit_binary_arithmetic_logic(
@@ -872,7 +872,7 @@ impl<'a> MirGen<'a> {
         );
 
         // Ensure the LHS is a place. If not, this is a semantic error.
-        if self.ast.get_value_category(left) != Some(ValueCategory::LValue) {
+        if self.ast.get_category(left) != ValueCategory::LValue {
             panic!("LHS of assignment must be an lvalue");
         }
 
@@ -903,7 +903,7 @@ impl<'a> MirGen<'a> {
     }
 
     fn apply_bitfield_truncation(&mut self, op: Operand, bit_info: &BitFieldInfo, mir_ty: TypeId) -> Operand {
-        if let Some(const_id) = self.operand_to_const_id(&op) {
+        if let Some(const_id) = self.try_operand_to_const(&op) {
             let constants = self.mb.get_constants();
             let const_val = constants.get(const_id.index()).unwrap();
             if let ConstValueKind::Int(val) = const_val.kind {
@@ -921,9 +921,8 @@ impl<'a> MirGen<'a> {
                 let c = self.mb.create_constant(mir_ty, ConstValueKind::Int(shift));
                 Operand::Constant(c)
             };
-            let lshift =
-                self.emit_rvalue_to_operand(Rvalue::BinaryIntOp(BinaryIntOp::LShift, op, shift_op.clone()), mir_ty);
-            self.emit_rvalue_to_operand(Rvalue::BinaryIntOp(BinaryIntOp::RShift, lshift, shift_op), mir_ty)
+            let lshift = self.emit_rvalue(Rvalue::BinaryIntOp(BinaryIntOp::LShift, op, shift_op.clone()), mir_ty);
+            self.emit_rvalue(Rvalue::BinaryIntOp(BinaryIntOp::RShift, lshift, shift_op), mir_ty)
         } else {
             let mask = if bit_info.width == 64 {
                 -1i64
@@ -934,7 +933,7 @@ impl<'a> MirGen<'a> {
                 let c = self.mb.create_constant(mir_ty, ConstValueKind::Int(mask));
                 Operand::Constant(c)
             };
-            self.emit_rvalue_to_operand(Rvalue::BinaryIntOp(BinaryIntOp::BitAnd, op, mask_op), mir_ty)
+            self.emit_rvalue(Rvalue::BinaryIntOp(BinaryIntOp::BitAnd, op, mask_op), mir_ty)
         }
     }
 
@@ -961,11 +960,11 @@ impl<'a> MirGen<'a> {
 
             if let Some(op) = mir_op {
                 let rval = Rvalue::AtomicFetchOp(op, ptr, rhs_op.clone(), AtomicMemOrder::SeqCst);
-                let old_val = self.emit_rvalue_to_operand(rval, mir_ty);
+                let old_val = self.emit_rvalue(rval, mir_ty);
                 // AtomicFetchOp returns old value. Compound assignment evaluates to NEW value.
                 // Re-apply operation to old value to get new value for the expression result.
                 let (new_val_rval, _) = self.visit_binary_arithmetic_logic(compound_op, old_val, rhs_op, mir_ty);
-                return self.emit_rvalue_to_operand(new_val_rval, mir_ty);
+                return self.emit_rvalue(new_val_rval, mir_ty);
             }
         }
 
@@ -974,7 +973,7 @@ impl<'a> MirGen<'a> {
         let lhs_copy = Operand::Copy(Box::new(place.clone()));
 
         let (rval, op_ty) = self.visit_binary_arithmetic_logic(compound_op, lhs_copy, rhs_op, mir_ty);
-        let result_op = self.emit_rvalue_to_operand(rval, op_ty);
+        let result_op = self.emit_rvalue(rval, op_ty);
 
         let truncated_op = self.emit_cast(result_op, mir_ty);
 
@@ -994,7 +993,7 @@ impl<'a> MirGen<'a> {
         }
 
         // Fold constant casts if types are compatible
-        if let Some(const_id) = self.operand_to_const_id(&operand) {
+        if let Some(const_id) = self.try_operand_to_const(&operand) {
             let const_val = self.mb.get_constant(const_id);
             let mir_type = self.mb.get_type(target_ty);
 
@@ -1271,7 +1270,7 @@ impl<'a> MirGen<'a> {
         if arr_mir_type.is_pointer() {
             // Pointer-based indexing: *(ptr + idx)
             let ptr_add = Rvalue::PtrAdd(arr_operand, idx_operand);
-            let result_op = self.emit_rvalue_to_operand(ptr_add, arr_mir_ty);
+            let result_op = self.emit_rvalue(ptr_add, arr_mir_ty);
             // Deref the resulting pointer
             self.deref_operand(result_op)
         } else {
@@ -1288,7 +1287,7 @@ impl<'a> MirGen<'a> {
         let qt = self.ast.qual_type_of(expr);
         let mir_ty = self.lower_type(qt.ty());
 
-        if self.ast.get_value_category(expr) != Some(ValueCategory::LValue) {
+        if self.ast.get_category(expr) != ValueCategory::LValue {
             panic!("Inc/Dec operand must be an lvalue");
         }
 
@@ -1347,14 +1346,14 @@ impl<'a> MirGen<'a> {
         let op = if is_inc { BinaryIntOp::Add } else { BinaryIntOp::Sub };
         let step = self.create_int_operand(1);
         let rval = Rvalue::AtomicFetchOp(op, ptr, step.clone(), AtomicMemOrder::SeqCst);
-        let old_val = self.emit_rvalue_to_operand(rval, mir_ty);
+        let old_val = self.emit_rvalue(rval, mir_ty);
 
         if is_post {
             old_val
         } else {
             let bin_op = if is_inc { BinaryOp::Add } else { BinaryOp::Sub };
             let (new_val_rval, _) = self.visit_binary_arithmetic_logic(bin_op, old_val, step, mir_ty);
-            self.emit_rvalue_to_operand(new_val_rval, mir_ty)
+            self.emit_rvalue(new_val_rval, mir_ty)
         }
     }
 
@@ -1420,7 +1419,7 @@ impl<'a> MirGen<'a> {
         let ap = self.ensure_valist_place(ap_op);
         let mir_ty = self.lower_type(ty);
         let rval = Rvalue::BuiltinVaArg(ap, mir_ty);
-        self.emit_rvalue_to_operand(rval, mir_ty)
+        self.emit_rvalue(rval, mir_ty)
     }
 
     fn visit_atomic_op(&mut self, op: AtomicOp, args_start: NodeRef, args_len: u16, mir_ty: TypeId) -> Operand {
@@ -1432,7 +1431,7 @@ impl<'a> MirGen<'a> {
                 let ptr = args[0].clone();
                 // args[1] is memorder, ignored
                 let rval = Rvalue::AtomicLoad(ptr, order);
-                self.emit_rvalue_to_operand(rval, mir_ty)
+                self.emit_rvalue(rval, mir_ty)
             }
             AtomicOp::StoreN => {
                 let ptr = args[0].clone();
@@ -1450,7 +1449,7 @@ impl<'a> MirGen<'a> {
                 let val = args[1].clone();
                 // args[2] is memorder, ignored
                 let rval = Rvalue::AtomicExchange(ptr, val, order);
-                self.emit_rvalue_to_operand(rval, mir_ty)
+                self.emit_rvalue(rval, mir_ty)
             }
             AtomicOp::CompareExchangeN => self.visit_atomic_cmpxchg(&args, order, mir_ty),
             AtomicOp::FetchAdd => self.visit_atomic_fetch_op(BinaryIntOp::Add, &args, order, mir_ty),
@@ -1470,9 +1469,9 @@ impl<'a> MirGen<'a> {
                 let ptr = args[0].clone();
                 let val = args[1].clone();
                 let rval = Rvalue::AtomicFetchOp(bin_op, ptr, val.clone(), order);
-                let old_val = self.emit_rvalue_to_operand(rval, mir_ty);
+                let old_val = self.emit_rvalue(rval, mir_ty);
                 let new_val_rval = Rvalue::BinaryIntOp(bin_op, old_val, val);
-                self.emit_rvalue_to_operand(new_val_rval, mir_ty)
+                self.emit_rvalue(new_val_rval, mir_ty)
             }
         }
     }
@@ -1538,7 +1537,7 @@ impl<'a> MirGen<'a> {
         // args[2] memorder
 
         let rval = Rvalue::AtomicFetchOp(bin_op, ptr, val, order);
-        self.emit_rvalue_to_operand(rval, mir_ty)
+        self.emit_rvalue(rval, mir_ty)
     }
 
     fn visit_complex_binary_op(&mut self, op: BinaryOp, lhs: Operand, rhs: Operand, mir_ty: TypeId) -> Operand {
@@ -1600,11 +1599,11 @@ impl<'a> MirGen<'a> {
                 if op == BinaryOp::Equal {
                     let real_eq = self.emit_float_binop(BinaryFloatOp::Eq, lhs_real, rhs_real, bool_ty);
                     let imag_eq = self.emit_float_binop(BinaryFloatOp::Eq, lhs_imag, rhs_imag, bool_ty);
-                    self.emit_rvalue_to_operand(Rvalue::BinaryIntOp(BinaryIntOp::BitAnd, real_eq, imag_eq), mir_ty)
+                    self.emit_rvalue(Rvalue::BinaryIntOp(BinaryIntOp::BitAnd, real_eq, imag_eq), mir_ty)
                 } else {
                     let real_ne = self.emit_float_binop(BinaryFloatOp::Ne, lhs_real, rhs_real, bool_ty);
                     let imag_ne = self.emit_float_binop(BinaryFloatOp::Ne, lhs_imag, rhs_imag, bool_ty);
-                    self.emit_rvalue_to_operand(Rvalue::BinaryIntOp(BinaryIntOp::BitOr, real_ne, imag_ne), mir_ty)
+                    self.emit_rvalue(Rvalue::BinaryIntOp(BinaryIntOp::BitOr, real_ne, imag_ne), mir_ty)
                 }
             }
             _ => panic!("Unsupported complex binary operator: {:?}", op),
@@ -1640,7 +1639,7 @@ impl<'a> MirGen<'a> {
 
                 let real_eq = self.emit_float_binop(BinaryFloatOp::Eq, real, zero_op.clone(), bool_ty);
                 let imag_eq = self.emit_float_binop(BinaryFloatOp::Eq, imag, zero_op, bool_ty);
-                self.emit_rvalue_to_operand(Rvalue::BinaryIntOp(BinaryIntOp::BitAnd, real_eq, imag_eq), mir_ty)
+                self.emit_rvalue(Rvalue::BinaryIntOp(BinaryIntOp::BitAnd, real_eq, imag_eq), mir_ty)
             }
             UnaryOp::Plus => self.emit_complex_struct(real, imag, mir_ty),
             UnaryOp::Real => real,
@@ -1661,13 +1660,13 @@ impl<'a> MirGen<'a> {
                 let arg = call_expr.arg_start;
                 let operand = self.visit_expression(arg, true);
                 let rval = Rvalue::UnaryFloatOp(UnaryFloatOp::IsNegative, operand);
-                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+                Some(self.emit_rvalue(rval, mir_ty))
             }
             BuiltinFunctionKind::FrameAddress => {
                 let arg = call_expr.arg_start;
                 let level = self.evaluate_constant_i64(arg, "level must be constant") as u32;
                 let rval = Rvalue::BuiltinFrameAddress(level);
-                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+                Some(self.emit_rvalue(rval, mir_ty))
             }
             BuiltinFunctionKind::Expect => {
                 let arg = call_expr.arg_start;
@@ -1677,43 +1676,43 @@ impl<'a> MirGen<'a> {
                 let arg = call_expr.arg_start;
                 let operand = self.visit_expression(arg, true);
                 let rval = Rvalue::UnaryIntOp(UnaryIntOp::Clz, operand);
-                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+                Some(self.emit_rvalue(rval, mir_ty))
             }
             BuiltinFunctionKind::Ctz | BuiltinFunctionKind::CtzL | BuiltinFunctionKind::CtzLL => {
                 let arg = call_expr.arg_start;
                 let operand = self.visit_expression(arg, true);
                 let rval = Rvalue::UnaryIntOp(UnaryIntOp::Ctz, operand);
-                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+                Some(self.emit_rvalue(rval, mir_ty))
             }
             BuiltinFunctionKind::Popcount | BuiltinFunctionKind::PopcountL | BuiltinFunctionKind::PopcountLL => {
                 let arg = call_expr.arg_start;
                 let operand = self.visit_expression(arg, true);
                 let rval = Rvalue::UnaryIntOp(UnaryIntOp::Popcount, operand);
-                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+                Some(self.emit_rvalue(rval, mir_ty))
             }
             BuiltinFunctionKind::Ffs | BuiltinFunctionKind::FfsL | BuiltinFunctionKind::FfsLL => {
                 let arg = call_expr.arg_start;
                 let operand = self.visit_expression(arg, true);
                 let rval = Rvalue::UnaryIntOp(UnaryIntOp::Ffs, operand);
-                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+                Some(self.emit_rvalue(rval, mir_ty))
             }
             BuiltinFunctionKind::Bswap16 => {
                 let arg = call_expr.arg_start;
                 let operand = self.visit_expression(arg, true);
                 let rval = Rvalue::UnaryIntOp(UnaryIntOp::Bswap16, operand);
-                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+                Some(self.emit_rvalue(rval, mir_ty))
             }
             BuiltinFunctionKind::Bswap32 => {
                 let arg = call_expr.arg_start;
                 let operand = self.visit_expression(arg, true);
                 let rval = Rvalue::UnaryIntOp(UnaryIntOp::Bswap32, operand);
-                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+                Some(self.emit_rvalue(rval, mir_ty))
             }
             BuiltinFunctionKind::Bswap64 => {
                 let arg = call_expr.arg_start;
                 let operand = self.visit_expression(arg, true);
                 let rval = Rvalue::UnaryIntOp(UnaryIntOp::Bswap64, operand);
-                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+                Some(self.emit_rvalue(rval, mir_ty))
             }
             BuiltinFunctionKind::Unreachable | BuiltinFunctionKind::Trap => {
                 self.set_terminator(Terminator::Trap);
@@ -1774,7 +1773,7 @@ impl<'a> MirGen<'a> {
                 let arg = call_expr.arg_start;
                 let operand = self.visit_expression(arg, true);
                 let rval = Rvalue::UnaryFloatOp(UnaryFloatOp::Abs, operand);
-                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+                Some(self.emit_rvalue(rval, mir_ty))
             }
             BuiltinFunctionKind::Alloca => {
                 let arg = call_expr.arg_start;

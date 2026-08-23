@@ -5,7 +5,6 @@
 
 use thin_vec::ThinVec;
 
-use crate::ast::parsed::*;
 use crate::ast::*;
 use crate::parser::declarations::parse_decl_specs;
 use crate::parser::{ParseDiag, TokenKind};

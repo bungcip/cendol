@@ -342,3 +342,9 @@ fn test_parse_pragma_pack_statement() {
     let ast = setup_statement("#pragma pack(push, 1)");
     insta::assert_yaml_snapshot!(ast, @"PragmaPackStmt: PushSet(1)");
 }
+
+#[test]
+fn test_parse_pragma_visibility_statement() {
+    let ast = setup_statement("#pragma GCC visibility push(default)");
+    insta::assert_yaml_snapshot!(ast);
+}

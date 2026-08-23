@@ -1,0 +1,5 @@
+---
+source: src/tests/parser_stmt.rs
+expression: ast
+---
+PragmaVisibilityStmt: Push(Default)

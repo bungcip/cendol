@@ -1041,23 +1041,23 @@ fn emit_x87_to_f64(addr: Value, builder: &mut FunctionBuilder) -> Value {
     // x87 hi (bits 0..14): Exponent (15-bit, 16383 bias)
     // x87 hi (bit 15): Sign
 
-    let sign = builder.ins().ushr_imm(hi, 15);
-    let sign = builder.ins().band_imm(sign, 1);
-    let sign_f64 = builder.ins().ishl_imm(sign, 63);
+    let sign = builder.ins().ushr_imm_u(hi, 15);
+    let sign = builder.ins().band_imm_s(sign, 1);
+    let sign_f64 = builder.ins().ishl_imm_u(sign, 63);
 
-    let exp_x87 = builder.ins().band_imm(hi, 0x7FFF);
+    let exp_x87 = builder.ins().band_imm_s(hi, 0x7FFF);
     // f64_exp = exp_x87 - 16383 + 1023 = exp_x87 - 15360
     // Handle Special Values (NaN, Inf) where exp_x87 == 0x7FFF
-    let is_special = builder.ins().icmp_imm(IntCC::Equal, exp_x87, 0x7FFF);
-    let exp_f64_normal = builder.ins().iadd_imm(exp_x87, -15360);
+    let is_special = builder.ins().icmp_imm_s(IntCC::Equal, exp_x87, 0x7FFF);
+    let exp_f64_normal = builder.ins().iadd_imm_s(exp_x87, -15360);
     let exp_f64_special = builder.ins().iconst(types::I64, 0x7FF);
     let exp_f64 = builder.ins().select(is_special, exp_f64_special, exp_f64_normal);
-    let exp_f64_clamped = builder.ins().ishl_imm(exp_f64, 52);
+    let exp_f64_clamped = builder.ins().ishl_imm_u(exp_f64, 52);
 
     // Mantissa: drop the explicit integer bit (bit 63) and shift to 52 bits
-    let mant_x87_no_int = builder.ins().band_imm(lo, 0x7FFF_FFFF_FFFF_FFFF);
-    let mant_f64 = builder.ins().ushr_imm(mant_x87_no_int, 11);
-    let mant_f64_masked = builder.ins().band_imm(mant_f64, 0x000F_FFFF_FFFF_FFFF);
+    let mant_x87_no_int = builder.ins().band_imm_s(lo, 0x7FFF_FFFF_FFFF_FFFF);
+    let mant_f64 = builder.ins().ushr_imm_u(mant_x87_no_int, 11);
+    let mant_f64_masked = builder.ins().band_imm_s(mant_f64, 0x000F_FFFF_FFFF_FFFF);
 
     let res_i64 = builder.ins().bor(sign_f64, exp_f64_clamped);
     let res_i64 = builder.ins().bor(res_i64, mant_f64_masked);
@@ -1074,24 +1074,24 @@ fn emit_f64_to_x87(val: Value, addr: Value, builder: &mut FunctionBuilder) {
 
     let val_i64 = builder.ins().bitcast(types::I64, MemFlagsData::new(), val);
 
-    let sign = builder.ins().ushr_imm(val_i64, 63);
-    let exp_f64 = builder.ins().ushr_imm(val_i64, 52);
-    let exp_f64 = builder.ins().band_imm(exp_f64, 0x7FF);
-    let mant_f64 = builder.ins().band_imm(val_i64, 0x000F_FFFF_FFFF_FFFF);
+    let sign = builder.ins().ushr_imm_u(val_i64, 63);
+    let exp_f64 = builder.ins().ushr_imm_u(val_i64, 52);
+    let exp_f64 = builder.ins().band_imm_s(exp_f64, 0x7FF);
+    let mant_f64 = builder.ins().band_imm_s(val_i64, 0x000F_FFFF_FFFF_FFFF);
 
     // x87_exp = exp_f64 - 1023 + 16383 = exp_f64 + 15360
     // Handle Special Values (NaN, Inf) where exp_f64 == 0x7FF
-    let is_special = builder.ins().icmp_imm(IntCC::Equal, exp_f64, 0x7FF);
-    let exp_x87_normal = builder.ins().iadd_imm(exp_f64, 15360);
+    let is_special = builder.ins().icmp_imm_s(IntCC::Equal, exp_f64, 0x7FF);
+    let exp_x87_normal = builder.ins().iadd_imm_s(exp_f64, 15360);
     let exp_x87_special = builder.ins().iconst(types::I64, 0x7FFF);
     let exp_x87 = builder.ins().select(is_special, exp_x87_special, exp_x87_normal);
-    let hi = builder.ins().ishl_imm(sign, 15);
+    let hi = builder.ins().ishl_imm_u(sign, 15);
     let hi = builder.ins().bor(hi, exp_x87);
 
     // x87_mant = (mant_f64 << 11) | explicit_integer_bit
-    let mant_x87 = builder.ins().ishl_imm(mant_f64, 11);
+    let mant_x87 = builder.ins().ishl_imm_u(mant_f64, 11);
     // Fixed: only set integer bit if exponent is not zero (simplified normal handling)
-    let is_not_zero = builder.ins().icmp_imm(IntCC::NotEqual, exp_f64, 0);
+    let is_not_zero = builder.ins().icmp_imm_s(IntCC::NotEqual, exp_f64, 0);
     let iconst8 = builder.ins().iconst(types::I64, 1 << 63);
     let iconst0 = builder.ins().iconst(types::I64, 0);
     let integer_bit = builder.ins().select(is_not_zero, iconst8, iconst0);
@@ -1396,21 +1396,21 @@ fn emit_place(place: &Place, ctx: &mut BodyEmitContext, expected_type: Type) -> 
 
                 // 1. Shift right to move the field to the LSB
                 if info.offset > 0 {
-                    val = ctx.builder.ins().ushr_imm(val, info.offset as i64);
+                    val = ctx.builder.ins().ushr_imm_u(val, info.offset as i64);
                 }
 
                 // 2. Mask out higher bits
                 if info.width < load_type.bits() as u16 {
                     let mask = (1u64 << info.width) - 1;
-                    val = ctx.builder.ins().band_imm(val, mask as i64);
+                    val = ctx.builder.ins().band_imm_s(val, mask as i64);
                 }
 
                 // 3. Sign-extend if necessary
                 if info.is_signed {
                     let shift = load_type.bits() as i64 - info.width as i64;
                     if shift > 0 {
-                        val = ctx.builder.ins().ishl_imm(val, shift);
-                        val = ctx.builder.ins().sshr_imm(val, shift);
+                        val = ctx.builder.ins().ishl_imm_u(val, shift);
+                        val = ctx.builder.ins().sshr_imm_u(val, shift);
                     }
                 }
 
@@ -1545,7 +1545,7 @@ fn emit_place_addr(place: &Place, ctx: &mut BodyEmitContext) -> Value {
                 panic!("Base of StructField is not a struct type");
             };
             let field_offset = layout.fields[*field_index].offset;
-            ctx.builder.ins().iadd_imm(final_base_addr, field_offset as i64)
+            ctx.builder.ins().iadd_imm_s(final_base_addr, field_offset as i64)
         }
         Place::ArrayIndex(base_place, index_operand) => {
             let (final_base_addr, base_type_id) = lower_base_addr(base_place, ctx);
@@ -1589,7 +1589,7 @@ fn emit_partial_load(builder: &mut FunctionBuilder, addr: Value, offset: i32, co
             .load(types::I8, MemFlagsData::new(), addr, offset + b as i32);
         let byte_ext = builder.ins().uextend(types::I64, byte_val);
         let shift_amt = (b * 8) as i64;
-        let shifted = builder.ins().ishl_imm(byte_ext, shift_amt);
+        let shifted = builder.ins().ishl_imm_u(byte_ext, shift_amt);
         current_val = builder.ins().bor(current_val, shifted);
     }
     current_val
@@ -1599,7 +1599,7 @@ fn emit_partial_store(builder: &mut FunctionBuilder, val: Value, addr: Value, of
     for b in 0..count {
         let shift_amt = (b * 8) as i64;
         let shifted = if shift_amt > 0 {
-            builder.ins().ushr_imm(val, shift_amt)
+            builder.ins().ushr_imm_u(val, shift_amt)
         } else {
             val
         };
@@ -1642,7 +1642,7 @@ fn emit_struct_literal(fields: &[(usize, Operand)], dest_addr: Value, type_id: T
         let field_dest_addr = if offset == 0 {
             dest_addr
         } else {
-            ctx.builder.ins().iadd_imm(dest_addr, offset)
+            ctx.builder.ins().iadd_imm_s(dest_addr, offset)
         };
 
         let field_mir_type = ctx.mir.get_type(field_types[*field_idx]);
@@ -1669,9 +1669,9 @@ fn emit_struct_literal(fields: &[(usize, Operand)], dest_addr: Value, type_id: T
                 };
                 let bit_mask = mask << bit_offset;
 
-                let masked_original = ctx.builder.ins().band_imm(original, !(bit_mask as i64));
-                let masked_new = ctx.builder.ins().band_imm(val, mask as i64);
-                let shifted_new = ctx.builder.ins().ishl_imm(masked_new, bit_offset as i64);
+                let masked_original = ctx.builder.ins().band_imm_s(original, !(bit_mask as i64));
+                let masked_new = ctx.builder.ins().band_imm_s(val, mask as i64);
+                let shifted_new = ctx.builder.ins().ishl_imm_u(masked_new, bit_offset as i64);
                 let final_val = ctx.builder.ins().bor(masked_original, shifted_new);
 
                 ctx.builder
@@ -1703,7 +1703,7 @@ fn emit_array_literal(elements: &[Operand], dest_addr: Value, type_id: TypeId, c
         let element_dest_addr = if offset == 0 {
             dest_addr
         } else {
-            ctx.builder.ins().iadd_imm(dest_addr, offset)
+            ctx.builder.ins().iadd_imm_s(dest_addr, offset)
         };
 
         if element_mir_type.is_aggregate() {
@@ -1794,9 +1794,9 @@ fn emit_place_store(place: &Place, value: Value, expected_type: Type, ctx: &mut 
                 value
             };
 
-            let masked_original = ctx.builder.ins().band_imm(original, !(bit_mask as i64));
-            let masked_new = ctx.builder.ins().band_imm(converted_value, mask as i64);
-            let shifted_new = ctx.builder.ins().ishl_imm(masked_new, bit_info.offset as i64);
+            let masked_original = ctx.builder.ins().band_imm_s(original, !(bit_mask as i64));
+            let masked_new = ctx.builder.ins().band_imm_s(converted_value, mask as i64);
+            let shifted_new = ctx.builder.ins().ishl_imm_u(masked_new, bit_info.offset as i64);
             let final_val = ctx.builder.ins().bor(masked_original, shifted_new);
 
             ctx.builder.ins().store(MemFlagsData::new(), final_val, addr, 0);
@@ -1854,7 +1854,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                         }
                         UnaryIntOp::Ffs => {
                             let ctz_val = ctx.builder.ins().ctz(val);
-                            let ctz_plus_one = ctx.builder.ins().iadd_imm(ctz_val, 1);
+                            let ctz_plus_one = ctx.builder.ins().iadd_imm_s(ctz_val, 1);
                             let zero = ctx.builder.ins().iconst(operand_clif_type, 0);
                             let is_zero = ctx.builder.ins().icmp(IntCC::Equal, val, zero);
                             let res = ctx.builder.ins().select(is_zero, zero, ctz_plus_one);
@@ -1900,7 +1900,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                                 _ => types::I64, // Fallback for F80/F128 which we treated as F64
                             };
                             let val_bits = ctx.builder.ins().bitcast(ity, MemFlagsData::new(), val);
-                            let sign_bit = ctx.builder.ins().ushr_imm(val_bits, (width - 1) as i64);
+                            let sign_bit = ctx.builder.ins().ushr_imm_u(val_bits, (width - 1) as i64);
                             emit_type_conversion(sign_bit, ity, expected_type, false, ctx.builder)
                         }
                     }

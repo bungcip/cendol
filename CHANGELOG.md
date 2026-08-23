@@ -2,6 +2,46 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-08-24
+
+### Added
+
+- **Features**:
+  - Support for GNU `__cleanup__` attribute parsing and code generation.
+  - Support for `__transparent_union__` attribute.
+  - Support for multidimensional array string initialization with designators.
+  - Support for `$` character in identifiers (GNU extension).
+  - Support for `#pragma pack` statements.
+  - Added builtins: `__builtin_bit_cast` and `__builtin_convertvector`.
+  - Support for trailing C23 attributes.
+- **Infrastructure**:
+  - Upgraded `cranelift` backend to 0.134.3.
+  - Added CLI options: `-fvisibility`, `-ftrapv`, `-fstrict-overflow`, `-fno-strict-overflow`, `-fwrapv`, `-fno-wrapv`.
+  - Streaming diagnostic support, including printing warning names in diagnostics.
+  - Extended real-world project compilation capabilities: successfully compiles `cpython`, `redis`, `git`, `quickjs`, and `curl`.
+- **Optimizations**:
+  - Reduced heap allocations in Cranelift IR generation by reusing `FunctionState` and pre-allocating buffers.
+  - Optimized Semantic Analyzer and AST dumper hot paths using `FxHashMap`/`FxHashSet`.
+  - Accelerated Lexer with optimized token stringification, de-splicing, and fast-paths for string/character literals.
+  - Sped up Preprocessor macro expansion (using `Cow` for arguments), directive identification, and header search cache lookups via `Arc`.
+  - Implemented eager value category detection and binary search for switch case duplicates.
+- **C11 Compliance**:
+  - Enforced C11 function return type constraints (rejecting arrays and functions).
+  - Enforced block-scope validation for `_Thread_local` and alignment specifier constraints.
+  - Rejected `break`/`continue` statements outside loop or switch contexts.
+  - Enforced strict parameter storage class constraints and protected against incompatible nested pointer assignments.
+  - Protected against modifiable lvalue violations on `const` structures and invalid unary operands.
+  - Rejected multiple `default` labels per switch statement.
+
+### Fixed
+
+- Resolved compiler crashes with nested range aggregates and `typeof` in ternary expressions.
+- Fixed macro expansion bugs involving unbalanced parentheses, directives inside macro arguments, and hide-set regressions.
+- Fixed generic decay and qualifier stripping issues.
+- Corrected incomplete type handling to properly emit errors.
+- Improved diagnostic messages for invalid macros.
+- Fixed variable shadowing and typedef/declaration matching issues.
+
 ## [0.3.0] - 2026-05-12
 
 ### Added

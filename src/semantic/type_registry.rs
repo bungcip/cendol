@@ -1955,8 +1955,16 @@ impl TypeRegistry {
             return false;
         }
 
-        let ty_a = a.ty();
-        let ty_b = b.ty();
+        self.is_compatible_unqual(a.ty(), b.ty())
+    }
+
+    pub(crate) fn is_compatible_unqual(&self, mut ty_a: TypeRef, mut ty_b: TypeRef) -> bool {
+        if ty_a == ty_b {
+            return true;
+        }
+
+        ty_a = self.canonical_type(ty_a);
+        ty_b = self.canonical_type(ty_b);
 
         if ty_a == ty_b {
             return true;
@@ -1973,7 +1981,7 @@ impl TypeRegistry {
             (TypeClass::Array, TypeClass::Array) => {
                 let ea = self.get_array_element(ty_a).unwrap();
                 let eb = self.get_array_element(ty_b).unwrap();
-                if !self.is_compatible(QualType::unqualified(ea), QualType::unqualified(eb)) {
+                if !self.is_compatible_unqual(ea, eb) {
                     return false;
                 }
 
@@ -2008,8 +2016,8 @@ impl TypeRegistry {
                 }
             }
             (TypeClass::Enum, TypeClass::Enum) => false, // Different enums are never compatible
-            (TypeClass::Enum, _) if b.is_integer() => self.get_layout(ty_a).size == self.get_layout(ty_b).size,
-            (_, TypeClass::Enum) if a.is_integer() => self.get_layout(ty_a).size == self.get_layout(ty_b).size,
+            (TypeClass::Enum, _) if ty_b.is_integer() => self.get_layout(ty_a).size == self.get_layout(ty_b).size,
+            (_, TypeClass::Enum) if ty_a.is_integer() => self.get_layout(ty_a).size == self.get_layout(ty_b).size,
             (TypeClass::Function, TypeClass::Function) => {
                 let type_a = self.get(ty_a);
                 let type_b = self.get(ty_b);
@@ -2030,7 +2038,7 @@ impl TypeRegistry {
                             ..
                         },
                     ) => {
-                        if !self.is_compatible(QualType::unqualified(*ret_a), QualType::unqualified(*ret_b)) {
+                        if !self.is_compatible_unqual(*ret_a, *ret_b) {
                             return false;
                         }
                         if !proto_a || !proto_b {

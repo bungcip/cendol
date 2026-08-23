@@ -2694,9 +2694,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     // Bolt ⚡: Use metadata-only accessors.
                     && let builtin_type = get_string_builtin_type(prefix)
                     && let size = get_string_literal_size(&value, prefix)
-                    && self.registry.is_compatible(
-                        QualType::unqualified(element_type),
-                        QualType::unqualified(self.registry.get_builtin_type(builtin_type)),
+                    && self.registry.is_compatible_unqual(
+                        element_type,
+                        self.registry.get_builtin_type(builtin_type),
                     )
                 {
                     Some(size)

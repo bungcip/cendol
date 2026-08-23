@@ -186,7 +186,7 @@ impl<'a> ConstEvalCtx<'a> {
                             .registry
                             .find_pointer_to(QualType::new(self.registry.type_void, res_quals))?;
                         Some(QualType::unqualified(void_ptr))
-                    } else if self.registry.is_compatible(p_t.strip_all(), p_e.strip_all()) {
+                    } else if self.registry.is_compatible_unqual(p_t.ty(), p_e.ty()) {
                         let res_p_quals = p_t.quals() | p_e.quals();
                         let p_composite = self.registry.find_composite_type(p_t.strip_all(), p_e.strip_all())?;
                         let res_p_ty = QualType::new(p_composite.ty(), res_p_quals);
@@ -369,7 +369,7 @@ impl<'a> ConstEvalCtx<'a> {
                 if has_unresolved_typeof(self.registry, t1.ty()) || has_unresolved_typeof(self.registry, t2.ty()) {
                     return None;
                 }
-                let res = self.registry.is_compatible(t1.strip_all(), t2.strip_all());
+                let res = self.registry.is_compatible_unqual(t1.ty(), t2.ty());
                 Some(res as i64)
             }
             NodeKind::BuiltinComplex(real, _) => self.eval_int(*real),

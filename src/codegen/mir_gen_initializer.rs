@@ -239,10 +239,9 @@ impl<'a> MirGen<'a> {
             return false;
         }
 
-        let is_compatible = self.registry.is_compatible(
-            self.ast.qual_type_of(initializer).strip_all(),
-            QualType::unqualified(target_ty),
-        );
+        let is_compatible = self
+            .registry
+            .is_compatible_unqual(self.ast.qual_type_of(initializer).ty(), target_ty);
 
         !is_compatible
     }

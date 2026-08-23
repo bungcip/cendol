@@ -867,7 +867,7 @@ impl<'a> SemanticAnalyzer<'a> {
             let compatible_ignoring_quals = if lhs_base.is_void() || rhs_base.is_void() {
                 true
             } else {
-                self.registry.is_compatible(lhs_base.strip_all(), rhs_base.strip_all())
+                self.registry.is_compatible_unqual(lhs_base.ty(), rhs_base.ty())
             };
 
             if compatible_ignoring_quals {
@@ -955,10 +955,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
             // We only warn for level-1 pointers or pointers of different levels to prevent silent bypass of nested qualifiers constraints.
             if (!lhs_base.is_pointer() && !rhs_base.is_pointer()) || (lhs_base.is_pointer() != rhs_base.is_pointer()) {
-                return !self.registry.is_compatible(
-                    QualType::unqualified(lhs_base.ty()),
-                    QualType::unqualified(rhs_base.ty()),
-                );
+                return !self.registry.is_compatible_unqual(lhs_base.ty(), rhs_base.ty());
             }
         }
 
@@ -1300,7 +1297,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     let lhs_base = self.registry.get_pointee(lhs.ty()).unwrap();
                     let rhs_base = self.registry.get_pointee(rhs.ty()).unwrap();
 
-                    let compatible = self.registry.is_compatible(lhs_base.strip_all(), rhs_base.strip_all());
+                    let compatible = self.registry.is_compatible_unqual(lhs_base.ty(), rhs_base.ty());
                     let complete_lhs = self.registry.is_complete(lhs_base.ty());
                     let complete_rhs = self.registry.is_complete(rhs_base.ty());
                     let is_func_lhs = lhs_base.is_function();
@@ -1370,7 +1367,7 @@ impl<'a> SemanticAnalyzer<'a> {
             if is_equality {
                 if lhs_base.is_void() || rhs_base.is_void() {
                     QualType::unqualified(self.registry.type_void_ptr)
-                } else if self.registry.is_compatible(lhs_base.strip_all(), rhs_base.strip_all()) {
+                } else if self.registry.is_compatible_unqual(lhs_base.ty(), rhs_base.ty()) {
                     lhs
                 } else {
                     self.report_warning(node, SemanticError::IncompatiblePointerComparison { lhs, rhs });
@@ -1677,10 +1674,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
                 // Check compatibility ignoring top-level qualifiers of the pointed-to type
                 // (e.g. char is compatible with char, even if one is const)
-                if !self.registry.is_compatible(
-                    QualType::unqualified(lhs_base.ty()),
-                    QualType::unqualified(rhs_base.ty()),
-                ) {
+                if !self.registry.is_compatible_unqual(lhs_base.ty(), rhs_base.ty()) {
                     return false;
                 }
 
@@ -1786,8 +1780,7 @@ impl<'a> SemanticAnalyzer<'a> {
             ]
             .contains(&lhs_elem)
         } else {
-            self.registry
-                .is_compatible(QualType::unqualified(lhs_elem), QualType::unqualified(rhs_elem))
+            self.registry.is_compatible_unqual(lhs_elem, rhs_elem)
         };
 
         if !compatible {
@@ -3287,7 +3280,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 .registry
                 .pointer_to(QualType::new(self.registry.type_void, res_quals));
             Some(QualType::unqualified(void_ptr))
-        } else if self.registry.is_compatible(p_t.strip_all(), p_e.strip_all()) {
+        } else if self.registry.is_compatible_unqual(p_t.ty(), p_e.ty()) {
             let res_p_quals = p_t.quals() | p_e.quals();
             let p_composite = self.registry.composite_type(p_t.strip_all(), p_e.strip_all())?;
             let res_p_ty = QualType::new(p_composite.ty(), res_p_quals);

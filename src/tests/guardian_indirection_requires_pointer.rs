@@ -17,10 +17,7 @@ fn test_indirection_requires_pointer() {
 
     let diag = &diags[0];
 
-    assert_eq!(
-        diag.message,
-        "indirection requires pointer operand ('int' invalid)"
-    );
+    assert_eq!(diag.message, "indirection requires pointer operand ('int' invalid)");
 
     let line_col = artifact.sm.get_line_column(diag.span.start());
     assert_eq!(line_col, Some((4, 20))); // point to `*x`

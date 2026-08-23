@@ -102,7 +102,7 @@ impl<'a> ConstEvalCtx<'a> {
             | BinaryOp::Equal
             | BinaryOp::NotEqual
             | BinaryOp::LogicAnd
-            | BinaryOp::LogicOr => Some(QualType::unqualified(self.registry.type_int)),
+            | BinaryOp::LogicOr => Some(self.registry.unqualified_int),
             _ => None,
         }
     }
@@ -111,7 +111,7 @@ impl<'a> ConstEvalCtx<'a> {
         let qt = self.resolve_type(expr)?;
         match op {
             UnaryOp::Plus | UnaryOp::Minus | UnaryOp::BitNot => Some(integer_promotion(self.registry, qt, None)),
-            UnaryOp::LogicNot => Some(QualType::unqualified(self.registry.type_int)),
+            UnaryOp::LogicNot => Some(self.registry.unqualified_int),
             _ => None,
         }
     }
@@ -157,7 +157,7 @@ impl<'a> ConstEvalCtx<'a> {
                         let ptr = self.registry.find_pointer_to(qt)?;
                         Some(QualType::unqualified(ptr))
                     }
-                    UnaryOp::LogicNot => Some(QualType::unqualified(self.registry.type_int)),
+                    UnaryOp::LogicNot => Some(self.registry.unqualified_int),
                     UnaryOp::Plus | UnaryOp::Minus | UnaryOp::BitNot => {
                         Some(integer_promotion(self.registry, qt, None))
                     }

@@ -250,8 +250,8 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn get_type_kind(&self, qt: QualType) -> TypeKind {
-        self.registry.get(qt.ty()).kind.clone()
+    fn get_type_kind(&self, ty: TypeRef) -> TypeKind {
+        self.registry.get(ty).kind.clone()
     }
 
     fn is_string_literal(&self, node: NodeRef) -> bool {
@@ -331,7 +331,7 @@ impl<'a> SemanticAnalyzer<'a> {
             return;
         }
 
-        match self.get_type_kind(qt) {
+        match self.get_type_kind(ty) {
             TypeKind::Array { element_type, size, .. } => {
                 if let ArraySize::Variable(expr) = size {
                     if let Some(expr_qt) = self.visit_node(expr)
@@ -366,15 +366,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_type_exprs(QualType::unqualified(base_type));
             }
             TypeKind::TypeofExpr(expr) => {
-                let resolved_qt = self
-                    .visit_node(expr)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error));
+                let resolved_qt = self.visit_node(expr).unwrap_or(self.registry.unqualified_error);
                 self.registry.types[ty.index()].kind = TypeKind::Alias(resolved_qt.ty());
             }
             TypeKind::TypeofUnqualExpr(expr) => {
-                let resolved_qt = self
-                    .visit_node(expr)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error));
+                let resolved_qt = self.visit_node(expr).unwrap_or(self.registry.unqualified_error);
                 let resolved_qt = QualType::unqualified(resolved_qt.ty());
                 self.registry.types[ty.index()].kind = TypeKind::Alias(resolved_qt.ty());
             }
@@ -1206,7 +1202,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
 
                 // Logical NOT always returns int type (C11 6.5.3.3)
-                Some(QualType::unqualified(self.registry.type_int))
+                Some(self.registry.unqualified_int)
             }
             UnaryOp::BitNot => {
                 self.apply_lvalue_conversion(expr);
@@ -1409,7 +1405,7 @@ impl<'a> SemanticAnalyzer<'a> {
             return None;
         };
 
-        Some((QualType::unqualified(self.registry.type_int), common))
+        Some((self.registry.unqualified_int, common))
     }
 
     fn analyze_logical(&mut self, node: NodeRef, lhs: QualType, rhs: QualType) -> Option<(QualType, QualType)> {
@@ -1423,7 +1419,7 @@ impl<'a> SemanticAnalyzer<'a> {
             );
             return None;
         }
-        Some((QualType::unqualified(self.registry.type_int), lhs))
+        Some((self.registry.unqualified_int, lhs))
     }
 
     fn analyze_shift(&mut self, node: NodeRef, lhs: QualType, rhs: QualType) -> Option<(QualType, QualType)> {
@@ -1856,7 +1852,7 @@ impl<'a> SemanticAnalyzer<'a> {
             return;
         }
 
-        match self.get_type_kind(target_qt) {
+        match self.get_type_kind(target_qt.ty()) {
             TypeKind::Record { members, is_union, .. } => self.visit_record_init(list, target_qt, &members, is_union),
             TypeKind::Array { element_type, size, .. } => self.visit_array_init(list, target_qt, element_type, &size),
             _ => {
@@ -2074,7 +2070,7 @@ impl<'a> SemanticAnalyzer<'a> {
     where
         I: Iterator<Item = NodeRef>,
     {
-        let type_kind = self.get_type_kind(target_qt);
+        let type_kind = self.get_type_kind(target_qt.ty());
 
         match designator {
             Designator::FieldName(name) => {
@@ -2157,7 +2153,7 @@ impl<'a> SemanticAnalyzer<'a> {
     where
         I: Iterator<Item = NodeRef>,
     {
-        match self.get_type_kind(target_qt) {
+        match self.get_type_kind(target_qt.ty()) {
             TypeKind::Record { members, is_union, .. } => {
                 for member in members.iter() {
                     self.consume_inits(member.member_type, iter, 0);
@@ -2248,9 +2244,14 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_function_call(&mut self, call_expr: &CallExpr) -> Option<QualType> {
         let (builtin_kind, atomic_op) = self.identify_builtin(call_expr.callee);
         let func_qt = self.visit_node(call_expr.callee)?;
-        let actual_func_qt = self.resolve_actual_function_type(func_qt);
+        let actual_func_qt = if func_qt.is_pointer() {
+            self.registry.get_pointee(func_qt.ty()).unwrap_or(func_qt)
+        } else {
+            func_qt
+        };
+        let ty = actual_func_qt.ty();
 
-        match self.get_type_kind(actual_func_qt) {
+        match self.get_type_kind(ty) {
             TypeKind::Function {
                 return_type,
                 parameters,
@@ -2311,10 +2312,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             _ => {
                 // This is not a function or function pointer, report an error.
-                self.report_error(
-                    call_expr.callee,
-                    SemanticError::CalledNonFunctionType { ty: actual_func_qt },
-                );
+                self.report_error(call_expr.callee, SemanticError::CalledNonFunctionType(ty));
 
                 // Still visit arguments to catch other potential errors within them.
                 for arg_node in call_expr.arg_start.range(call_expr.arg_len) {
@@ -2334,14 +2332,6 @@ impl<'a> SemanticAnalyzer<'a> {
             return (f.builtin_kind, f.builtin_kind.and_then(|k| k.to_atomic_op()));
         }
         (None, None)
-    }
-
-    fn resolve_actual_function_type(&self, func_qt: QualType) -> QualType {
-        if func_qt.is_pointer() {
-            self.registry.get_pointee(func_qt.ty()).unwrap_or(func_qt)
-        } else {
-            func_qt
-        }
     }
 
     fn handle_variadic_argument(&mut self, arg_node: NodeRef, arg_qt: QualType) {
@@ -2413,7 +2403,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             BuiltinFunctionKind::Memset => {
                 let void_ptr = QualType::unqualified(self.registry.type_void_ptr);
-                let int_ty = QualType::unqualified(self.registry.type_int);
+                let int_ty = self.registry.unqualified_int;
                 let size_t = QualType::unqualified(self.registry.type_long_unsigned);
 
                 if i == 0 {
@@ -2732,7 +2722,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 if let Some(expr) = data.init_expr {
                     self.visit_node(expr);
                 }
-                Some(QualType::unqualified(self.registry.type_int))
+                Some(self.registry.unqualified_int)
             }
             NodeKind::RecordDecl(_) => None,
             NodeKind::FieldDecl(data) => {
@@ -2748,7 +2738,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let sym = self.symbol_table.get_symbol(data.symbol);
                 self.visit_type_exprs(sym.type_info);
 
-                if let TypeKind::Function { parameters, .. } = self.get_type_kind(sym.type_info) {
+                if let TypeKind::Function { parameters, .. } = self.get_type_kind(sym.type_info.ty()) {
                     for p in parameters.iter() {
                         let _ = self.registry.ensure_layout(p.param_type.ty());
                     }
@@ -2762,7 +2752,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_function_definition(&mut self, data: &FunctionDef, node: NodeRef) -> Option<QualType> {
         let symbol = self.symbol_table.get_symbol(data.symbol);
-        let ret_type = if let TypeKind::Function { return_type, .. } = self.get_type_kind(symbol.type_info) {
+        let ret_type = if let TypeKind::Function { return_type, .. } = self.get_type_kind(symbol.type_info.ty()) {
             return_type
         } else {
             self.registry.type_error
@@ -2992,14 +2982,14 @@ impl<'a> SemanticAnalyzer<'a> {
         let (orig_ty, promoted_ty) = if let Some(ty) = cond_ty {
             let effective_ty = if !ty.is_integer() {
                 self.report_error(cond, SemanticError::InvalidSwitchCondition { ty });
-                QualType::unqualified(self.registry.type_int)
+                self.registry.unqualified_int
             } else {
                 ty
             };
             let promoted = self.apply_integer_promotion(cond, effective_ty);
             (effective_ty, promoted)
         } else {
-            let int_ty = QualType::unqualified(self.registry.type_int);
+            let int_ty = self.registry.unqualified_int;
             (int_ty, int_ty)
         };
 
@@ -3204,7 +3194,7 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
                 self.visit_type_exprs(*t1);
                 self.visit_type_exprs(*t2);
-                Some(QualType::unqualified(self.registry.type_int))
+                Some(self.registry.unqualified_int)
             }
             NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
                 self.visit_builtin_choose_expr(*cond, *true_expr, *false_expr, node)

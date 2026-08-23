@@ -259,7 +259,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 };
 
                 let mut info = DeclSpecInfo::default();
-                let dummy_qt = QualType::unqualified(self.registry.type_error);
+                let dummy_qt = self.registry.unqualified_error;
                 self.apply_declarator(
                     dummy_qt,
                     parsed_ty.declarator,
@@ -1388,9 +1388,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn visit_function_definition(&mut self, func_def: &PFunctionDef, node: NodeRef, span: SourceSpan) {
         let mut spec_info = self.visit_decl_specs(&func_def.specifiers, span);
-        let mut base_qt = spec_info
-            .base_type
-            .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
+        let mut base_qt = spec_info.base_type.unwrap_or_else(|| self.registry.unqualified_int);
         base_qt = self.merge_quals_with_check(base_qt, spec_info.quals, span);
 
         let mut final_qt = self.apply_declarator(
@@ -1514,9 +1512,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         self.in_tag_decl = decl.init_declarators.is_empty();
 
         let mut spec_info = self.visit_decl_specs(&decl.specifiers, span);
-        let mut base_qt = spec_info
-            .base_type
-            .unwrap_or(QualType::unqualified(self.registry.type_int));
+        let mut base_qt = spec_info.base_type.unwrap_or(self.registry.unqualified_int);
         base_qt = self.merge_quals_with_check(base_qt, spec_info.quals, span);
 
         if decl.init_declarators.is_empty() {
@@ -1856,7 +1852,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let ie = self.visit_expr(init_node);
                 if let NodeKind::InitializerList(_) = self.ast.get_kind(ie) {
                     self.report_error(span, SemanticError::AutoTypeNotAllowed("initializer list"));
-                    qt = QualType::unqualified(self.registry.type_error);
+                    qt = self.registry.unqualified_error;
                 } else if let Some(mut deduced) = self.try_infer_type(ie) {
                     if deduced.is_array() || deduced.is_function() {
                         deduced = self.registry.decay(deduced, TypeQuals::empty());
@@ -1866,11 +1862,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     }
                     qt = deduced.merge_quals(qt.quals());
                 } else {
-                    qt = QualType::unqualified(self.registry.type_error);
+                    qt = self.registry.unqualified_error;
                 }
             } else {
                 self.report_error(span, SemanticError::AutoTypeRequiresInitializer);
-                qt = QualType::unqualified(self.registry.type_error);
+                qt = self.registry.unqualified_error;
             }
         }
 
@@ -2063,7 +2059,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn visit_type(&mut self, ty: PType, span: SourceSpan) -> QualType {
         self.lower_type(ty, span, false)
-            .unwrap_or_else(|_| QualType::unqualified(self.registry.type_error))
+            .unwrap_or_else(|_| self.registry.unqualified_error)
     }
 
     fn lower_type(&mut self, pty: PType, span: SourceSpan, in_param: bool) -> Result<QualType, SemanticDiag> {
@@ -2548,7 +2544,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let sym = self.symbol_table.get_symbol(symbol);
                 match &sym.kind {
                     SymbolKind::Variable { .. } | SymbolKind::Function { .. } => Some(sym.type_info),
-                    SymbolKind::EnumConstant { .. } => Some(QualType::unqualified(self.registry.type_int)),
+                    SymbolKind::EnumConstant { .. } => Some(self.registry.unqualified_int),
                     _ => None,
                 }
             }
@@ -2587,7 +2583,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         qt
                     })
                 }
-                UnaryOp::LogicNot => Some(QualType::unqualified(self.registry.type_int)),
+                UnaryOp::LogicNot => Some(self.registry.unqualified_int),
                 _ => None,
             },
             NodeKind::FunctionCall(call) => {
@@ -2611,7 +2607,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 | BinaryOp::Greater
                 | BinaryOp::GreaterEqual
                 | BinaryOp::LogicAnd
-                | BinaryOp::LogicOr => Some(QualType::unqualified(self.registry.type_int)),
+                | BinaryOp::LogicOr => Some(self.registry.unqualified_int),
                 BinaryOp::Add
                 | BinaryOp::Sub
                 | BinaryOp::Mul
@@ -3418,7 +3414,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             _ => {
                 self.report_error(span, SemanticError::ConflictingTypeSpec { prev: existing });
-                Some(QualType::unqualified(self.registry.type_error))
+                Some(self.registry.unqualified_error)
             }
         }
     }
@@ -3524,7 +3520,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 DeclSpec::TypeSpec(ts) => {
                     let ty = self.resolve_type_spec(ts, span).unwrap_or_else(|e| {
                         self.report_error(e.span, e.kind);
-                        QualType::unqualified(self.registry.type_error)
+                        self.registry.unqualified_error
                     });
                     info.base_type = self.merge_base_type(info.base_type, ty, span);
                 }
@@ -3560,7 +3556,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if let Some(base) = info.base_type {
             let ty = base.ty();
             if ty == self.registry.type_signed {
-                info.base_type = Some(QualType::unqualified(self.registry.type_int));
+                info.base_type = Some(self.registry.unqualified_int);
             } else if ty == self.registry.type_complex_marker {
                 info.base_type = Some(QualType::unqualified(
                     self.registry.complex_type(self.registry.type_double),
@@ -3571,9 +3567,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         if let Some(mode) = info.mode {
-            let base_qt = info
-                .base_type
-                .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
+            let base_qt = info.base_type.unwrap_or_else(|| self.registry.unqualified_int);
             if let Some(ty) = self.resolve_mode_type(mode, base_qt.ty()) {
                 info.base_type = Some(QualType::new(ty, base_qt.quals()));
             }
@@ -3607,7 +3601,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             let decayed_qt = self
                 .lower_type(param.ty, span, true)
-                .unwrap_or_else(|_| QualType::unqualified(self.registry.type_error));
+                .unwrap_or_else(|_| self.registry.unqualified_error);
 
             let pname = param.name;
 
@@ -3773,9 +3767,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             return None;
         }
 
-        let base = spec_info
-            .base_type
-            .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
+        let base = spec_info.base_type.unwrap_or_else(|| self.registry.unqualified_int);
         let qualified_base = self.merge_quals_with_check(base, spec_info.quals, id.span);
 
         let member_type = self.apply_declarator(

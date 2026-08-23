@@ -124,6 +124,10 @@ pub struct TypeRegistry {
     pub type_complex_double: TypeRef,
     pub type_complex_long_double: TypeRef,
     pub type_error: TypeRef,
+
+    // --- Common unqualified builtin types ---
+    pub unqualified_int: QualType,
+    pub unqualified_error: QualType,
 }
 
 impl TypeRegistry {
@@ -201,6 +205,10 @@ impl TypeRegistry {
             type_complex_double: TypeRef::dummy(),
             type_complex_long_double: TypeRef::dummy(),
             type_error: TypeRef::dummy(),
+
+            // temporary placeholder - will be overwritten by create_builtin
+            unqualified_int: QualType::unqualified(TypeRef::dummy()),
+            unqualified_error: QualType::unqualified(TypeRef::dummy()),
         };
 
         // Initialize dummy at index 0
@@ -325,6 +333,10 @@ impl TypeRegistry {
         for &ty in &builtins {
             let _ = self.ensure_layout(ty);
         }
+
+        // unqualifed qual type
+        self.unqualified_int = QualType::unqualified(self.type_int);
+        self.unqualified_error = QualType::unqualified(self.type_error);
     }
 
     fn alloc_builtin(&mut self, kind: BuiltinType) -> TypeRef {

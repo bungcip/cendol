@@ -96,9 +96,7 @@ impl SemanticDiag {
 #[derive(Debug, Clone)]
 pub enum SemanticError {
     VariableOfVoidType,
-    CalledNonFunctionType {
-        ty: QualType,
-    },
+    CalledNonFunctionType(TypeRef),
     UndeclaredIdentifier {
         name: NameId,
     },
@@ -488,10 +486,10 @@ impl DiagDisplay for SemanticError {
     fn fmt(&self, f: &mut DiagFormatter<'_>) -> std::fmt::Result {
         match self {
             SemanticError::VariableOfVoidType => write!(f, "variable has incomplete type 'void'"),
-            SemanticError::CalledNonFunctionType { ty } => write!(
+            SemanticError::CalledNonFunctionType(ty) => write!(
                 f,
                 "called object type '{}' is not a function or function pointer",
-                f.display_qual_type(*ty)
+                f.display_type(*ty)
             ),
             SemanticError::UndeclaredIdentifier { name } => {
                 write!(f, "Undeclared identifier '{}'", name)

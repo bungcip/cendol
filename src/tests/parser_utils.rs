@@ -479,7 +479,7 @@ fn extract_declarator_kind(ast: &PAst, declarator: DeclaratorRef) -> String {
                     .join(", ")
             };
 
-            if flags.is_variadic {
+            if flags.contains(crate::ast::FunctionFlags::IS_VARIADIC) {
                 if params.len == 0 {
                     param_str = "...".to_string();
                 } else {
@@ -502,7 +502,7 @@ fn extract_declarator_kind(ast: &PAst, declarator: DeclaratorRef) -> String {
     }
 }
 
-fn extract_base_kind(ast: &PAst, base: crate::ast::parsed_types::PTypeSpecRef) -> String {
+fn extract_base_kind(ast: &PAst, base: crate::ast::parsed_types::TypeSpecRef) -> String {
     let base = ast.parsed_types.get_type_spec(base);
     match base {
         TypeSpec::Record(is_union, tag, _, _) => {

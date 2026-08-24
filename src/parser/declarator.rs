@@ -257,9 +257,7 @@ fn reconstruct_declarator_chain(
     base
 }
 
-fn parse_function_parameters(
-    parser: &mut Parser,
-) -> Result<(PParamRange, FunctionFlags, crate::semantic::ScopeId), ParseDiag> {
+fn parse_function_parameters(parser: &mut Parser) -> Result<(PParamRange, FunctionFlags, ScopeId), ParseDiag> {
     let scope_id = parser.symbol_table.push_scope();
     let mut params = Vec::new();
     let mut is_variadic = false;
@@ -268,10 +266,7 @@ fn parse_function_parameters(
         parser.symbol_table.pop_scope();
         return Ok((
             parser.alloc_params(params),
-            FunctionFlags {
-                is_variadic: false,
-                has_prototype: false,
-            },
+            FunctionFlags::empty(),
             scope_id,
         ));
     }
@@ -281,10 +276,7 @@ fn parse_function_parameters(
         parser.symbol_table.pop_scope();
         return Ok((
             parser.alloc_params(params),
-            FunctionFlags {
-                is_variadic: false,
-                has_prototype: true,
-            },
+            FunctionFlags::HAS_PROTOTYPE,
             scope_id,
         ));
     }
@@ -321,7 +313,7 @@ fn parse_function_parameters(
         let span = start_span.merge(parser.last_token_span().unwrap_or(start_span));
 
         let name = declarator.and_then(|d| get_declarator_name(&parser.ast.parsed_types, d));
-        let param_parsed_type = build_type(parser, &specifiers, declarator)?;
+        let param_ptype = build_type(parser, &specifiers, declarator)?;
 
         let mut storage = StorageClass::None;
         let mut is_thread_local = false;
@@ -347,7 +339,7 @@ fn parse_function_parameters(
 
         params.push(PParam {
             name,
-            ty: param_parsed_type,
+            ty: param_ptype,
             storage,
             is_thread_local,
             is_inline,
@@ -364,9 +356,10 @@ fn parse_function_parameters(
     parser.symbol_table.pop_scope();
     Ok((
         parser.alloc_params(params),
-        FunctionFlags {
-            is_variadic,
-            has_prototype: true,
+        if is_variadic {
+            FunctionFlags::HAS_PROTOTYPE | FunctionFlags::IS_VARIADIC
+        } else {
+            FunctionFlags::HAS_PROTOTYPE
         },
         scope_id,
     ))

@@ -2976,8 +2976,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let function_type = self.registry.function_type(
                     current_type.ty(),
                     processed_params,
-                    flags.is_variadic,
-                    flags.has_prototype,
+                    flags.contains(FunctionFlags::IS_VARIADIC),
+                    flags.contains(FunctionFlags::HAS_PROTOTYPE),
                     is_noreturn,
                 );
                 self.apply_declarator(QualType::unqualified(function_type), *inner, span, spec_info, ctx)

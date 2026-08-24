@@ -14,7 +14,7 @@ use crate::ast::{NameId, PNodeRef, PParam};
 use crate::semantic::TypeQuals;
 
 /// Type reference for parsed base types
-pub type PTypeSpecRef = NonZeroU32;
+pub type TypeSpecRef = NonZeroU32;
 
 /// Type reference for parsed declarators
 pub type DeclaratorRef = NonZeroU32;
@@ -22,7 +22,7 @@ pub type DeclaratorRef = NonZeroU32;
 /// A parsed type that represents the syntactic structure of a type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct PType {
-    pub base: PTypeSpecRef,        // NonZeroU32
+    pub base: TypeSpecRef,         // NonZeroU32
     pub declarator: DeclaratorRef, // NonZeroU32
     pub quals: TypeQuals,
 }
@@ -34,11 +34,13 @@ pub struct PParamRange {
     pub len: u32,
 }
 
-/// Function flags for declarators
-#[derive(Debug, Clone, Copy)]
-pub struct FunctionFlags {
-    pub is_variadic: bool,
-    pub has_prototype: bool,
+bitflags::bitflags! {
+    /// Function flags for declarators
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    pub struct FunctionFlags: u8 {
+        const IS_VARIADIC   = 1 << 0;
+        const HAS_PROTOTYPE = 1 << 1;
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -82,10 +84,10 @@ pub struct PTypeArena {
 
 impl PTypeArena {
     /// Allocate a new base type and return its reference
-    pub(crate) fn alloc_type_spec(&mut self, base_type: TypeSpec) -> PTypeSpecRef {
+    pub(crate) fn alloc_type_spec(&mut self, base_type: TypeSpec) -> TypeSpecRef {
         let index = self.type_specs.len() as u32 + 1; // Start from 1 for NonZeroU32
         self.type_specs.push(base_type);
-        PTypeSpecRef::new(index).expect("PTypeSpecRef overflow")
+        TypeSpecRef::new(index).expect("PTypeSpecRef overflow")
     }
 
     /// Allocate a new declarator and return its reference
@@ -104,7 +106,7 @@ impl PTypeArena {
     }
 
     /// Get a base type by reference
-    pub(crate) fn get_type_spec(&self, base: PTypeSpecRef) -> &TypeSpec {
+    pub(crate) fn get_type_spec(&self, base: TypeSpecRef) -> &TypeSpec {
         let index = (base.get() - 1) as usize;
         &self.type_specs[index]
     }

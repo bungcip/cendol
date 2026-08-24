@@ -15,8 +15,7 @@ use super::Parser;
 use crate::ast::parsed::{
     DeclSpec, PAlignmentSpec, PDesignatedInitializer, PDesignator, PNodeKind, PNodeRef, TypeSpec,
 };
-use crate::parser::type_builder::parse_type_name;
-use crate::parser::type_specifiers::parse_type_spec;
+use crate::parser::type_builder::{parse_type_name, parse_type_spec};
 use crate::parser::utils::parse_comma_separated_list;
 
 /// parse declaration or function definition

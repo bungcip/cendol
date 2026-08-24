@@ -18,7 +18,6 @@ pub mod lexer;
 pub mod statements;
 pub mod struct_parsing;
 pub mod type_builder;
-pub mod type_specifiers;
 pub mod utils;
 
 // Re-export commonly used types
@@ -559,9 +558,9 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
         self.ast.parsed_types.alloc_decl(declarator)
     }
 
-    /// Push BaseType node to AST arena
+    /// Push TypeSpec node to AST arena
     #[inline]
-    pub(super) fn alloc_type_spec(&mut self, type_spec: TypeSpec) -> PTypeSpecRef {
+    pub(super) fn alloc_type_spec(&mut self, type_spec: TypeSpec) -> TypeSpecRef {
         self.ast.parsed_types.alloc_type_spec(type_spec)
     }
 

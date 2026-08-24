@@ -43,7 +43,10 @@ fn test_parser_errors() {
         // D. Type specifier errors
         ("long", "Unexpected token"),
         ("_Atomic(", "Unexpected token"),
-        ("void foo() { (int struct S { int x; }) 0; }", "single type specifier"),
+        (
+            "void foo() { (int struct S { int x; }) 0; }",
+            "compatible type specifier",
+        ),
         // E. Hex float validation (lexical error in constant parsing)
         ("void foo() { double x = 0x1.0p; }", "invalid token"),
         // F. Coverage for specific "expected" messages in parse_decl

@@ -18,93 +18,68 @@ pub(super) fn parse_type_spec(parser: &mut Parser) -> Result<TypeSpec, ParseDiag
     use TypeSpec as TS;
 
     let token = parser.current_token()?;
+    parser.advance();
+
     match token.kind {
-        TK::Void
-        | TK::Char
-        | TK::Char8
-        | TK::Short
-        | TK::Int
-        | TK::Float
-        | TK::Double
-        | TK::Signed
-        | TK::Unsigned
-        | TK::Bool
-        | TK::Complex
-        | TK::BuiltinVaList
-        | TK::AutoType => {
-            parser.advance();
-            Ok(match token.kind {
-                TK::Void => TS::Void,
-                TK::Char => TS::Char,
-                TK::Char8 => TS::Char8,
-                TK::Short => TS::Short,
-                TK::Int => TS::Int,
-                TK::Float => TS::Float,
-                TK::Double => TS::Double,
-                TK::Signed => TS::Signed,
-                TK::Unsigned => TS::Unsigned,
-                TK::Bool => TS::Bool,
-                TK::Complex => TS::Complex,
-                TK::BuiltinVaList => TS::VaList,
-                TK::AutoType => TS::AutoType,
-                _ => unreachable!(),
-            })
-        }
-        TK::Long => {
-            parser.advance();
-            match parser.current_token_kind() {
-                Some(TK::Long) => {
-                    parser.advance();
-                    Ok(TS::LongLong)
-                }
-                Some(TK::Double) => {
-                    parser.advance();
-                    Ok(TS::LongDouble)
-                }
-                _ => Ok(TS::Long),
+        TK::Void => Ok(TS::Void),
+        TK::Char => Ok(TS::Char),
+        TK::Char8 => Ok(TS::Char8),
+        TK::Short => Ok(TS::Short),
+        TK::Int => Ok(TS::Int),
+        TK::Float => Ok(TS::Float),
+        TK::Double => Ok(TS::Double),
+        TK::Signed => Ok(TS::Signed),
+        TK::Unsigned => Ok(TS::Unsigned),
+        TK::Bool => Ok(TS::Bool),
+        TK::Complex => Ok(TS::Complex),
+        TK::BuiltinVaList => Ok(TS::VaList),
+        TK::AutoType => Ok(TS::AutoType),
+
+        TK::Long => match parser.current_token_kind() {
+            Some(TK::Long) => {
+                parser.advance();
+                Ok(TS::LongLong)
             }
-        }
-        TK::Typeof => {
-            parser.advance();
+            Some(TK::Double) => {
+                parser.advance();
+                Ok(TS::LongDouble)
+            }
+            _ => Ok(TS::Long),
+        },
+
+        TK::Typeof | TK::TypeofUnqual => {
+            let is_unqual = token.kind == TK::TypeofUnqual;
             parser.expect(TK::LeftParen)?;
-            let is_type = parser.is_type_name_start();
-            let ts = if is_type {
+
+            let ts = if parser.is_type_name_start() {
                 let ty = parse_type_name(parser)?;
-                TS::Typeof(ty)
+                if is_unqual {
+                    TS::TypeofUnqual(ty)
+                } else {
+                    TS::Typeof(ty)
+                }
             } else {
                 let expr = parse_expression(parser, BindingPower::MIN)?;
-                TS::TypeofExpr(expr)
+                if is_unqual {
+                    TS::TypeofUnqualExpr(expr)
+                } else {
+                    TS::TypeofExpr(expr)
+                }
             };
+
             parser.expect(TK::RightParen)?;
             Ok(ts)
         }
-        TK::TypeofUnqual => {
-            parser.advance();
-            parser.expect(TK::LeftParen)?;
-            let is_type = parser.is_type_name_start();
-            let ts = if is_type {
-                let ty = parse_type_name(parser)?;
-                TS::TypeofUnqual(ty)
-            } else {
-                let expr = parse_expression(parser, BindingPower::MIN)?;
-                TS::TypeofUnqualExpr(expr)
-            };
-            parser.expect(TK::RightParen)?;
-            Ok(ts)
-        }
+
         TK::Struct | TK::Union => {
-            parser.advance();
             let is_union = token.kind == TK::Union;
             parse_record_spec(parser, is_union)
         }
-        TK::Enum => {
-            parser.advance();
-            parse_enum_spec(parser)
-        }
-        TK::Identifier(symbol) => {
-            parser.advance();
-            Ok(TS::TypedefName(symbol))
-        }
+
+        TK::Enum => parse_enum_spec(parser),
+
+        TK::Identifier(symbol) => Ok(TS::TypedefName(symbol)),
+
         _ => unreachable!("ICE: Token {:?} should have been validated", token.kind),
     }
 }

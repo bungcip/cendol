@@ -1,9 +1,9 @@
-//! ParsedType builder functions for the parser phase.
+//! PType builder functions for the parser phase.
 //!
-//! This module provides helper functions to build ParsedType objects
+//! This module provides helper functions to build Parsed Type objects
 //! from declaration specifiers and declarators during the parsing phase.
 //! These functions ensure that no semantic types (TypeRef) are created
-//! during parsing, only syntactic types (ParsedType).
+//! during parsing, only syntactic types (PType).
 
 use crate::ast::*;
 use crate::parser::declarations::parse_decl_specs;
@@ -20,40 +20,59 @@ pub(crate) fn build_type(
     specifiers: &ThinVec<DeclSpec>,
     declarator: Option<DeclaratorRef>,
 ) -> Result<PType, ParseDiag> {
-    let (base, quals) = parse_base_type_and_quals(parser, specifiers)?;
+    let mut quals = TypeQuals::empty();
+    let mut first_ts: Option<&TypeSpec> = None;
+    let mut merged_ts: Option<TypeSpec> = None;
 
-    let mut declarator = if let Some(d) = declarator {
-        d
-    } else {
-        parser.alloc_decl(PDeclarator::Identifier(None))
-    };
+    let mut declarator = declarator.unwrap_or_else(|| parser.alloc_decl(PDeclarator::Identifier(None)));
 
     for spec in specifiers.iter().rev() {
-        if matches!(
-            spec,
+        match spec {
+            DeclSpec::TypeSpec(ts) => {
+                if let Some(merged) = &mut merged_ts {
+                    *merged = merge_type_specs(ts, merged)?;
+                } else if let Some(first) = first_ts {
+                    merged_ts = Some(merge_type_specs(ts, first)?);
+                    first_ts = None;
+                } else {
+                    first_ts = Some(ts);
+                }
+            }
+            DeclSpec::TypeQualifier(q) => {
+                quals |= TypeQuals::from_type_qualifier(*q);
+            }
             DeclSpec::AlignmentSpec(..)
-                | DeclSpec::AttributePacked
-                | DeclSpec::AttributeTransparentUnion
-                | DeclSpec::AttributeCleanup(_)
-                | DeclSpec::AttributeAsm(_)
-                | DeclSpec::AttributeAlias(_)
-                | DeclSpec::AttributeVisibility(_)
-        ) {
-            declarator = parser.alloc_decl(PDeclarator::Attribute {
-                inner: declarator,
-                spec: spec.clone(),
-            });
+            | DeclSpec::AttributePacked
+            | DeclSpec::AttributeTransparentUnion
+            | DeclSpec::AttributeCleanup(_)
+            | DeclSpec::AttributeAsm(_)
+            | DeclSpec::AttributeAlias(_)
+            | DeclSpec::AttributeVisibility(_) => {
+                declarator = parser.alloc_decl(PDeclarator::Attribute {
+                    inner: declarator,
+                    spec: spec.clone(),
+                });
+            }
+            _ => {}
         }
     }
 
+    let base_type = if let Some(ts) = merged_ts {
+        parse_base_type(parser, ts)?
+    } else if let Some(ts) = first_ts {
+        parse_base_type(parser, ts.clone())?
+    } else {
+        parser.alloc_type_spec(TypeSpec::Int)
+    };
+
     Ok(PType {
-        base,
+        base: base_type,
         declarator,
         quals,
     })
 }
 
-fn merge_type_specs(current: TypeSpec, new: TypeSpec) -> Result<TypeSpec, ParseDiag> {
+fn merge_type_specs(current: &TypeSpec, new: &TypeSpec) -> Result<TypeSpec, ParseDiag> {
     use TypeSpec::*;
     match (current, new) {
         // Redundant same types
@@ -107,81 +126,12 @@ fn merge_type_specs(current: TypeSpec, new: TypeSpec) -> Result<TypeSpec, ParseD
     }
 }
 
-/// Parse base type and qualifiers from declaration specifiers
-fn parse_base_type_and_quals(
-    parser: &mut Parser,
-    specifiers: &ThinVec<DeclSpec>,
-) -> Result<(crate::ast::parsed_types::PTypeSpecRef, TypeQuals), ParseDiag> {
-    let mut quals = TypeQuals::empty();
-    let mut base_type_spec: Option<TypeSpec> = None;
-    let mut other_base_type = None;
 
-    for spec in specifiers {
-        match spec {
-            DeclSpec::TypeSpec(ts) => match ts {
-                TypeSpec::Void
-                | TypeSpec::Char
-                | TypeSpec::Char8
-                | TypeSpec::Short
-                | TypeSpec::Int
-                | TypeSpec::Long
-                | TypeSpec::LongLong
-                | TypeSpec::Float
-                | TypeSpec::Double
-                | TypeSpec::LongDouble
-                | TypeSpec::Signed
-                | TypeSpec::Unsigned
-                | TypeSpec::Bool
-                | TypeSpec::Complex => {
-                    if other_base_type.is_some() {
-                        return Err(ParseDiag {
-                            span: SourceSpan::default(),
-                            kind: ParseError::UnexpectedToken {
-                                expected: "single type specifier",
-                                found: TokenKind::Unknown,
-                            },
-                        });
-                    }
-                    base_type_spec = Some(match base_type_spec {
-                        Some(curr) => merge_type_specs(curr, ts.clone())?,
-                        None => ts.clone(),
-                    });
-                }
-                _ => {
-                    if base_type_spec.is_some() || other_base_type.is_some() {
-                        return Err(ParseDiag {
-                            span: SourceSpan::default(),
-                            kind: ParseError::UnexpectedToken {
-                                expected: "single type specifier",
-                                found: TokenKind::Unknown,
-                            },
-                        });
-                    }
-                    other_base_type = Some(parse_base_type(parser, ts)?);
-                }
-            },
-            DeclSpec::TypeQualifier(q) => {
-                quals |= TypeQuals::from_type_qualifier(*q);
-            }
-            _ => {}
-        }
-    }
 
-    let base_type = if let Some(ts) = base_type_spec {
-        parse_base_type(parser, &ts)?
-    } else if let Some(node) = other_base_type {
-        node
-    } else {
-        parser.alloc_type_spec(TypeSpec::Int)
-    };
-
-    Ok((base_type, quals))
-}
-
-/// Convert a TypeSpec to a ParsedTypeSpecRef (verifying constraints)
-fn parse_base_type(parser: &mut Parser, ts: &TypeSpec) -> Result<crate::ast::parsed_types::PTypeSpecRef, ParseDiag> {
+/// Convert a TypeSpec to a PTypeSpecRef (verifying constraints)
+fn parse_base_type(parser: &mut Parser, ts: TypeSpec) -> Result<crate::ast::parsed_types::PTypeSpecRef, ParseDiag> {
     use TypeSpec::*;
-    if let Atomic(parsed_type) = ts {
+    if let Atomic(parsed_type) = &ts {
         // C11 6.7.2.4p3: "The type name in an atomic type specifier shall not designate
         // an array type, a function type, an atomic type, or an incomplete type."
         let decl = parser.ast.parsed_types.get_decl(parsed_type.declarator);
@@ -210,7 +160,7 @@ fn parse_base_type(parser: &mut Parser, ts: &TypeSpec) -> Result<crate::ast::par
         }
     }
 
-    Ok(parser.alloc_type_spec(ts.clone()))
+    Ok(parser.alloc_type_spec(ts))
 }
 
 /// Parse a type name and return ParsedType (for casts, sizeof, etc.)

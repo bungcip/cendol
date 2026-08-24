@@ -167,6 +167,7 @@ pub mod guardian_duplicate_case;
 pub mod guardian_indirection_requires_pointer;
 pub mod guardian_invalid_function_specifier;
 mod guardian_invalid_number_of_arguments;
+pub mod guardian_invalid_restrict;
 pub mod guardian_invalid_storage_class_for_function;
 mod guardian_invalid_unary_operand;
 pub mod guardian_jump_into_scope_vla;

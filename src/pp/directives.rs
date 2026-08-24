@@ -51,9 +51,7 @@ impl<'src> Preprocessor<'src> {
                             let cond = self.evaluate_conditional_expression()?;
                             self.handle_if(cond)
                         }
-                        DirectiveKind::Ifdef | DirectiveKind::Ifndef => {
-                            self.handle_conditional_def(kind == DirectiveKind::Ifdef)
-                        }
+                        DirectiveKind::Ifdef | DirectiveKind::Ifndef => self.handle_ifdef(kind == DirectiveKind::Ifdef),
                         _ => unreachable!(),
                     }
                 }
@@ -95,7 +93,7 @@ impl<'src> Preprocessor<'src> {
             DirectiveKind::Define => self.handle_define(),
             DirectiveKind::Undef => self.handle_undef(),
             DirectiveKind::Include | DirectiveKind::IncludeNext => {
-                self.do_handle_include(kind == DirectiveKind::IncludeNext)
+                self.handle_include(kind == DirectiveKind::IncludeNext)
             }
             DirectiveKind::Line => self.handle_line(),
             DirectiveKind::Pragma => self.handle_pragma(),
@@ -295,7 +293,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    fn do_handle_include(&mut self, is_next: bool) -> Result<(), PPDiag> {
+    fn handle_include(&mut self, is_next: bool) -> Result<(), PPDiag> {
         let first_token = self.expect_token()?;
         let mut tokens = self.collect_tokens_until_eod_with_initial(first_token);
 
@@ -374,7 +372,7 @@ impl<'src> Preprocessor<'src> {
         let (path_str, is_angled) = self.parse_include_path_tokens(&tokens, first_token.location, true)?;
 
         let mut limit = None;
-        let mut i = if is_angled {
+        let start_idx = if is_angled {
             tokens
                 .iter()
                 .position(|t| t.kind == PPTokenKind::Greater)
@@ -384,41 +382,40 @@ impl<'src> Preprocessor<'src> {
             1
         };
 
-        while i < tokens.len() {
-            let t = &tokens[i];
+        let mut remaining = &tokens[start_idx..];
+        while let Some((t, next_remaining)) = remaining.split_first() {
             if let PPTokenKind::Identifier(sym) = t.kind
                 && sym.as_str() == "limit"
             {
-                i += 1;
-                if i < tokens.len() && tokens[i].kind == PPTokenKind::LeftParen {
-                    i += 1;
-                    if i < tokens.len() && tokens[i].kind == PPTokenKind::Number {
-                        let text = tokens[i].get_text(self.sm);
+                if let Some((paren, after_paren)) = next_remaining.split_first()
+                    && paren.kind == PPTokenKind::LeftParen
+                {
+                    if let Some((num, after_num)) = after_paren.split_first()
+                        && num.kind == PPTokenKind::Number
+                    {
+                        let text = num.get_text(self.sm);
                         limit = Some(
                             text.parse::<usize>()
-                                .map_err(|_| self.error(PPError::InvalidDirective, tokens[i].location))?,
+                                .map_err(|_| self.error(PPError::InvalidDirective, num.location))?,
                         );
-                        i += 1;
-                    } else {
-                        let loc = if i < tokens.len() {
-                            tokens[i].location
-                        } else {
-                            t.location
-                        };
-                        return self.emit_error(PPError::InvalidDirective, loc);
-                    }
 
-                    if i < tokens.len() && tokens[i].kind == PPTokenKind::RightParen {
-                        i += 1;
+                        if let Some((rparen, after_rparen)) = after_num.split_first()
+                            && rparen.kind == PPTokenKind::RightParen
+                        {
+                            remaining = after_rparen;
+                            continue;
+                        } else {
+                            return self.emit_error(PPError::InvalidDirective, t.location);
+                        }
                     } else {
-                        return self.emit_error(PPError::InvalidDirective, t.location);
+                        let loc = after_paren.first().map_or(t.location, |t| t.location);
+                        return self.emit_error(PPError::InvalidDirective, loc);
                     }
                 } else {
                     return self.emit_error(PPError::InvalidDirective, t.location);
                 }
-                continue;
             }
-            i += 1;
+            remaining = next_remaining;
         }
 
         let include_source_id = self.resolve_include_path(&path_str, is_angled, first_token.location)?;
@@ -494,7 +491,6 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn resolve_next_include_path(&mut self, path: &str, is_angled: bool, loc: SourceLoc) -> Result<SourceId, PPDiag> {
-        use crate::source_manager::FileKind;
         let is_builtin = self
             .lexer_stack
             .last()
@@ -530,7 +526,6 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn handle_if(&mut self, condition: bool) -> Result<(), PPDiag> {
-        // Bolt ⚡: Ensure the skipping state is propagated downward.
         let was_skipping = self.is_currently_skipping() || !condition;
         self.conditional_stack.push(PPConditionalInfo {
             was_skipping,
@@ -540,7 +535,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    fn handle_conditional_def(&mut self, is_ifdef: bool) -> Result<(), PPDiag> {
+    fn handle_ifdef(&mut self, is_ifdef: bool) -> Result<(), PPDiag> {
         let (_, sym) = self.expect_identifier()?;
 
         let condition = self.is_macro_defined(sym) == is_ifdef;

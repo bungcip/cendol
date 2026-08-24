@@ -353,23 +353,23 @@ impl<'src> Preprocessor<'src> {
         }
 
         let mut resolved = Vec::with_capacity(macro_info.tokens.len());
-        let mut i = 0;
+        let mut remaining = macro_info.tokens.as_ref();
         let is_empty = ctx.is_variadic_empty;
 
-        while i < macro_info.tokens.len() {
-            let token = &macro_info.tokens[i];
-
+        while let Some((token, next_remaining)) = remaining.split_first() {
             // Handle # __VA_OPT__(content)
-            if token.kind == PPTokenKind::Hash && i + 1 < macro_info.tokens.len() {
-                let next = &macro_info.tokens[i + 1];
+            if token.kind == PPTokenKind::Hash
+                && let Some((next, after_next)) = next_remaining.split_first()
+            {
                 if let PPTokenKind::Identifier(sym) = next.kind
                     && sym == self.keywords.va_opt
-                    && i + 2 < macro_info.tokens.len()
-                    && macro_info.tokens[i + 2].kind == PPTokenKind::LeftParen
-                    && let Some(rparen_idx) = Self::find_balanced_paren_range(&macro_info.tokens, i + 2)
+                    && let Some((paren, _)) = after_next.split_first()
+                    && paren.kind == PPTokenKind::LeftParen
+                    && let Some(rparen_len) = Self::find_balanced_paren_range(after_next, 0)
                 {
                     let substituted = if !is_empty {
-                        let content = &macro_info.tokens[i + 3..rparen_idx - 1];
+                        // The content is inside `after_next` starting from index 1 to `rparen_len - 1`
+                        let content = &after_next[1..rparen_len - 1];
                         let mut content_ctx = *ctx;
                         content_ctx.is_va_missing = false; // __VA_OPT__ content substitution doesn't use GNU comma swallowing
                         self.substitute_tokens_slice(content, &content_ctx)?
@@ -379,7 +379,7 @@ impl<'src> Preprocessor<'src> {
                     let mut stringified = self.stringify_tokens(&substituted, token.location)?;
                     stringified.hide_set = token.hide_set;
                     resolved.push(stringified);
-                    i = rparen_idx;
+                    remaining = &after_next[rparen_len..];
                     continue;
                 }
             }
@@ -387,20 +387,20 @@ impl<'src> Preprocessor<'src> {
             // Handle __VA_OPT__(content)
             if let PPTokenKind::Identifier(sym) = token.kind
                 && sym == self.keywords.va_opt
-                && i + 1 < macro_info.tokens.len()
-                && macro_info.tokens[i + 1].kind == PPTokenKind::LeftParen
-                && let Some(rparen_idx) = Self::find_balanced_paren_range(&macro_info.tokens, i + 1)
+                && let Some((paren, _)) = next_remaining.split_first()
+                && paren.kind == PPTokenKind::LeftParen
+                && let Some(rparen_len) = Self::find_balanced_paren_range(next_remaining, 0)
             {
                 if !is_empty {
-                    let content = &macro_info.tokens[i + 2..rparen_idx - 1];
+                    let content = &next_remaining[1..rparen_len - 1];
                     resolved.extend_from_slice(content);
                 }
-                i = rparen_idx;
+                remaining = &next_remaining[rparen_len..];
                 continue;
             }
 
             resolved.push(*token);
-            i += 1;
+            remaining = next_remaining;
         }
 
         Ok(Some(resolved))
@@ -419,7 +419,7 @@ impl<'src> Preprocessor<'src> {
         ctx: &SubstitutionCtx,
     ) -> Result<Vec<PPToken>, PPDiag> {
         let mut result = Vec::with_capacity(tokens_slice.len());
-        let mut i = 0;
+        let mut remaining = tokens_slice;
         let mut last_token_produced_output = false;
 
         // Bolt ⚡: Single-item cache for hide-set updates.
@@ -430,12 +430,9 @@ impl<'src> Preprocessor<'src> {
             self.hide_sets.insert(0, ctx.symbol)
         };
 
-        while i < tokens_slice.len() {
-            let token = &tokens_slice[i];
-
+        while let Some((token, next_remaining)) = remaining.split_first() {
             match token.kind {
-                PPTokenKind::Hash if i + 1 < tokens_slice.len() => {
-                    let next = &tokens_slice[i + 1];
+                PPTokenKind::Hash if let Some((next, after_next)) = next_remaining.split_first() => {
                     let mut matched = false;
 
                     if let PPTokenKind::Identifier(sym) = next.kind
@@ -449,7 +446,7 @@ impl<'src> Preprocessor<'src> {
                         stringified.hide_set = ctx.new_hs;
                         result.push(stringified);
                         last_token_produced_output = true;
-                        i += 2;
+                        remaining = after_next;
                         matched = true;
                     }
                     if matched {
@@ -460,9 +457,9 @@ impl<'src> Preprocessor<'src> {
                     t.hide_set = ctx.new_hs;
                     result.push(t);
                     last_token_produced_output = true;
+                    remaining = next_remaining;
                 }
-                PPTokenKind::HashHash if i + 1 < tokens_slice.len() => {
-                    let right_token = &tokens_slice[i + 1];
+                PPTokenKind::HashHash if let Some((right_token, after_next)) = next_remaining.split_first() => {
                     let left = if last_token_produced_output { result.pop() } else { None };
 
                     let (pasted, produced_output) =
@@ -470,11 +467,11 @@ impl<'src> Preprocessor<'src> {
 
                     result.extend(pasted);
                     last_token_produced_output = produced_output;
-                    i += 2;
+                    remaining = after_next;
                     continue;
                 }
                 PPTokenKind::Identifier(sym) => {
-                    let next_is_hh = i + 1 < tokens_slice.len() && tokens_slice[i + 1].kind == PPTokenKind::HashHash;
+                    let next_is_hh = next_remaining.first().is_some_and(|t| t.kind == PPTokenKind::HashHash);
                     let param_tokens = if next_is_hh {
                         self.get_macro_param_tokens(ctx.macro_info, sym, ctx.args)
                     } else {
@@ -516,6 +513,7 @@ impl<'src> Preprocessor<'src> {
                         result.push(t);
                         last_token_produced_output = true;
                     }
+                    remaining = next_remaining;
                 }
                 _ => {
                     let mut t = *token;
@@ -523,9 +521,9 @@ impl<'src> Preprocessor<'src> {
                     t.hide_set = ctx.new_hs;
                     result.push(t);
                     last_token_produced_output = true;
+                    remaining = next_remaining;
                 }
             }
-            i += 1;
         }
 
         Ok(result)

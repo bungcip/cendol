@@ -1,3 +1,4 @@
+pub mod tuti_static_assert_coverage;
 pub mod guardian_expected_array_type;
 
 pub mod parser_lexer_coverage;

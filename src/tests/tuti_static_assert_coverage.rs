@@ -8,6 +8,6 @@ fn test_static_assert_non_integer_type() {
             _Static_assert((void*)0, "pointer should not be valid condition");
         }
         "#,
-        "expected integer type"
+        "expected integer type",
     );
 }

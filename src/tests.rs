@@ -1,4 +1,5 @@
 pub mod guardian_expected_array_type;
+pub mod tuti_static_assert_coverage;
 
 pub mod parser_lexer_coverage;
 pub mod semantic_const_eval_offsetof;

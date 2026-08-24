@@ -1,65 +1,94 @@
 use crate::tests::pp_common::{assert_pp, assert_pp_diag, setup_multi_file_pp_snapshot, setup_pp_snapshot_with_diags};
 
+// A. Error & Warning Directives
 #[test]
-fn test_error_directive_produces_failure() {
-    let src = r#"
+fn test_error_and_warning_directives() {
+    // Error directive
+    let err_src = r#"
 #if 0
 #else
 #error "this should be reported"
 #endif
 "#;
-    assert_pp_diag(src, "ErrorDirective");
-}
+    assert_pp_diag(err_src, "ErrorDirective");
 
-#[test]
-fn test_warning_directive() {
-    let src = r#"
+    // Warning directive
+    let warn_src = r#"
 #warning "this is a warning"
 OK
 "#;
-    assert_pp(src, "OK");
-    assert_pp_diag(src, "this is a warning");
+    assert_pp(warn_src, "OK");
+    assert_pp_diag(warn_src, "this is a warning");
 }
 
+// B. Line Directives
 #[test]
-fn test_line_directive_presumed_location() {
-    let src = r#"
+fn test_line_directives() {
+    // Valid line directive
+    let valid_src = r#"
 // This is line 2
 #line 100 "mapped.c"
 // This is now logical line 101
 OK
 "#;
-    assert_pp(src, "OK");
-}
+    assert_pp(valid_src, "OK");
 
-#[test]
-fn test_invalid_line_directives() {
+    // Invalid line directives
     assert_pp_diag("#line invalid\nOK", "InvalidLineDirective");
     assert_pp_diag("#line 0\nOK", "InvalidLineDirective");
     assert_pp_diag("#line 100 invalid_filename\nOK", "InvalidLineDirective");
 }
 
+// C. Pragmas
 #[test]
-fn test_unknown_pragma_warns() {
-    let src = r#"
-#pragma unknown_pragma
+fn test_pragmas() {
+    // Unknown pragma
+    assert_pp_diag("#pragma unknown_pragma\n", "Unknown pragma: unknown_pragma");
+
+    // Pragma message
+    let msg_src = r#"#pragma message("Hello World")"#;
+    assert_pp_diag(msg_src, "Hello World");
+    let (tokens, _) = setup_pp_snapshot_with_diags(msg_src);
+    assert!(tokens.is_empty());
+
+    // Pragma warning
+    assert_pp_diag(r#"#pragma warning("This is a warning")"#, "This is a warning");
+
+    // Pragma error
+    assert_pp_diag(
+        r#"#pragma error("This is an error")"#,
+        "PragmaError(\"This is an error\")",
+    );
+
+    // Pragma GCC poison
+    let poison_src = r#"
+#pragma GCC poison foo bar
+int foo = 1;
+int baz = 2;
+int bar = 3;
 "#;
-    assert_pp_diag(src, "Unknown pragma: unknown_pragma");
+    let (_tokens, diags) = setup_pp_snapshot_with_diags(poison_src);
+    assert!(!diags.is_empty(), "expected diagnostics due to poisoned identifiers");
+    let diag_str = format!("{:?}", diags);
+    assert!(
+        diag_str.contains("attempt to use poisoned identifier 'foo'"),
+        "expected poisoned identifier error for foo"
+    );
+    assert!(
+        diag_str.contains("attempt to use poisoned identifier 'bar'"),
+        "expected poisoned identifier error for bar"
+    );
+    assert!(!diag_str.contains("baz"), "should not have error for baz");
 }
 
+// D. Misc & Skipped Directives
 #[test]
-fn test_null_directive() {
-    let src = r#"
-#
-#
-OK
-"#;
-    assert_pp(src, "OK");
-}
+fn test_misc_directives() {
+    // Null directive
+    assert_pp("#\n#\nOK\n", "OK");
 
-#[test]
-fn test_skipped_directives_coverage() {
-    let src = r#"
+    // Skipped directives coverage
+    let skipped_src = r#"
 #if 0
 #define FOO 1
 #undef FOO
@@ -74,34 +103,12 @@ fn test_skipped_directives_coverage() {
 #endif
 OK
 "#;
-    assert_pp(src, "OK");
+    assert_pp(skipped_src, "OK");
 }
 
-// Pragma Tests
+// E. _Pragma Operator
 #[test]
-fn test_pragma_message() {
-    let src = r#"#pragma message("Hello World")"#;
-    assert_pp_diag(src, "Hello World");
-    // Should produce no tokens
-    let (tokens, _) = setup_pp_snapshot_with_diags(src);
-    assert!(tokens.is_empty());
-}
-
-#[test]
-fn test_pragma_warning() {
-    let src = r#"#pragma warning("This is a warning")"#;
-    assert_pp_diag(src, "This is a warning");
-}
-
-#[test]
-fn test_pragma_error() {
-    let src = r#"#pragma error("This is an error")"#;
-    assert_pp_diag(src, "PragmaError(\"This is an error\")");
-}
-
-// _Pragma Operator
-#[test]
-fn test_pragma_operator() {
+fn test_pragma_operator_and_once() {
     // Basic _Pragma
     let src1 = r#"_Pragma("message(\"Hello Pragma Operator\")")"#;
     assert_pp_diag(src1, "Hello Pragma Operator");
@@ -125,10 +132,8 @@ M
     assert_pp_diag(src3, "Inside If");
     let (tokens3, _) = setup_pp_snapshot_with_diags(src3);
     assert!(tokens3.is_empty());
-}
 
-#[test]
-fn test_pragma_once_via_pragma_operator() {
+    // Pragma once
     let files = vec![
         ("header.h", "_Pragma(\"once\")\nOK"),
         ("main.c", "#include \"header.h\"\n#include \"header.h\""),
@@ -139,7 +144,7 @@ fn test_pragma_once_via_pragma_operator() {
     assert_eq!(tokens[0].text, "OK");
 }
 
-// push_macro / pop_macro
+// F. push_macro / pop_macro
 #[test]
 fn test_push_pop_macro() {
     // Defined macro
@@ -163,9 +168,9 @@ M
     assert_pp(src2, "M");
 }
 
-// EOD (End of Directive) Tests
+// G. EOD (End of Directive) & EOF Tests
 #[test]
-fn test_eod_extra_tokens() {
+fn test_eod_and_eof() {
     // #undef with extra tokens
     assert_pp_diag("#undef FOO extra", "ExpectedEod");
 
@@ -186,33 +191,9 @@ fn test_eod_extra_tokens() {
 
     // #include with extra tokens
     assert_pp_diag("#include <stddef.h> extra", "ExpectedEod");
-}
 
-#[test]
-fn test_undef_eof_no_newline() {
+    // undef eof no newline
     let src = "#undef FOO";
     let (_, diags) = setup_pp_snapshot_with_diags(src);
     assert!(diags.is_empty(), "Expected no diagnostics, got: {diags:?}");
-}
-
-#[test]
-fn test_pragma_gcc_poison() {
-    let src = r#"
-#pragma GCC poison foo bar
-int foo = 1;
-int baz = 2;
-int bar = 3;
-"#;
-    let (_tokens, diags) = setup_pp_snapshot_with_diags(src);
-    assert!(!diags.is_empty(), "expected diagnostics due to poisoned identifiers");
-    let diag_str = format!("{:?}", diags);
-    assert!(
-        diag_str.contains("attempt to use poisoned identifier 'foo'"),
-        "expected poisoned identifier error for foo"
-    );
-    assert!(
-        diag_str.contains("attempt to use poisoned identifier 'bar'"),
-        "expected poisoned identifier error for bar"
-    );
-    assert!(!diag_str.contains("baz"), "should not have error for baz");
 }

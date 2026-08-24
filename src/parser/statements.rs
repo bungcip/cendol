@@ -37,13 +37,8 @@ pub(crate) fn parse_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag
         TokenKind::Case => parse_case_statement(parser),
         TokenKind::Default => parse_default_statement(parser),
         TokenKind::Asm => parse_asm_statement(parser),
-        TokenKind::PragmaPack(kind) => {
-            parser.advance();
-            Ok(parser.push_node(PNodeKind::PragmaPack(kind), token.span))
-        }
-        TokenKind::PragmaVisibility(kind) => {
-            parser.advance();
-            Ok(parser.push_node(PNodeKind::PragmaVisibility(kind), token.span))
+        TokenKind::PragmaPack(_) | TokenKind::PragmaVisibility(_) => {
+            Ok(super::declarations::parse_pragma(parser).unwrap())
         }
         _ => parse_expression_statement(parser),
     }
@@ -86,37 +81,13 @@ fn parse_compound_statement_inner(parser: &mut Parser, scope_id: ScopeId) -> Res
             }
         }
 
-        if let Some(token) = parser.accept(TokenKind::Label) {
-            let mut labels = Vec::new();
-            loop {
-                let (name, _) = parser.expect_name()?;
-                labels.push(name);
-                if parser.accept(TokenKind::Comma).is_none() {
-                    break;
-                }
-            }
-            let end_token = parser.expect(TokenKind::Semicolon)?;
-            let span = token.span.merge(end_token.span);
-            let node = parser.push_node(PNodeKind::GnuLocalLabel(labels.into_boxed_slice()), span);
-            items.push(node);
+        if parser.is_token(TokenKind::Label) {
+            items.push(parse_gnu_local_label(parser)?);
             continue;
         }
 
-        if let Some(token) = parser.try_current_token()
-            && let TokenKind::PragmaPack(kind) = token.kind
-        {
-            let node = parser.push_node(PNodeKind::PragmaPack(kind), token.span);
-            items.push(node);
-            parser.advance();
-            continue;
-        }
-
-        if let Some(token) = parser.try_current_token()
-            && let TokenKind::PragmaVisibility(kind) = token.kind
-        {
-            let node = parser.push_node(PNodeKind::PragmaVisibility(kind), token.span);
-            items.push(node);
-            parser.advance();
+        if let Some(pragma_node) = super::declarations::parse_pragma(parser) {
+            items.push(pragma_node);
             continue;
         }
 
@@ -326,35 +297,12 @@ fn parse_asm_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
     let mut inputs = Vec::new();
     let mut clobbers = Vec::new();
 
-    let parse_operands = |parser: &mut Parser| -> Result<Vec<PAsmOperand>, ParseDiag> {
-        let mut ops = Vec::new();
-        while !parser.matches(&[TokenKind::RightParen, TokenKind::Colon]) {
-            // Optional [ name ]
-            if parser.accept(TokenKind::LeftBracket).is_some() {
-                parser.expect_name()?;
-                parser.expect(TokenKind::RightBracket)?;
-            }
-
-            let (constraint, _) = parser.expect_string_literal()?;
-            parser.expect(TokenKind::LeftParen)?;
-            let expr = parser.parse_expr_min()?;
-            parser.expect(TokenKind::RightParen)?;
-
-            ops.push(PAsmOperand { constraint, expr });
-
-            if parser.accept(TokenKind::Comma).is_none() {
-                break;
-            }
-        }
-        Ok(ops)
-    };
-
     if parser.accept(TokenKind::Colon).is_some() {
-        outputs = parse_operands(parser)?;
+        outputs = parse_asm_operands(parser)?;
     }
 
     if parser.accept(TokenKind::Colon).is_some() {
-        inputs = parse_operands(parser)?;
+        inputs = parse_asm_operands(parser)?;
     }
 
     if parser.accept(TokenKind::Colon).is_some() {
@@ -386,4 +334,41 @@ fn parse_asm_statement(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
         is_volatile,
     });
     Ok(parser.push_node(PNodeKind::AsmStmt(asm_stmt), start.merge(end)))
+}
+
+fn parse_gnu_local_label(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
+    let token = parser.expect(TokenKind::Label)?;
+    let mut labels = Vec::new();
+    loop {
+        let (name, _) = parser.expect_name()?;
+        labels.push(name);
+        if parser.accept(TokenKind::Comma).is_none() {
+            break;
+        }
+    }
+    let end_token = parser.expect(TokenKind::Semicolon)?;
+    let span = token.span.merge(end_token.span);
+    Ok(parser.push_node(PNodeKind::GnuLocalLabel(labels.into_boxed_slice()), span))
+}
+
+fn parse_asm_operands(parser: &mut Parser) -> Result<Vec<PAsmOperand>, ParseDiag> {
+    let mut ops = Vec::new();
+    while !parser.matches(&[TokenKind::RightParen, TokenKind::Colon]) {
+        if parser.accept(TokenKind::LeftBracket).is_some() {
+            parser.expect_name()?;
+            parser.expect(TokenKind::RightBracket)?;
+        }
+
+        let (constraint, _) = parser.expect_string_literal()?;
+        parser.expect(TokenKind::LeftParen)?;
+        let expr = parser.parse_expr_min()?;
+        parser.expect(TokenKind::RightParen)?;
+
+        ops.push(PAsmOperand { constraint, expr });
+
+        if parser.accept(TokenKind::Comma).is_none() {
+            break;
+        }
+    }
+    Ok(ops)
 }

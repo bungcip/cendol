@@ -6,11 +6,11 @@
 //! during parsing, only syntactic types (PType).
 
 use crate::ast::*;
-use crate::parser::declarations::parse_decl_specs;
+use crate::parser::declarations::{parse_decl_specs, parse_enum_spec, parse_record_spec};
 use crate::parser::declarator::{is_abstract_declarator_start, parse_abstract_declarator};
-use crate::parser::enum_parsing::parse_enum_spec;
+
 use crate::parser::expressions::parse_expression;
-use crate::parser::struct_parsing::parse_record_spec;
+
 use crate::parser::{BindingPower, ParseDiag, ParseError, TokenKind};
 use crate::semantic::TypeQuals;
 

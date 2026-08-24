@@ -253,14 +253,7 @@ impl<'src> Preprocessor<'src> {
                         args.push(Vec::new());
                     }
 
-                    let expected = macro_info.parameter_list.len();
-                    let valid = if macro_info.variadic_arg.is_some() {
-                        args.len() >= expected
-                    } else {
-                        args.len() == expected
-                    };
-
-                    if valid {
+                    if macro_info.is_valid_arg_count(args.len()) {
                         return Ok((args, t));
                     }
 
@@ -962,14 +955,7 @@ impl<'src> Preprocessor<'src> {
             {
                 let args = Self::collect_macro_args_from_slice(m, tokens, i + 2, end_idx - 1);
 
-                let expected = m.parameter_list.len();
-                let valid = if m.variadic_arg.is_some() {
-                    args.len() >= expected
-                } else {
-                    args.len() == expected
-                };
-
-                if valid {
+                if m.is_valid_arg_count(args.len()) {
                     m.flags |= MacroFlags::USED;
                     let info = m.clone();
                     return Some(ExpansionTask::Function {

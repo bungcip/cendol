@@ -178,26 +178,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
             parser.advance();
             Ok(parser.push_node(PNodeKind::Literal(lit), token.span))
         }
-        TokenKind::LeftParen => {
-            parser.advance();
-            if parser.is_type_name_start() {
-                let parsed_type = parse_type_name(parser)?;
-                parser.expect(TokenKind::RightParen)?;
-
-                if parser.is_token(TokenKind::LeftBrace) {
-                    parse_compound_literal(parser, parsed_type, token.span)
-                } else {
-                    let span = SourceSpan::from_loc(token.span.end());
-                    parse_cast(parser, parsed_type, span)
-                }
-            } else if parser.is_token(TokenKind::LeftBrace) {
-                parse_gnu_statement_expression(parser, token.span.start())
-            } else {
-                let expr = parser.parse_expr_min()?;
-                parser.expect(TokenKind::RightParen)?;
-                Ok(expr)
-            }
-        }
+        TokenKind::LeftParen => parse_left_paren_prefix(parser, token),
 
         TokenKind::LogicAnd => {
             parser.advance();
@@ -296,26 +277,19 @@ fn parse_gnu_statement_expression(parser: &mut Parser, start_loc: SourceLoc) -> 
 
 /// Extract the last expression from a compound statement for GNU statement expressions
 fn extract_last_expr_from_compound_stmt(parser: &mut Parser, compound_stmt: PNodeRef) -> PNodeRef {
-    // Get the compound statement node
-    let compound_stmt_node = parser.ast.get_node(compound_stmt);
-
-    if let PNodeKind::CompoundStmt(statements, _) = &compound_stmt_node.kind {
-        // Find the last expression statement in the compound statement
-        for &stmt in statements.iter().rev() {
-            let stmt = parser.ast.get_node(stmt);
-            if let PNodeKind::ExpressionStmt(Some(expr)) = &stmt.kind {
-                return *expr;
+    let node = parser.ast.get_node(compound_stmt);
+    if let PNodeKind::CompoundStmt(statements, _) = &node.kind {
+        if let Some(expr) = statements.iter().rev().find_map(|&s| {
+            if let PNodeKind::ExpressionStmt(Some(e)) = &parser.ast.get_node(s).kind {
+                Some(*e)
+            } else {
+                None
             }
+        }) {
+            return expr;
         }
-
-        // If no expression statement found, create a dummy expression
-        // This shouldn't happen in valid GNU statement expressions
-        let dummy_expr = parser.push_node(PNodeKind::Dummy, compound_stmt_node.span);
-        return dummy_expr;
     }
-
-    // Fallback: create a dummy expression
-    parser.push_node(PNodeKind::Dummy, compound_stmt_node.span)
+    parser.push_node(PNodeKind::Dummy, node.span)
 }
 
 fn parse_function_call(parser: &mut Parser, function: PNodeRef) -> Result<PNodeRef, ParseDiag> {
@@ -370,13 +344,13 @@ fn parse_generic_selection(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
 /// Parse compound literal given the type and start location
 pub(crate) fn parse_compound_literal(
     parser: &mut Parser,
-    parsed_type: PType,
+    ptype: PType,
     start: SourceSpan,
 ) -> Result<PNodeRef, ParseDiag> {
     let init = super::declarations::parse_initializer(parser)?;
     let end_loc = parser.current_token_span()?;
     let span = start.merge(end_loc);
-    let node = parser.push_node(PNodeKind::CompoundLiteral(parsed_type, init), span);
+    let node = parser.push_node(PNodeKind::CompoundLiteral(ptype, init), span);
     Ok(node)
 }
 
@@ -392,28 +366,23 @@ fn is_type_name_in_parens(parser: &mut Parser) -> bool {
     let mut depth = 1;
     let mut peek_idx = 0;
     while depth > 0 {
-        if let Some(token) = parser.peek_token(peek_idx) {
-            match token.kind {
-                TokenKind::LeftParen => depth += 1,
-                TokenKind::RightParen => depth -= 1,
-                TokenKind::EndOfFile => break,
-                _ => {}
-            }
-            peek_idx += 1;
-        } else {
+        let Some(token) = parser.peek_token(peek_idx) else {
+            break;
+        };
+        if token.kind == TokenKind::LeftParen {
+            depth += 1;
+        } else if token.kind == TokenKind::RightParen {
+            depth -= 1;
+        } else if token.kind == TokenKind::EndOfFile {
             break;
         }
+        peek_idx += 1;
     }
 
-    if depth == 0 {
-        if let Some(token) = parser.peek_token(peek_idx) {
-            token.kind != TokenKind::LeftBrace
-        } else {
-            true
-        }
-    } else {
-        true
-    }
+    depth != 0
+        || parser
+            .peek_token(peek_idx)
+            .map_or(true, |t| t.kind != TokenKind::LeftBrace)
 }
 
 /// Shared parser for `sizeof` and `_Alignof` — both accept either `(type-name)` or expression.
@@ -565,4 +534,25 @@ fn parse_builtin_types_compatible_p(parser: &mut Parser) -> Result<PNodeRef, Par
         PNodeKind::BuiltinTypesCompatibleP(Box::new((ty1, ty2))),
         SourceSpan::new(start, end),
     ))
+}
+
+fn parse_left_paren_prefix(parser: &mut Parser, token: Token) -> Result<PNodeRef, ParseDiag> {
+    parser.advance();
+    if parser.is_type_name_start() {
+        let ptype = parse_type_name(parser)?;
+        parser.expect(TokenKind::RightParen)?;
+
+        if parser.is_token(TokenKind::LeftBrace) {
+            parse_compound_literal(parser, ptype, token.span)
+        } else {
+            let span = SourceSpan::from_loc(token.span.end());
+            parse_cast(parser, ptype, span)
+        }
+    } else if parser.is_token(TokenKind::LeftBrace) {
+        parse_gnu_statement_expression(parser, token.span.start())
+    } else {
+        let expr = parser.parse_expr_min()?;
+        parser.expect(TokenKind::RightParen)?;
+        Ok(expr)
+    }
 }

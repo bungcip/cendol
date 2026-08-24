@@ -23,32 +23,20 @@ enum DeclaratorKind {
 ///
 /// Expects: Attribute (( ... ))
 fn peek_past_attribute(parser: &mut Parser, mut start_offset: u32) -> Option<Token> {
-    // Check for multiple attributes
     loop {
-        // start_offset points to Attribute
-        // Skip Attribute
         start_offset += 1;
-
-        // Expect ((
-        // If not ((, then it's not a GCC attribute (or it's ill-formed), stop
-        let t1 = parser.peek_token(start_offset)?;
-        if t1.kind != TokenKind::LeftParen {
+        if parser.peek_token(start_offset)?.kind != TokenKind::LeftParen {
+            return None;
+        }
+        start_offset += 1;
+        if parser.peek_token(start_offset)?.kind != TokenKind::LeftParen {
             return None;
         }
         start_offset += 1;
 
-        let t2 = parser.peek_token(start_offset)?;
-        if t2.kind != TokenKind::LeftParen {
-            return None;
-        }
-        start_offset += 1;
-
-        // Skip balanced parens
-        let mut depth = 2; // We saw two LeftParens
-
+        let mut depth = 2;
         while depth > 0 {
-            let t = parser.peek_token(start_offset)?;
-            match t.kind {
+            match parser.peek_token(start_offset)?.kind {
                 TokenKind::LeftParen => depth += 1,
                 TokenKind::RightParen => depth -= 1,
                 _ => {}
@@ -56,14 +44,21 @@ fn peek_past_attribute(parser: &mut Parser, mut start_offset: u32) -> Option<Tok
             start_offset += 1;
         }
 
-        // Now we are past one attribute.
-        // Check if there is another one.
         let t_next = parser.peek_token(start_offset)?;
         if t_next.kind != TokenKind::Attribute {
             return Some(t_next);
         }
-        // It is an attribute, loop again (start_offset points to it)
     }
+}
+
+fn wrap_attributes(
+    parser: &mut Parser,
+    inner: DeclaratorRef,
+    attrs: impl IntoIterator<Item = DeclSpec>,
+) -> DeclaratorRef {
+    attrs.into_iter().fold(inner, |acc, spec| {
+        parser.alloc_decl(PDeclarator::Attribute { inner: acc, spec })
+    })
 }
 
 /// Validate declarator combinations
@@ -116,23 +111,11 @@ pub(crate) fn parse_declarator(parser: &mut Parser, allow_bitfield: bool) -> Res
     // Parse attributes after identifier or abstract declarator base
     while parser.is_token(TokenKind::Attribute) {
         let attrs = super::declarations::parse_attribute(parser)?;
-        for attr in attrs {
-            base = parser.alloc_decl(PDeclarator::Attribute {
-                inner: base,
-                spec: attr,
-            });
-        }
+        base = wrap_attributes(parser, base, attrs);
     }
 
-    let mut trailing = parse_trailing_declarators(parser, base, allow_bitfield)?;
-
-    // Wrap with leading attributes
-    for attr in attrs_before {
-        trailing = parser.alloc_decl(PDeclarator::Attribute {
-            inner: trailing,
-            spec: attr,
-        });
-    }
+    let trailing = parse_trailing_declarators(parser, base, allow_bitfield)?;
+    let trailing = wrap_attributes(parser, trailing, attrs_before);
 
     Ok(reconstruct_declarator_chain(parser, pointers, trailing))
 }
@@ -219,12 +202,7 @@ fn parse_trailing_declarators(
             }
             TokenKind::Attribute => {
                 let attrs = super::declarations::parse_attribute(parser)?;
-                for attr in attrs {
-                    base = parser.alloc_decl(PDeclarator::Attribute {
-                        inner: base,
-                        spec: attr,
-                    });
-                }
+                base = wrap_attributes(parser, base, attrs);
             }
             TokenKind::Asm => {
                 if let Some(lit) = super::declarations::parse_asm(parser)? {
@@ -247,12 +225,7 @@ fn reconstruct_declarator_chain(
 ) -> DeclaratorRef {
     for (quals, attrs) in chain.into_iter().rev() {
         base = parser.alloc_decl(PDeclarator::Pointer { quals, inner: base });
-        for attr in attrs {
-            base = parser.alloc_decl(PDeclarator::Attribute {
-                inner: base,
-                spec: attr,
-            });
-        }
+        base = wrap_attributes(parser, base, attrs);
     }
     base
 }
@@ -264,21 +237,13 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(PParamRange, Functi
 
     if parser.is_token(TokenKind::RightParen) {
         parser.symbol_table.pop_scope();
-        return Ok((
-            parser.alloc_params(params),
-            FunctionFlags::empty(),
-            scope_id,
-        ));
+        return Ok((parser.alloc_params(params), FunctionFlags::empty(), scope_id));
     }
 
     if parser.is_token(TokenKind::Void) && parser.peek_token(0).is_some_and(|t| t.kind == TokenKind::RightParen) {
         parser.advance();
         parser.symbol_table.pop_scope();
-        return Ok((
-            parser.alloc_params(params),
-            FunctionFlags::HAS_PROTOTYPE,
-            scope_id,
-        ));
+        return Ok((parser.alloc_params(params), FunctionFlags::HAS_PROTOTYPE, scope_id));
     }
 
     while !parser.at_eof() && !parser.is_token(TokenKind::RightParen) {
@@ -297,41 +262,14 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(PParamRange, Functi
             .transaction(parse_decl_specs)
             .unwrap_or_else(|_| thin_vec![DeclSpec::TypeSpec(TypeSpec::Int)]);
 
-        let declarator = if !parser.matches(&[TokenKind::Comma, TokenKind::RightParen, TokenKind::Ellipsis]) {
-            let res = if parser.is_token(TokenKind::LeftParen) {
-                parser
-                    .transaction(|p| parse_abstract_declarator(p, false))
-                    .or_else(|_| parse_declarator(parser, false))
-            } else {
-                parse_declarator(parser, false)
-            };
-            res.ok()
-        } else {
-            None
-        };
+        let declarator = parse_param_declarator(parser);
 
         let span = start_span.merge(parser.last_token_span().unwrap_or(start_span));
 
         let name = declarator.and_then(|d| get_declarator_name(&parser.ast.parsed_types, d));
         let param_ptype = build_type(parser, &specifiers, declarator)?;
 
-        let mut storage = StorageClass::None;
-        let mut is_thread_local = false;
-        let mut is_inline = false;
-        let mut is_noreturn = false;
-        let mut alignment = None;
-        for spec in &specifiers {
-            match spec {
-                DeclSpec::StorageClass(sc) => storage = *sc,
-                DeclSpec::ThreadLocal => is_thread_local = true,
-                DeclSpec::FunctionSpec(fs) => match fs {
-                    FunctionSpec::Inline => is_inline = true,
-                    FunctionSpec::Noreturn => is_noreturn = true,
-                },
-                DeclSpec::AlignmentSpec(align, _) => alignment = Some(align.clone()),
-                _ => {}
-            }
-        }
+        let (storage, is_thread_local, is_inline, is_noreturn, alignment) = extract_param_flags(&specifiers);
 
         if let Some(name_id) = name {
             parser.symbol_table.define_parser_non_typedef(name_id, span);
@@ -380,11 +318,11 @@ pub(crate) fn get_declarator_name(arena: &PTypeArena, declarator: DeclaratorRef)
     let declarator = arena.get_decl(declarator);
     match declarator {
         PDeclarator::Identifier(name) => *name,
-        PDeclarator::Pointer { inner, .. } => get_declarator_name(arena, *inner),
-        PDeclarator::Array { inner, .. } => get_declarator_name(arena, *inner),
-        PDeclarator::Function { inner, .. } => get_declarator_name(arena, *inner),
-        PDeclarator::BitField { inner, .. } => get_declarator_name(arena, *inner),
-        PDeclarator::Attribute { inner, .. } => get_declarator_name(arena, *inner),
+        PDeclarator::Pointer { inner, .. }
+        | PDeclarator::Array { inner, .. }
+        | PDeclarator::Function { inner, .. }
+        | PDeclarator::BitField { inner, .. }
+        | PDeclarator::Attribute { inner, .. } => get_declarator_name(arena, *inner),
     }
 }
 
@@ -426,4 +364,39 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser, allow_bitfield: boo
 
     let trailing = parse_trailing_declarators(parser, base, allow_bitfield)?;
     Ok(reconstruct_declarator_chain(parser, pointers, trailing))
+}
+
+fn parse_param_declarator(parser: &mut Parser) -> Option<DeclaratorRef> {
+    if parser.matches(&[TokenKind::Comma, TokenKind::RightParen, TokenKind::Ellipsis]) {
+        return None;
+    }
+    if parser.is_token(TokenKind::LeftParen) {
+        parser
+            .transaction(|p| parse_abstract_declarator(p, false))
+            .or_else(|_| parse_declarator(parser, false))
+            .ok()
+    } else {
+        parse_declarator(parser, false).ok()
+    }
+}
+
+fn extract_param_flags(specifiers: &[DeclSpec]) -> (StorageClass, bool, bool, bool, Option<PAlignmentSpec>) {
+    let mut storage = StorageClass::None;
+    let mut is_thread_local = false;
+    let mut is_inline = false;
+    let mut is_noreturn = false;
+    let mut alignment = None;
+    for spec in specifiers {
+        match spec {
+            DeclSpec::StorageClass(sc) => storage = *sc,
+            DeclSpec::ThreadLocal => is_thread_local = true,
+            DeclSpec::FunctionSpec(fs) => match fs {
+                FunctionSpec::Inline => is_inline = true,
+                FunctionSpec::Noreturn => is_noreturn = true,
+            },
+            DeclSpec::AlignmentSpec(align, _) => alignment = Some(align.clone()),
+            _ => {}
+        }
+    }
+    (storage, is_thread_local, is_inline, is_noreturn, alignment)
 }

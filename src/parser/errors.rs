@@ -28,13 +28,6 @@ pub(crate) enum ParseError {
     InvalidAtomicSpec(&'static str),
 }
 
-// impl std::fmt::Display for ParseError {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         let msg = format_diag_without_registry(self);
-//         f.write_str(&msg)
-//     }
-// }
-
 impl DiagDisplay for ParseError {
     fn fmt(&self, f: &mut DiagFormatter<'_>) -> std::fmt::Result {
         match self {

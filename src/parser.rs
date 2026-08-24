@@ -11,12 +11,10 @@ use crate::source_manager::SourceSpan;
 
 pub mod declarations;
 pub mod declarator;
-pub mod enum_parsing;
 pub mod errors;
 pub mod expressions;
 pub mod lexer;
 pub mod statements;
-pub mod struct_parsing;
 pub mod type_builder;
 pub mod utils;
 
@@ -62,8 +60,6 @@ pub(crate) struct ParserKeywords {
     pub(crate) attr_alias_underscore: NameId,
     pub(crate) attr_mode: NameId,
     pub(crate) attr_mode_underscore: NameId,
-    pub(crate) attr_noreturn: NameId,
-    pub(crate) attr_noreturn_underscore: NameId,
     pub(crate) attr_aligned: NameId,
     pub(crate) attr_aligned_underscore: NameId,
     pub(crate) attr_packed: NameId,
@@ -76,15 +72,13 @@ pub(crate) struct ParserKeywords {
     pub(crate) attr_visibility_underscore: NameId,
 }
 
-impl ParserKeywords {
-    fn new() -> Self {
+impl Default for ParserKeywords {
+    fn default() -> Self {
         ParserKeywords {
             attr_alias: NameId::new("alias"),
             attr_alias_underscore: NameId::new("__alias__"),
             attr_mode: NameId::new("mode"),
             attr_mode_underscore: NameId::new("__mode__"),
-            attr_noreturn: NameId::new("noreturn"),
-            attr_noreturn_underscore: NameId::new("__noreturn__"),
             attr_aligned: NameId::new("aligned"),
             attr_aligned_underscore: NameId::new("__aligned__"),
             attr_packed: NameId::new("packed"),
@@ -114,7 +108,7 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
             token_cache: Vec::new(),
             symbol_table,
             next_compound_uses_scope: None,
-            keywords: ParserKeywords::new(),
+            keywords: ParserKeywords::default(),
             in_enum_underlying_type: false,
         }
     }
@@ -231,28 +225,22 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
 
     /// Expect a specific token kind, consume it if found
     fn expect(&mut self, expected: TokenKind) -> Result<Token, ParseDiag> {
-        match self.current_token() {
-            Ok(token) => {
-                if token.kind == expected {
-                    self.advance();
-                    Ok(token)
-                } else {
-                    Err(ParseDiag {
-                        span: token.span,
-                        kind: ParseError::UnexpectedToken {
-                            expected: expected.display(),
-                            found: token.kind,
-                        },
-                    })
-                }
-            }
-            Err(e) => Err(ParseDiag {
-                span: e.span,
+        let token = self.current_token().unwrap_or_else(|e| Token {
+            kind: TokenKind::EndOfFile,
+            span: e.span,
+        });
+
+        if token.kind == expected {
+            self.advance();
+            Ok(token)
+        } else {
+            Err(ParseDiag {
+                span: token.span,
                 kind: ParseError::UnexpectedToken {
                     expected: expected.display(),
-                    found: TokenKind::EndOfFile,
+                    found: token.kind,
                 },
-            }),
+            })
         }
     }
 

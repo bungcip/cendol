@@ -147,6 +147,17 @@ pub(crate) struct MacroInfo {
     pub(crate) parameter_needs_expansion: Arc<[bool]>,
 }
 
+impl MacroInfo {
+    pub(crate) fn is_valid_arg_count(&self, count: usize) -> bool {
+        let expected = self.parameter_list.len();
+        if self.variadic_arg.is_some() {
+            count >= expected
+        } else {
+            count == expected
+        }
+    }
+}
+
 /// Represents conditional compilation state
 #[derive(Debug, Clone)]
 pub(crate) struct PPConditionalInfo {

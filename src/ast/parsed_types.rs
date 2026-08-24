@@ -10,7 +10,7 @@ use std::num::NonZeroU32;
 use serde::Serialize;
 
 use crate::ast::parsed::{DeclSpec, PArraySize, TypeSpec};
-use crate::ast::{NameId, PNodeRef, PParam};
+use crate::ast::{NameId, PNodeRef, PParam, ScopeId};
 use crate::semantic::TypeQuals;
 
 /// Type reference for parsed base types
@@ -60,7 +60,7 @@ pub enum PDeclarator {
         params: PParamRange,
         flags: FunctionFlags,
         inner: DeclaratorRef,
-        scope_id: crate::semantic::ScopeId,
+        scope_id: ScopeId,
     },
 
     BitField {

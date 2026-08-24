@@ -51,8 +51,9 @@ impl<'src> Preprocessor<'src> {
                             let cond = self.evaluate_conditional_expression()?;
                             self.handle_if(cond)
                         }
-                        DirectiveKind::Ifdef => self.handle_ifdef(),
-                        DirectiveKind::Ifndef => self.handle_ifndef(),
+                        DirectiveKind::Ifdef | DirectiveKind::Ifndef => {
+                            self.handle_conditional_def(kind == DirectiveKind::Ifdef)
+                        }
                         _ => unreachable!(),
                     }
                 }
@@ -93,12 +94,14 @@ impl<'src> Preprocessor<'src> {
         match kind {
             DirectiveKind::Define => self.handle_define(),
             DirectiveKind::Undef => self.handle_undef(),
-            DirectiveKind::Include => self.handle_include(),
-            DirectiveKind::IncludeNext => self.handle_include_next(),
+            DirectiveKind::Include | DirectiveKind::IncludeNext => {
+                self.do_handle_include(kind == DirectiveKind::IncludeNext)
+            }
             DirectiveKind::Line => self.handle_line(),
             DirectiveKind::Pragma => self.handle_pragma(),
-            DirectiveKind::Error => self.handle_error(),
-            DirectiveKind::Warning => self.handle_warning(),
+            DirectiveKind::Error | DirectiveKind::Warning => {
+                self.handle_diagnostic_directive(kind == DirectiveKind::Error)
+            }
             DirectiveKind::Embed => self.handle_embed(),
             _ => unreachable!("ICE: Conditional directives handled separately"),
         }
@@ -346,14 +349,10 @@ impl<'src> Preprocessor<'src> {
                 Ok((path, false))
             }
             PPTokenKind::Less => {
-                let mut greater_idx = None;
-                for (i, t) in tokens.iter().enumerate().skip(1) {
-                    if t.kind == PPTokenKind::Greater {
-                        greater_idx = Some(i);
-                        break;
-                    }
-                }
-                let idx = greater_idx.ok_or_else(|| self.error(PPError::InvalidIncludePath, diag_loc))?;
+                let idx = tokens
+                    .iter()
+                    .position(|t| t.kind == PPTokenKind::Greater)
+                    .ok_or_else(|| self.error(PPError::InvalidIncludePath, diag_loc))?;
                 if !allow_extra && idx + 1 < tokens.len() {
                     return self.emit_error(PPError::ExpectedEod, tokens[idx + 1].location);
                 }
@@ -362,14 +361,6 @@ impl<'src> Preprocessor<'src> {
             }
             _ => self.emit_error(PPError::InvalidIncludePath, diag_loc),
         }
-    }
-
-    fn handle_include(&mut self) -> Result<(), PPDiag> {
-        self.do_handle_include(false)
-    }
-
-    fn handle_include_next(&mut self) -> Result<(), PPDiag> {
-        self.do_handle_include(true)
     }
 
     fn handle_embed(&mut self) -> Result<(), PPDiag> {
@@ -549,14 +540,6 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    fn handle_ifdef(&mut self) -> Result<(), PPDiag> {
-        self.handle_conditional_def(true)
-    }
-
-    fn handle_ifndef(&mut self) -> Result<(), PPDiag> {
-        self.handle_conditional_def(false)
-    }
-
     fn handle_conditional_def(&mut self, is_ifdef: bool) -> Result<(), PPDiag> {
         let (_, sym) = self.expect_identifier()?;
 
@@ -690,27 +673,23 @@ impl<'src> Preprocessor<'src> {
     fn handle_pragma(&mut self) -> Result<(), PPDiag> {
         let (token, symbol) = self.expect_identifier()?;
 
-        if symbol == self.keywords.once {
-            if let Some(lexer) = self.lexer_stack.last() {
-                self.once_included.insert(lexer.source_id);
+        match symbol {
+            s if s == self.keywords.once => {
+                if let Some(lexer) = self.lexer_stack.last() {
+                    self.once_included.insert(lexer.source_id);
+                }
             }
-        } else if symbol == self.keywords.push_macro {
-            self.handle_pragma_push_macro()?;
-        } else if symbol == self.keywords.pop_macro {
-            self.handle_pragma_pop_macro()?;
-        } else if symbol == self.keywords.message {
-            self.handle_pragma_diagnostic_message(DiagnosticLevel::Note)?;
-        } else if symbol == self.keywords.warning {
-            self.handle_pragma_diagnostic_message(DiagnosticLevel::Warning)?;
-        } else if symbol == self.keywords.error {
-            self.handle_pragma_diagnostic_message(DiagnosticLevel::Error)?;
-        } else if symbol == self.keywords.pack {
-            return self.handle_pragma_pack();
-        } else if symbol == self.keywords.gcc {
-            return self.handle_pragma_gcc();
-        } else {
-            let err = self.error(PPError::UnknownPragma(symbol), token.location);
-            self.report_pp_warning(err);
+            s if s == self.keywords.push_macro => self.handle_pragma_push_macro()?,
+            s if s == self.keywords.pop_macro => self.handle_pragma_pop_macro()?,
+            s if s == self.keywords.message => self.handle_pragma_diagnostic_message(DiagnosticLevel::Note)?,
+            s if s == self.keywords.warning => self.handle_pragma_diagnostic_message(DiagnosticLevel::Warning)?,
+            s if s == self.keywords.error => self.handle_pragma_diagnostic_message(DiagnosticLevel::Error)?,
+            s if s == self.keywords.pack => return self.handle_pragma_pack(),
+            s if s == self.keywords.gcc => return self.handle_pragma_gcc(),
+            _ => {
+                let err = self.error(PPError::UnknownPragma(symbol), token.location);
+                self.report_pp_warning(err);
+            }
         }
 
         self.skip_directive()?;
@@ -880,14 +859,6 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    fn handle_error(&mut self) -> Result<(), PPDiag> {
-        self.handle_diagnostic_directive(true)
-    }
-
-    fn handle_warning(&mut self) -> Result<(), PPDiag> {
-        self.handle_diagnostic_directive(false)
-    }
-
     // -------------------------------------------------------------------------
     // #pragma GCC diagnostic | visibility | poison
     // -------------------------------------------------------------------------
@@ -896,16 +867,15 @@ impl<'src> Preprocessor<'src> {
         // Next token is the GCC pragma sub-command
         let (tok, sym) = self.expect_identifier()?;
 
-        if sym == self.keywords.diagnostic {
-            self.handle_pragma_gcc_diagnostic()?;
-        } else if sym == self.keywords.visibility {
-            return self.handle_pragma_gcc_visibility();
-        } else if sym == self.keywords.poison {
-            self.handle_pragma_gcc_poison()?;
-        } else {
-            // Unknown GCC pragma — emit a soft warning and ignore
-            let err = self.error(PPError::UnknownPragma(sym), tok.location);
-            self.report_pp_warning(err);
+        match sym {
+            s if s == self.keywords.diagnostic => self.handle_pragma_gcc_diagnostic()?,
+            s if s == self.keywords.visibility => return self.handle_pragma_gcc_visibility(),
+            s if s == self.keywords.poison => self.handle_pragma_gcc_poison()?,
+            _ => {
+                // Unknown GCC pragma — emit a soft warning and ignore
+                let err = self.error(PPError::UnknownPragma(sym), tok.location);
+                self.report_pp_warning(err);
+            }
         }
 
         self.skip_directive()?;
@@ -927,18 +897,16 @@ impl<'src> Preprocessor<'src> {
         }
 
         // For warning / error / ignored / fatal, the next token is the warning flag string.
-        let new_level = if sym == self.keywords.warning {
-            Some(DiagnosticLevel::Warning)
-        } else if sym == self.keywords.error {
-            Some(DiagnosticLevel::Error)
-        } else if sym == self.keywords.ignored {
-            None // "ignored" means suppress
-        } else if sym == self.keywords.fatal {
-            Some(DiagnosticLevel::Error) // treat as error
-        } else {
-            let err = self.error(PPError::UnknownPragma(sym), tok.location);
-            self.report_pp_warning(err);
-            return Ok(());
+        let new_level = match sym {
+            s if s == self.keywords.warning => Some(DiagnosticLevel::Warning),
+            s if s == self.keywords.error => Some(DiagnosticLevel::Error),
+            s if s == self.keywords.ignored => None,
+            s if s == self.keywords.fatal => Some(DiagnosticLevel::Error),
+            _ => {
+                let err = self.error(PPError::UnknownPragma(sym), tok.location);
+                self.report_pp_warning(err);
+                return Ok(());
+            }
         };
 
         // Parse the warning flag string, e.g. "-Wunused-variable"

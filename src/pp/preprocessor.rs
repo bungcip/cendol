@@ -385,11 +385,13 @@ impl<'src> Preprocessor<'src> {
                 PPTokenKind::Identifier(symbol) => {
                     if let Some(magic) = self.try_expand_magic_macro(&token) {
                         return Ok(Some(magic));
-                    } else if symbol == self.keywords.pragma_operator {
+                    }
+                    if symbol == self.keywords.pragma_operator {
                         self.handle_pragma_operator()?;
-                    } else if let Some(expanded) = self.expand_macro(&token)? {
+                        continue;
+                    }
+                    if let Some(mut expanded) = self.expand_macro(&token)? {
                         if !expanded.is_empty() {
-                            let mut expanded = expanded;
                             if token.flags.contains(PPTokenFlags::LEADING_SPACE) {
                                 expanded[0].flags |= PPTokenFlags::LEADING_SPACE;
                             } else {
@@ -397,9 +399,9 @@ impl<'src> Preprocessor<'src> {
                             }
                             self.pending_tokens.extend(expanded.into_iter().rev());
                         }
-                    } else {
-                        return Ok(Some(token));
+                        continue;
                     }
+                    return Ok(Some(token));
                 }
                 // All other tokens
                 _ => return Ok(Some(token)),
@@ -650,27 +652,19 @@ impl<'src> Preprocessor<'src> {
     pub(super) fn report_pp_warning(&mut self, err: PPDiag) {
         use crate::diagnostic::IntoDiagnostic;
         let is_pedantic = err.kind.is_pedantic();
-        let mut diags = err.into_diagnostic();
 
-        if is_pedantic {
-            if self.lang_options.pedantic_mode == PedanticMode::Error {
-                for diag in &mut diags {
-                    diag.level = DiagnosticLevel::Error;
-                }
-            } else if self.lang_options.pedantic_mode == PedanticMode::Warning {
-                for diag in &mut diags {
-                    diag.level = DiagnosticLevel::Warning;
-                }
-            } else {
-                return;
+        let level = if is_pedantic {
+            match self.lang_options.pedantic_mode {
+                PedanticMode::Error => DiagnosticLevel::Error,
+                PedanticMode::Warning => DiagnosticLevel::Warning,
+                PedanticMode::Default => return,
             }
         } else {
-            for diag in &mut diags {
-                diag.level = DiagnosticLevel::Warning;
-            }
-        }
+            DiagnosticLevel::Warning
+        };
 
-        for diag in diags {
+        for mut diag in err.into_diagnostic() {
+            diag.level = level;
             self.diag.report(diag, self.sm);
         }
     }

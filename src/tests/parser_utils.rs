@@ -1,4 +1,4 @@
-use crate::ast::literal::LitVal;
+use crate::ast::literal::{CharPrefix, LitVal};
 use crate::ast::{BinaryOp, UnaryOp};
 use crate::ast::{DeclSpec, DeclaratorRef, PAst, PDeclarator, PNodeKind, PNodeRef, TypeSpec};
 use crate::driver::CompilerDriver;
@@ -14,69 +14,65 @@ use serde::Serialize;
 
 /// Resolved AST node kind for testing - replaces NodeRef with actual content
 #[derive(Debug, Serialize)]
-pub(crate) enum ResolvedNodeKind {
+pub(crate) enum RNodeKind {
     LiteralInt(i64),
     LiteralFloat(f64),
     LiteralString(String),
-    LiteralChar(u64, crate::ast::literal::CharPrefix),
+    LiteralChar(u64, CharPrefix),
     LiteralNullptr,
     LiteralTrue,
     LiteralFalse,
     Ident(String),
-    UnaryOp(UnaryOp, Box<ResolvedNodeKind>),
-    BinaryOp(BinaryOp, Box<ResolvedNodeKind>, Box<ResolvedNodeKind>),
-    TernaryOp(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>, Box<ResolvedNodeKind>),
-    PostIncrement(Box<ResolvedNodeKind>),
-    PostDecrement(Box<ResolvedNodeKind>),
-    Assignment(BinaryOp, Box<ResolvedNodeKind>, Box<ResolvedNodeKind>),
-    FunctionCall(Box<ResolvedNodeKind>, Vec<ResolvedNodeKind>),
-    MemberAccess(Box<ResolvedNodeKind>, String, bool),
-    IndexAccess(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>),
-    Cast(String, Box<ResolvedNodeKind>), // Simplified: just type name
-    SizeOfExpr(Box<ResolvedNodeKind>),
+    UnaryOp(UnaryOp, Box<RNodeKind>),
+    BinaryOp(BinaryOp, Box<RNodeKind>, Box<RNodeKind>),
+    TernaryOp(Box<RNodeKind>, Box<RNodeKind>, Box<RNodeKind>),
+    PostIncrement(Box<RNodeKind>),
+    PostDecrement(Box<RNodeKind>),
+    Assignment(BinaryOp, Box<RNodeKind>, Box<RNodeKind>),
+    FunctionCall(Box<RNodeKind>, Vec<RNodeKind>),
+    MemberAccess(Box<RNodeKind>, String, bool),
+    IndexAccess(Box<RNodeKind>, Box<RNodeKind>),
+    Cast(String, Box<RNodeKind>), // Simplified: just type name
+    SizeOfExpr(Box<RNodeKind>),
     SizeOfType(String),  // Simplified: just type name
     AlignOfType(String), // Simplified: just type name
-    AlignOfExpr(Box<ResolvedNodeKind>),
+    AlignOfExpr(Box<RNodeKind>),
     Declaration {
         specifiers: Vec<String>,
-        init_declarators: Vec<ResolvedInitDeclarator>,
+        init_declarators: Vec<RInitDeclarator>,
     }, // Simplified declaration
-    EnumConstant(String, Option<Box<ResolvedNodeKind>>),
-    InitializerList(Vec<ResolvedNodeKind>), // For initializer lists like {1, 2, 3}
-    ExpressionStatement(Option<Box<ResolvedNodeKind>>), // Expression statement
-    CompoundStatement(Vec<ResolvedNodeKind>), // Compound statement { ... }
-    GnuStatementExpression(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // GNU statement expression ({ ... })
-    GenericSelection(Box<ResolvedNodeKind>, Vec<ResolvedGenericAssociation>), // _Generic selection
-    Label(String, Box<ResolvedNodeKind>),   // Label statement (label: statement)
-    Goto(String),                           // Goto statement
-    Return(Option<Box<ResolvedNodeKind>>),  // Return statement
-    Break,                                  // Break statement
-    Continue,                               // Continue statement
-    Switch(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>),
-    Case(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // Case statement
-    CaseRange(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // GNU Case range statement
-    Default(Box<ResolvedNodeKind>),                     // Default statement
-    If(
-        Box<ResolvedNodeKind>,
-        Box<ResolvedNodeKind>,
-        Option<Box<ResolvedNodeKind>>,
-    ), // If statement
-    While(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // While statement
-    DoWhile(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // Do-while statement
+    EnumConstant(String, Option<Box<RNodeKind>>),
+    InitializerList(Vec<RNodeKind>),             // For initializer lists like {1, 2, 3}
+    ExpressionStatement(Option<Box<RNodeKind>>), // Expression statement
+    CompoundStatement(Vec<RNodeKind>),           // Compound statement { ... }
+    GnuStatementExpression(Box<RNodeKind>, Box<RNodeKind>), // GNU statement expression ({ ... })
+    GenericSelection(Box<RNodeKind>, Vec<RGenericAssociation>), // _Generic selection
+    Label(String, Box<RNodeKind>),               // Label statement (label: statement)
+    Goto(String),                                // Goto statement
+    Return(Option<Box<RNodeKind>>),              // Return statement
+    Break,                                       // Break statement
+    Continue,                                    // Continue statement
+    Switch(Box<RNodeKind>, Box<RNodeKind>),
+    Case(Box<RNodeKind>, Box<RNodeKind>),                       // Case statement
+    CaseRange(Box<RNodeKind>, Box<RNodeKind>, Box<RNodeKind>),  // GNU Case range statement
+    Default(Box<RNodeKind>),                                    // Default statement
+    If(Box<RNodeKind>, Box<RNodeKind>, Option<Box<RNodeKind>>), // If statement
+    While(Box<RNodeKind>, Box<RNodeKind>),                      // While statement
+    DoWhile(Box<RNodeKind>, Box<RNodeKind>),                    // Do-while statement
     For(
-        Option<Box<ResolvedNodeKind>>,
-        Option<Box<ResolvedNodeKind>>,
-        Option<Box<ResolvedNodeKind>>,
-        Box<ResolvedNodeKind>,
+        Option<Box<RNodeKind>>,
+        Option<Box<RNodeKind>>,
+        Option<Box<RNodeKind>>,
+        Box<RNodeKind>,
     ), // For statement
-    StaticAssert(Box<ResolvedNodeKind>, Option<String>),
-    CompoundLiteral(String, Box<ResolvedNodeKind>),
+    StaticAssert(Box<RNodeKind>, Option<String>),
+    CompoundLiteral(String, Box<RNodeKind>),
     FunctionDef {
         specifiers: Vec<String>,
-        declarator: Box<ResolvedInitDeclarator>,
-        body: Box<ResolvedNodeKind>,
+        declarator: Box<RInitDeclarator>,
+        body: Box<RNodeKind>,
     },
-    TranslationUnit(Vec<ResolvedNodeKind>),
+    TranslationUnit(Vec<RNodeKind>),
     Empty, // Empty statement
     // Add more as needed for tests
     PragmaPackStmt(String),
@@ -84,19 +80,19 @@ pub(crate) enum ResolvedNodeKind {
 
 /// Simplified resolved generic association for testing
 #[derive(Debug, Serialize)]
-pub(crate) struct ResolvedGenericAssociation {
+pub(crate) struct RGenericAssociation {
     type_name: Option<String>, // None for 'default:'
-    result_expr: ResolvedNodeKind,
+    result_expr: RNodeKind,
 }
 
 /// Simplified resolved init declarator for testing
 #[derive(Debug, Serialize)]
-pub(crate) struct ResolvedInitDeclarator {
+pub(crate) struct RInitDeclarator {
     name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     kind: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    initializer: Option<ResolvedNodeKind>,
+    initializer: Option<RNodeKind>,
 }
 
 fn resolve_specs(ast: &PAst, specifiers: &[DeclSpec]) -> Vec<String> {
@@ -130,7 +126,7 @@ fn resolve_specs(ast: &PAst, specifiers: &[DeclSpec]) -> Vec<String> {
                                 PNodeKind::EnumConstant(name, Some(value_expr)) => {
                                     let value = resolve_node(ast, *value_expr);
                                     match value {
-                                        ResolvedNodeKind::LiteralInt(val) => format!("{} = {}", name, val),
+                                        RNodeKind::LiteralInt(val) => format!("{} = {}", name, val),
                                         _ => format!("{} = <expr>", name),
                                     }
                                 }
@@ -184,99 +180,97 @@ fn resolve_specs(ast: &PAst, specifiers: &[DeclSpec]) -> Vec<String> {
 }
 
 /// Resolve a ParsedNodeRef to a ResolvedNodeKind by recursively following references
-pub(crate) fn resolve_node(ast: &PAst, node: PNodeRef) -> ResolvedNodeKind {
+pub(crate) fn resolve_node(ast: &PAst, node: PNodeRef) -> RNodeKind {
     let node = ast.get_node(node);
     match &node.kind {
         PNodeKind::Literal(lit) => match lit.get_val() {
-            LitVal::Int { value, .. } => ResolvedNodeKind::LiteralInt(value),
-            lit @ LitVal::Float { .. } => ResolvedNodeKind::LiteralFloat(lit.as_f64()),
-            LitVal::String { value, .. } => {
-                ResolvedNodeKind::LiteralString(String::from_utf8_lossy(&value).to_string())
-            }
-            LitVal::Char(c, prefix) => ResolvedNodeKind::LiteralChar(c as u64, prefix),
-            LitVal::Nullptr => ResolvedNodeKind::LiteralNullptr,
-            LitVal::True => ResolvedNodeKind::LiteralTrue,
-            LitVal::False => ResolvedNodeKind::LiteralFalse,
+            LitVal::Int { value, .. } => RNodeKind::LiteralInt(value),
+            lit @ LitVal::Float { .. } => RNodeKind::LiteralFloat(lit.as_f64()),
+            LitVal::String { value, .. } => RNodeKind::LiteralString(String::from_utf8_lossy(&value).to_string()),
+            LitVal::Char(c, prefix) => RNodeKind::LiteralChar(c as u64, prefix),
+            LitVal::Nullptr => RNodeKind::LiteralNullptr,
+            LitVal::True => RNodeKind::LiteralTrue,
+            LitVal::False => RNodeKind::LiteralFalse,
         },
-        PNodeKind::Ident(symbol) => ResolvedNodeKind::Ident(symbol.to_string()),
-        PNodeKind::UnaryOp(op, operand) => ResolvedNodeKind::UnaryOp(*op, Box::new(resolve_node(ast, *operand))),
-        PNodeKind::BinaryOp(op, left, right) => ResolvedNodeKind::BinaryOp(
+        PNodeKind::Ident(symbol) => RNodeKind::Ident(symbol.to_string()),
+        PNodeKind::UnaryOp(op, operand) => RNodeKind::UnaryOp(*op, Box::new(resolve_node(ast, *operand))),
+        PNodeKind::BinaryOp(op, left, right) => RNodeKind::BinaryOp(
             *op,
             Box::new(resolve_node(ast, *left)),
             Box::new(resolve_node(ast, *right)),
         ),
-        PNodeKind::TernaryOp(cond, then_expr, else_expr) => ResolvedNodeKind::TernaryOp(
+        PNodeKind::TernaryOp(cond, then_expr, else_expr) => RNodeKind::TernaryOp(
             Box::new(resolve_node(ast, *cond)),
             Box::new(resolve_node(ast, *then_expr)),
             Box::new(resolve_node(ast, *else_expr)),
         ),
-        PNodeKind::PostIncrement(operand) => ResolvedNodeKind::PostIncrement(Box::new(resolve_node(ast, *operand))),
-        PNodeKind::PostDecrement(operand) => ResolvedNodeKind::PostDecrement(Box::new(resolve_node(ast, *operand))),
-        PNodeKind::Assignment(op, lhs, rhs) => ResolvedNodeKind::Assignment(
+        PNodeKind::PostIncrement(operand) => RNodeKind::PostIncrement(Box::new(resolve_node(ast, *operand))),
+        PNodeKind::PostDecrement(operand) => RNodeKind::PostDecrement(Box::new(resolve_node(ast, *operand))),
+        PNodeKind::Assignment(op, lhs, rhs) => RNodeKind::Assignment(
             *op,
             Box::new(resolve_node(ast, *lhs)),
             Box::new(resolve_node(ast, *rhs)),
         ),
-        PNodeKind::FunctionCall(func, args) => ResolvedNodeKind::FunctionCall(
+        PNodeKind::FunctionCall(func, args) => RNodeKind::FunctionCall(
             Box::new(resolve_node(ast, *func)),
             args.iter().map(|&arg| resolve_node(ast, arg)).collect(),
         ),
-        PNodeKind::BuiltinChooseExpr(c, t, f) => ResolvedNodeKind::FunctionCall(
-            Box::new(ResolvedNodeKind::Ident("__builtin_choose_expr".to_string())),
+        PNodeKind::BuiltinChooseExpr(c, t, f) => RNodeKind::FunctionCall(
+            Box::new(RNodeKind::Ident("__builtin_choose_expr".to_string())),
             vec![resolve_node(ast, *c), resolve_node(ast, *t), resolve_node(ast, *f)],
         ),
-        PNodeKind::BuiltinComplex(r, i) => ResolvedNodeKind::FunctionCall(
-            Box::new(ResolvedNodeKind::Ident("__builtin_complex".to_string())),
+        PNodeKind::BuiltinComplex(r, i) => RNodeKind::FunctionCall(
+            Box::new(RNodeKind::Ident("__builtin_complex".to_string())),
             vec![resolve_node(ast, *r), resolve_node(ast, *i)],
         ),
-        PNodeKind::BuiltinBitCast(ty, expr) => ResolvedNodeKind::FunctionCall(
-            Box::new(ResolvedNodeKind::Ident("__builtin_bit_cast".to_string())),
+        PNodeKind::BuiltinBitCast(ty, expr) => RNodeKind::FunctionCall(
+            Box::new(RNodeKind::Ident("__builtin_bit_cast".to_string())),
             vec![
-                ResolvedNodeKind::Ident(format!("parsed_type_{}", ty.base.get())),
+                RNodeKind::Ident(format!("parsed_type_{}", ty.base.get())),
                 resolve_node(ast, *expr),
             ],
         ),
         PNodeKind::BuiltinTypesCompatibleP(boxed) => {
             let (t1, t2) = &**boxed;
-            ResolvedNodeKind::FunctionCall(
-                Box::new(ResolvedNodeKind::Ident("__builtin_types_compatible_p".to_string())),
+            RNodeKind::FunctionCall(
+                Box::new(RNodeKind::Ident("__builtin_types_compatible_p".to_string())),
                 vec![
-                    ResolvedNodeKind::Ident(format!("type_{}", t1.base.get())),
-                    ResolvedNodeKind::Ident(format!("type_{}", t2.base.get())),
+                    RNodeKind::Ident(format!("type_{}", t1.base.get())),
+                    RNodeKind::Ident(format!("type_{}", t2.base.get())),
                 ],
             )
         }
-        PNodeKind::BuiltinConvertVector(expr, ty) => ResolvedNodeKind::FunctionCall(
-            Box::new(ResolvedNodeKind::Ident("__builtin_convertvector".to_string())),
+        PNodeKind::BuiltinConvertVector(expr, ty) => RNodeKind::FunctionCall(
+            Box::new(RNodeKind::Ident("__builtin_convertvector".to_string())),
             vec![
                 resolve_node(ast, *expr),
-                ResolvedNodeKind::Ident(format!("type_{}", ty.base.get())),
+                RNodeKind::Ident(format!("type_{}", ty.base.get())),
             ],
         ),
-        PNodeKind::BuiltinVaArg(ty, expr) => ResolvedNodeKind::FunctionCall(
-            Box::new(ResolvedNodeKind::Ident("__builtin_va_arg".to_string())),
+        PNodeKind::BuiltinVaArg(ty, expr) => RNodeKind::FunctionCall(
+            Box::new(RNodeKind::Ident("__builtin_va_arg".to_string())),
             vec![
-                ResolvedNodeKind::Ident(format!("type_{}", ty.base.get())),
+                RNodeKind::Ident(format!("type_{}", ty.base.get())),
                 resolve_node(ast, *expr),
             ],
         ),
         PNodeKind::MemberAccess(object, field, is_arrow) => {
-            ResolvedNodeKind::MemberAccess(Box::new(resolve_node(ast, *object)), field.to_string(), *is_arrow)
+            RNodeKind::MemberAccess(Box::new(resolve_node(ast, *object)), field.to_string(), *is_arrow)
         }
         PNodeKind::IndexAccess(array, index) => {
-            ResolvedNodeKind::IndexAccess(Box::new(resolve_node(ast, *array)), Box::new(resolve_node(ast, *index)))
+            RNodeKind::IndexAccess(Box::new(resolve_node(ast, *array)), Box::new(resolve_node(ast, *index)))
         }
         PNodeKind::Cast(ty, expr) => {
             // For simplicity, just show a placeholder type name
-            ResolvedNodeKind::Cast(
+            RNodeKind::Cast(
                 format!("parsed_type_{}_{}", ty.base.get(), ty.declarator.get()),
                 Box::new(resolve_node(ast, *expr)),
             )
         }
-        PNodeKind::SizeOfExpr(expr) => ResolvedNodeKind::SizeOfExpr(Box::new(resolve_node(ast, *expr))),
-        PNodeKind::SizeOfType(ty) => ResolvedNodeKind::SizeOfType(format!("type_{}", ty.base.get())),
-        PNodeKind::AlignOfType(ty) => ResolvedNodeKind::AlignOfType(format!("type_{}", ty.base.get())),
-        PNodeKind::AlignOfExpr(expr) => ResolvedNodeKind::AlignOfExpr(Box::new(resolve_node(ast, *expr))),
+        PNodeKind::SizeOfExpr(expr) => RNodeKind::SizeOfExpr(Box::new(resolve_node(ast, *expr))),
+        PNodeKind::SizeOfType(ty) => RNodeKind::SizeOfType(format!("type_{}", ty.base.get())),
+        PNodeKind::AlignOfType(ty) => RNodeKind::AlignOfType(format!("type_{}", ty.base.get())),
+        PNodeKind::AlignOfExpr(expr) => RNodeKind::AlignOfExpr(Box::new(resolve_node(ast, *expr))),
         PNodeKind::Declaration(decl) => {
             let specifiers = resolve_specs(ast, &decl.specifiers);
             let init_declarators = decl
@@ -290,29 +284,27 @@ pub(crate) fn resolve_node(ast: &PAst, node: PNodeRef) -> ResolvedNodeKind {
                         .initializer
                         .as_ref()
                         .map(|init| resolve_initializer(ast, *init));
-                    ResolvedInitDeclarator {
+                    RInitDeclarator {
                         name,
                         kind,
                         initializer,
                     }
                 })
                 .collect();
-            ResolvedNodeKind::Declaration {
+            RNodeKind::Declaration {
                 specifiers,
                 init_declarators,
             }
         }
-        PNodeKind::EnumConstant(name, value_expr) => ResolvedNodeKind::EnumConstant(
+        PNodeKind::EnumConstant(name, value_expr) => RNodeKind::EnumConstant(
             name.to_string(),
             value_expr.map(|expr| Box::new(resolve_node(ast, expr))),
         ),
-        PNodeKind::ExpressionStmt(expr) => {
-            ResolvedNodeKind::ExpressionStatement(expr.map(|e| Box::new(resolve_node(ast, e))))
-        }
+        PNodeKind::ExpressionStmt(expr) => RNodeKind::ExpressionStatement(expr.map(|e| Box::new(resolve_node(ast, e)))),
         PNodeKind::CompoundStmt(statements, _) => {
-            ResolvedNodeKind::CompoundStatement(statements.iter().map(|&stmt| resolve_node(ast, stmt)).collect())
+            RNodeKind::CompoundStatement(statements.iter().map(|&stmt| resolve_node(ast, stmt)).collect())
         }
-        PNodeKind::GnuStatementExpr(compound_stmt, result_expr) => ResolvedNodeKind::GnuStatementExpression(
+        PNodeKind::GnuStatementExpr(compound_stmt, result_expr) => RNodeKind::GnuStatementExpression(
             Box::new(resolve_node(ast, *compound_stmt)),
             Box::new(resolve_node(ast, *result_expr)),
         ),
@@ -327,46 +319,46 @@ pub(crate) fn resolve_node(ast: &PAst, node: PNodeRef) -> ResolvedNodeKind {
                         format!("type_{}", ty.base.get())
                     });
                     let result_expr = resolve_node(ast, assoc.result_expr);
-                    ResolvedGenericAssociation { type_name, result_expr }
+                    RGenericAssociation { type_name, result_expr }
                 })
                 .collect();
-            ResolvedNodeKind::GenericSelection(resolved_controlling, resolved_associations)
+            RNodeKind::GenericSelection(resolved_controlling, resolved_associations)
         }
         PNodeKind::Label(label, statement) => {
-            ResolvedNodeKind::Label(label.to_string(), Box::new(resolve_node(ast, *statement)))
+            RNodeKind::Label(label.to_string(), Box::new(resolve_node(ast, *statement)))
         }
-        PNodeKind::Goto(label) => ResolvedNodeKind::Goto(label.to_string()),
-        PNodeKind::Return(expr) => ResolvedNodeKind::Return(expr.map(|e| Box::new(resolve_node(ast, e)))),
-        PNodeKind::Break => ResolvedNodeKind::Break,
-        PNodeKind::Continue => ResolvedNodeKind::Continue,
-        PNodeKind::Switch(condition, body) => ResolvedNodeKind::Switch(
+        PNodeKind::Goto(label) => RNodeKind::Goto(label.to_string()),
+        PNodeKind::Return(expr) => RNodeKind::Return(expr.map(|e| Box::new(resolve_node(ast, e)))),
+        PNodeKind::Break => RNodeKind::Break,
+        PNodeKind::Continue => RNodeKind::Continue,
+        PNodeKind::Switch(condition, body) => RNodeKind::Switch(
             Box::new(resolve_node(ast, *condition)),
             Box::new(resolve_node(ast, *body)),
         ),
-        PNodeKind::Case(expr, statement) => ResolvedNodeKind::Case(
+        PNodeKind::Case(expr, statement) => RNodeKind::Case(
             Box::new(resolve_node(ast, *expr)),
             Box::new(resolve_node(ast, *statement)),
         ),
-        PNodeKind::CaseRange(start, end, statement) => ResolvedNodeKind::CaseRange(
+        PNodeKind::CaseRange(start, end, statement) => RNodeKind::CaseRange(
             Box::new(resolve_node(ast, *start)),
             Box::new(resolve_node(ast, *end)),
             Box::new(resolve_node(ast, *statement)),
         ),
-        PNodeKind::Default(statement) => ResolvedNodeKind::Default(Box::new(resolve_node(ast, *statement))),
-        PNodeKind::If(if_stmt) => ResolvedNodeKind::If(
+        PNodeKind::Default(statement) => RNodeKind::Default(Box::new(resolve_node(ast, *statement))),
+        PNodeKind::If(if_stmt) => RNodeKind::If(
             Box::new(resolve_node(ast, if_stmt.condition)),
             Box::new(resolve_node(ast, if_stmt.then_branch)),
             if_stmt.else_branch.map(|br| Box::new(resolve_node(ast, br))),
         ),
-        PNodeKind::While(while_stmt) => ResolvedNodeKind::While(
+        PNodeKind::While(while_stmt) => RNodeKind::While(
             Box::new(resolve_node(ast, while_stmt.condition)),
             Box::new(resolve_node(ast, while_stmt.body)),
         ),
-        PNodeKind::DoWhile(body, condition) => ResolvedNodeKind::DoWhile(
+        PNodeKind::DoWhile(body, condition) => RNodeKind::DoWhile(
             Box::new(resolve_node(ast, *body)),
             Box::new(resolve_node(ast, *condition)),
         ),
-        PNodeKind::For(for_stmt) => ResolvedNodeKind::For(
+        PNodeKind::For(for_stmt) => RNodeKind::For(
             for_stmt.init.map(|i| Box::new(resolve_node(ast, i))),
             for_stmt.condition.map(|c| Box::new(resolve_node(ast, c))),
             for_stmt.increment.map(|inc| Box::new(resolve_node(ast, inc))),
@@ -384,7 +376,7 @@ pub(crate) fn resolve_node(ast: &PAst, node: PNodeRef) -> ResolvedNodeKind {
                     "<invalid>".to_string()
                 }
             });
-            ResolvedNodeKind::StaticAssert(Box::new(resolve_node(ast, *expr)), message)
+            RNodeKind::StaticAssert(Box::new(resolve_node(ast, *expr)), message)
         }
         PNodeKind::CompoundLiteral(ty, init) => {
             // Check if init is an InitializerList, if so use resolve_initializer, otherwise resolve_node
@@ -393,13 +385,13 @@ pub(crate) fn resolve_node(ast: &PAst, node: PNodeRef) -> ResolvedNodeKind {
                 PNodeKind::InitializerList(_) => resolve_initializer(ast, *init),
                 _ => resolve_node(ast, *init),
             };
-            ResolvedNodeKind::CompoundLiteral(
+            RNodeKind::CompoundLiteral(
                 format!("parsed_type_{}", ty.base.get()), // Simplified type
                 Box::new(resolved_init),
             )
         }
         PNodeKind::TranslationUnit(nodes) => {
-            ResolvedNodeKind::TranslationUnit(nodes.iter().map(|&n| resolve_node(ast, n)).collect())
+            RNodeKind::TranslationUnit(nodes.iter().map(|&n| resolve_node(ast, n)).collect())
         }
         PNodeKind::FunctionDef(def) => {
             let specifiers = resolve_specs(ast, &def.specifiers);
@@ -407,20 +399,20 @@ pub(crate) fn resolve_node(ast: &PAst, node: PNodeRef) -> ResolvedNodeKind {
             let kind_str = extract_declarator_kind(ast, def.declarator);
             let kind = if kind_str == "identifier" { None } else { Some(kind_str) };
 
-            let resolved_declarator = ResolvedInitDeclarator {
+            let resolved_declarator = RInitDeclarator {
                 name,
                 kind,
                 initializer: None,
             };
 
-            ResolvedNodeKind::FunctionDef {
+            RNodeKind::FunctionDef {
                 specifiers,
                 declarator: Box::new(resolved_declarator),
                 body: Box::new(resolve_node(ast, def.body)),
             }
         }
-        PNodeKind::EmptyStmt | PNodeKind::Dummy => ResolvedNodeKind::Empty,
-        PNodeKind::PragmaPack(kind) => ResolvedNodeKind::PragmaPackStmt(format!("{:?}", kind)),
+        PNodeKind::EmptyStmt | PNodeKind::Dummy => RNodeKind::Empty,
+        PNodeKind::PragmaPack(kind) => RNodeKind::PragmaPackStmt(format!("{:?}", kind)),
         // Add more cases as needed for other ParsedNodeKind variants used in tests
         _ => panic!("Unsupported ParsedNodeKind for resolution: {:?}", node.kind),
     }
@@ -562,7 +554,7 @@ fn extract_type_kind(ast: &PAst, ty: &crate::ast::PType) -> String {
     }
 }
 
-fn resolve_initializer(ast: &PAst, initializer: PNodeRef) -> ResolvedNodeKind {
+fn resolve_initializer(ast: &PAst, initializer: PNodeRef) -> RNodeKind {
     let node = ast.get_node(initializer);
     match &node.kind {
         PNodeKind::InitializerList(designated_inits) => {
@@ -572,7 +564,7 @@ fn resolve_initializer(ast: &PAst, initializer: PNodeRef) -> ResolvedNodeKind {
                 // In a full implementation, we'd handle [index] and .field designators
                 elements.push(resolve_initializer(ast, designated.initializer));
             }
-            ResolvedNodeKind::InitializerList(elements)
+            RNodeKind::InitializerList(elements)
         }
         _ => resolve_node(ast, initializer),
     }
@@ -605,22 +597,22 @@ where
     (ast, result)
 }
 
-pub(crate) fn setup_expr(source: &str) -> ResolvedNodeKind {
+pub(crate) fn setup_expr(source: &str) -> RNodeKind {
     let (ast, expr_result) = setup_source(source, |parser| parser.parse_expression(BindingPower::MIN));
 
     let node = expr_result.unwrap();
     resolve_node(&ast, node)
 }
 
-pub(crate) fn setup_declaration(source: &str) -> ResolvedNodeKind {
+pub(crate) fn setup_declaration(source: &str) -> RNodeKind {
     setup_declaration_with_std(source, CStandard::C11)
 }
 
-pub(crate) fn setup_declaration_with_std(source: &str, std: CStandard) -> ResolvedNodeKind {
+pub(crate) fn setup_declaration_with_std(source: &str, std: CStandard) -> RNodeKind {
     match setup_translation_unit_with_std(source, std) {
-        ResolvedNodeKind::TranslationUnit(nodes) => nodes
+        RNodeKind::TranslationUnit(nodes) => nodes
             .into_iter()
-            .find(|n| !matches!(n, ResolvedNodeKind::Empty))
+            .find(|n| !matches!(n, RNodeKind::Empty))
             .expect("No declaration found in translation unit"),
         _ => panic!("Expected translation unit"),
     }
@@ -632,23 +624,23 @@ pub(crate) fn setup_declaration_with_errors(source: &str) -> ParseDiag {
         .unwrap_err()
 }
 
-pub(crate) fn setup_statement(source: &str) -> ResolvedNodeKind {
+pub(crate) fn setup_statement(source: &str) -> RNodeKind {
     let (ast, stmt_result) = setup_source(source, statements::parse_statement);
     resolve_node(&ast, stmt_result.expect("Expected statement"))
 }
 
 /// Setup a compound statement, useful for testing multi-statement blocks
-pub(crate) fn setup_compound(source: &str) -> ResolvedNodeKind {
+pub(crate) fn setup_compound(source: &str) -> RNodeKind {
     let source = format!("{{ {} }}", source);
     let (ast, stmt_result) = setup_source(&source, parse_compound_statement);
     resolve_node(&ast, stmt_result.expect("Expected multi statement block").0)
 }
 
-pub(crate) fn setup_translation_unit(source: &str) -> ResolvedNodeKind {
+pub(crate) fn setup_translation_unit(source: &str) -> RNodeKind {
     setup_translation_unit_with_std(source, CStandard::C11)
 }
 
-pub(crate) fn setup_translation_unit_with_std(source: &str, std: CStandard) -> ResolvedNodeKind {
+pub(crate) fn setup_translation_unit_with_std(source: &str, std: CStandard) -> RNodeKind {
     let phase = CompilePhase::Parse;
     let mut config = CompileConfig::from_virtual_file(source.to_string(), phase);
     config.lang_options.c_standard = std;

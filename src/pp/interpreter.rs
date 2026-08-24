@@ -77,14 +77,6 @@ impl PPExpr {
     fn get_is_unsigned(&self) -> bool {
         match self {
             PPExpr::Number(n) => n.is_unsigned,
-            PPExpr::Identifier(_) => false,
-            PPExpr::Defined(_) => false,
-            PPExpr::HasInclude(_, _) => false,
-            PPExpr::HasIncludeNext(_, _) => false,
-            PPExpr::HasBuiltin(_) => false,
-            PPExpr::HasAttribute(_) => false,
-            PPExpr::HasCAttribute(_) => false,
-            PPExpr::HasFeature(_) | PPExpr::HasExtension(_) => false,
             PPExpr::Binary(op, left, right) => match op {
                 BinaryOp::LogicAnd
                 | BinaryOp::LogicOr
@@ -102,6 +94,7 @@ impl PPExpr {
                 _ => operand.get_is_unsigned(),
             },
             PPExpr::Conditional(_, true_e, false_e) => true_e.get_is_unsigned() || false_e.get_is_unsigned(),
+            _ => false,
         }
     }
 
@@ -520,18 +513,6 @@ impl<'a> Interpreter<'a> {
             return Ok(PPExpr::Defined(sym));
         }
 
-        // Handle `__has_include`
-        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == keywords.has_include) {
-            self.advance();
-            return self.parse_has_include(false);
-        }
-
-        // Handle `__has_include_next`
-        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == keywords.has_include_next) {
-            self.advance();
-            return self.parse_has_include(true);
-        }
-
         type CheckConstructor = fn(StringId) -> PPExpr;
         let checks: [(StringId, CheckConstructor); 5] = [
             (keywords.has_builtin, PPExpr::HasBuiltin),
@@ -542,6 +523,10 @@ impl<'a> Interpreter<'a> {
         ];
 
         if let PPTokenKind::Identifier(sym) = token.kind {
+            if sym == keywords.has_include || sym == keywords.has_include_next {
+                self.advance();
+                return self.parse_has_include(sym == keywords.has_include_next);
+            }
             for (id, constructor) in checks {
                 if sym == id {
                     self.advance();

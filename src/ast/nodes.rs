@@ -7,7 +7,7 @@
 use serde::Serialize;
 
 use crate::{
-    ast::{NameId, NodeRef, SymbolRef, literal::LitRef},
+    ast::{LitRef, NameId, NodeRef, SymbolRef},
     semantic::{QualType, ScopeId},
 };
 

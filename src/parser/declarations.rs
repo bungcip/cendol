@@ -81,45 +81,7 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
             return parse_function_definition_tail(p, specifiers, declarator, start_loc, dummy);
         }
 
-        let mut init_declarators = ThinVec::new();
-        let mut current_declarator = Some(declarator);
-
-        loop {
-            let start_span = p.current_token_span_or_empty();
-            let declarator = if let Some(d) = current_declarator.take() {
-                d
-            } else {
-                super::declarator::parse_declarator(p, false)?
-            };
-
-            let initializer = p
-                .accept(TokenKind::Assign)
-                .map(|_| super::declarations::parse_initializer(p))
-                .transpose()?;
-
-            let span = start_span.merge(p.last_token_span().unwrap_or(start_span));
-
-            if let Some(name) = super::declarator::get_declarator_name(&p.ast.parsed_types, declarator) {
-                if specifiers
-                    .iter()
-                    .any(|s| matches!(s, DeclSpec::StorageClass(StorageClass::Typedef)))
-                {
-                    p.add_typedef(name);
-                } else {
-                    p.symbol_table.define_parser_non_typedef(name, span);
-                }
-            }
-
-            init_declarators.push(PInitDeclarator {
-                declarator,
-                initializer,
-                span,
-            });
-
-            if p.accept(TokenKind::Comma).is_none() {
-                break;
-            }
-        }
+        let init_declarators = parse_init_declarators_for_decl(p, &specifiers, declarator)?;
 
         parse_trailing_attributes_and_asm(p, &mut specifiers)?;
 
@@ -184,17 +146,8 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<PNodeRef, Pa
             break;
         }
 
-        if let TokenKind::PragmaPack(kind) = token.kind {
-            let node = parser.push_node(PNodeKind::PragmaPack(kind), token.span);
-            top_level_declarations.push(node);
-            parser.advance();
-            continue;
-        }
-
-        if let TokenKind::PragmaVisibility(kind) = token.kind {
-            let node = parser.push_node(PNodeKind::PragmaVisibility(kind), token.span);
-            top_level_declarations.push(node);
-            parser.advance();
+        if let Some(pragma_node) = parse_pragma(parser) {
+            top_level_declarations.push(pragma_node);
             continue;
         }
 
@@ -444,52 +397,29 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
         let token = parser.current_token()?;
         match token.kind {
             TokenKind::Identifier(name) => {
-                // Inside __attribute__((...)), noreturn is just an attribute name (not a function specifier).
-                // GCC uses __attribute__((noreturn)) on function types, but on other types it's ignored.
-                if name == parser.keywords.attr_noreturn || name == parser.keywords.attr_noreturn_underscore {
-                    // Skip noreturn as an attribute - it's only valid on function types
-                    parser.advance();
-                    if parser.accept(TokenKind::LeftParen).is_some() {
-                        let mut inner_depth = 1;
-                        while inner_depth > 0 && !parser.at_eof() {
-                            if parser.accept(TokenKind::LeftParen).is_some() {
-                                inner_depth += 1;
-                            } else if parser.accept(TokenKind::RightParen).is_some() {
-                                inner_depth -= 1;
-                            } else {
-                                parser.advance();
-                            }
-                        }
-                    }
-                } else if name == parser.keywords.attr_aligned || name == parser.keywords.attr_aligned_underscore {
-                    parser.advance();
+                parser.advance();
+                let k = &parser.keywords;
+
+                if name == k.attr_aligned || name == k.attr_aligned_underscore {
                     if parser.accept(TokenKind::LeftParen).is_some() {
                         let alignment = if parser.is_type_name_start() {
-                            let parsed_type = parse_type_name(parser)?;
-                            PAlignmentSpec::Type(parsed_type)
+                            PAlignmentSpec::Type(parse_type_name(parser)?)
                         } else {
                             PAlignmentSpec::Expr(parser.parse_expr_min()?)
                         };
                         parser.expect(TokenKind::RightParen)?;
                         specs.push(DeclSpec::AlignmentSpec(alignment, true));
                     }
-                } else if name == parser.keywords.attr_packed || name == parser.keywords.attr_packed_underscore {
+                } else if name == k.attr_packed || name == k.attr_packed_underscore {
                     specs.push(DeclSpec::AttributePacked);
-                    parser.advance();
-                } else if name == parser.keywords.attr_transparent_union
-                    || name == parser.keywords.attr_transparent_union_underscore
-                {
+                } else if name == k.attr_transparent_union || name == k.attr_transparent_union_underscore {
                     specs.push(DeclSpec::AttributeTransparentUnion);
-                    parser.advance();
-                } else if name == parser.keywords.attr_cleanup || name == parser.keywords.attr_cleanup_underscore {
-                    parser.advance();
+                } else if name == k.attr_cleanup || name == k.attr_cleanup_underscore {
                     parser.expect(TokenKind::LeftParen)?;
                     let arg = parser.parse_expr_assignment()?;
                     parser.expect(TokenKind::RightParen)?;
                     specs.push(DeclSpec::AttributeCleanup(arg));
-                } else if name == parser.keywords.attr_visibility || name == parser.keywords.attr_visibility_underscore
-                {
-                    parser.advance();
+                } else if name == k.attr_visibility || name == k.attr_visibility_underscore {
                     parser.expect(TokenKind::LeftParen)?;
                     let (lit, _span) = parser.expect_string_literal()?;
                     let val = {
@@ -505,14 +435,12 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
                         _ => Visibility::Default,
                     };
                     specs.push(DeclSpec::AttributeVisibility(vis));
-                } else if name == parser.keywords.attr_alias || name == parser.keywords.attr_alias_underscore {
-                    parser.advance();
+                } else if name == k.attr_alias || name == k.attr_alias_underscore {
                     parser.expect(TokenKind::LeftParen)?;
                     let (lit, _span) = parser.expect_string_literal()?;
                     parser.expect(TokenKind::RightParen)?;
                     specs.push(DeclSpec::AttributeAlias(lit));
-                } else if name == parser.keywords.attr_mode || name == parser.keywords.attr_mode_underscore {
-                    parser.advance();
+                } else if name == k.attr_mode || name == k.attr_mode_underscore {
                     parser.expect(TokenKind::LeftParen)?;
                     let token = parser.current_token()?;
                     if let TokenKind::Identifier(mode_name) = token.kind {
@@ -525,18 +453,8 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
                     parser.expect(TokenKind::RightParen)?;
                 } else {
                     // Skip unknown attribute name and potential arguments
-                    parser.advance();
                     if parser.accept(TokenKind::LeftParen).is_some() {
-                        let mut inner_depth = 1;
-                        while inner_depth > 0 && !parser.at_eof() {
-                            if parser.accept(TokenKind::LeftParen).is_some() {
-                                inner_depth += 1;
-                            } else if parser.accept(TokenKind::RightParen).is_some() {
-                                inner_depth -= 1;
-                            } else {
-                                parser.advance();
-                            }
-                        }
+                        skip_balanced_parens(parser);
                     }
                 }
             }
@@ -595,15 +513,7 @@ pub(crate) fn parse_c23_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, 
 
             // Check for arguments ( ... )
             if parser.accept(TokenKind::LeftParen).is_some() {
-                let mut depth = 1;
-                while depth > 0 && !parser.at_eof() {
-                    let token = parser.advance().unwrap();
-                    if token.kind == TokenKind::LeftParen {
-                        depth += 1;
-                    } else if token.kind == TokenKind::RightParen {
-                        depth -= 1;
-                    }
-                }
+                skip_balanced_parens(parser);
             }
             specs.push(DeclSpec::Attribute);
         } else {
@@ -618,28 +528,36 @@ pub(crate) fn parse_c23_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, 
 }
 
 /// Parse GCC __asm__ syntax: __asm__ ( string-literal )
-pub(crate) fn parse_asm(parser: &mut Parser) -> Result<Option<crate::ast::literal::StringLitRef>, ParseDiag> {
+pub(crate) fn parse_asm(parser: &mut Parser) -> Result<Option<StringLitRef>, ParseDiag> {
     parser.expect(TokenKind::Asm)?;
     parser.expect(TokenKind::LeftParen)?;
     let mut lit_out = None;
     if let Ok(token) = parser.current_token()
         && let TokenKind::Literal(lit) = token.kind
-        && lit.kind() == crate::ast::literal::LitKind::String
+        && lit.kind() == LitKind::String
     {
         let (lit_val, _) = parser.expect_string_literal()?;
         lit_out = Some(lit_val);
     }
-    let mut depth = 1;
 
+    skip_balanced_parens(parser);
+
+    Ok(lit_out)
+}
+
+fn skip_balanced_parens(parser: &mut Parser) {
+    let mut depth = 1;
     while depth > 0 && !parser.at_eof() {
-        let token = parser.advance().unwrap();
-        if token.kind == TokenKind::LeftParen {
-            depth += 1;
-        } else if token.kind == TokenKind::RightParen {
-            depth -= 1;
+        if let Some(token) = parser.advance() {
+            if token.kind == TokenKind::LeftParen {
+                depth += 1;
+            } else if token.kind == TokenKind::RightParen {
+                depth -= 1;
+            }
+        } else {
+            break;
         }
     }
-    Ok(lit_out)
 }
 
 pub(crate) fn parse_trailing_attributes_and_asm(
@@ -660,4 +578,206 @@ pub(crate) fn parse_trailing_attributes_and_asm(
         }
     }
     Ok(())
+}
+
+// --- Merged from struct_parsing.rs ---
+
+/// Parse struct or union specifier with context
+pub(super) fn parse_record_spec(parser: &mut Parser, is_union: bool) -> Result<TypeSpec, ParseDiag> {
+    let mut attributes = parser.parse_attributes_lenient();
+
+    let tag = parser.accept_name();
+
+    let definition = if parser.accept(TokenKind::LeftBrace).is_some() {
+        let members = parse_struct_decl_list(parser)?;
+        parser.expect(TokenKind::RightBrace)?;
+
+        // Check for attributes after struct definition
+        attributes.extend(parser.parse_attributes_lenient());
+
+        Some(members)
+    } else {
+        None
+    };
+
+    Ok(TypeSpec::Record(is_union, tag, definition, attributes.into()))
+}
+
+/// Parse struct declaration list
+fn parse_struct_decl_list(parser: &mut Parser) -> Result<ThinVec<PNodeRef>, ParseDiag> {
+    let mut declarations = ThinVec::new();
+
+    while !parser.at_eof() && !parser.is_token(TokenKind::RightBrace) {
+        if let Some(pragma_node) = parse_pragma(parser) {
+            declarations.push(pragma_node);
+            continue;
+        }
+
+        let declaration = parse_struct_decl(parser)?;
+        declarations.push(declaration);
+    }
+
+    Ok(declarations)
+}
+
+/// Parse struct declaration
+fn parse_struct_decl(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
+    // Check for _Static_assert (C11)
+    if let Some(token) = parser.accept(TokenKind::StaticAssert) {
+        return parse_static_assert(parser, token);
+    }
+
+    let start = parser.current_token_span()?;
+    let mut specifiers = parse_decl_specs(parser)?;
+
+    let has_record_enum_type = has_record_or_enum_type(&specifiers);
+
+    let (init_declarators, end) = if has_record_enum_type && let Some(end) = parser.accept(TokenKind::Semicolon) {
+        (ThinVec::new(), end.span)
+    } else {
+        let decls = parse_init_declarators(parser)?;
+        parse_trailing_attributes_and_asm(parser, &mut specifiers)?;
+        let end = parser.expect(TokenKind::Semicolon)?;
+        (decls, end.span)
+    };
+
+    let decl = PDecl {
+        specifiers,
+        init_declarators,
+    };
+
+    let span = start.merge(end);
+    Ok(parser.push_node(PNodeKind::Declaration(decl), span))
+}
+
+fn parse_init_declarators(parser: &mut Parser) -> Result<ThinVec<PInitDeclarator>, ParseDiag> {
+    let mut decls = ThinVec::new();
+    loop {
+        let start = parser.current_token_span_or_empty();
+        let declarator = super::declarator::parse_declarator(parser, true)?;
+        let span = start.merge(parser.last_token_span().unwrap_or(start));
+        decls.push(PInitDeclarator {
+            declarator,
+            initializer: None,
+            span,
+        });
+        if parser.accept(TokenKind::Comma).is_none() {
+            break;
+        }
+    }
+    Ok(decls)
+}
+
+// --- Merged from enum_parsing.rs ---
+
+/// Parse enum specifier
+pub(super) fn parse_enum_spec(parser: &mut Parser) -> Result<TypeSpec, ParseDiag> {
+    let tag = parser.accept_name();
+
+    let original_in_underlying = parser.in_enum_underlying_type;
+    let underlying_type = if parser.is_token(TokenKind::Colon)
+        && parser
+            .peek_token(0)
+            .is_some_and(|t| parser.is_type_name_start_token(&t.kind))
+    {
+        parser.advance();
+        parser.in_enum_underlying_type = true;
+        let ty = super::type_builder::parse_type_name(parser)?;
+        parser.in_enum_underlying_type = original_in_underlying;
+        Some(ty)
+    } else {
+        None
+    };
+
+    let enumerators = if !parser.in_enum_underlying_type && parser.accept(TokenKind::LeftBrace).is_some() {
+        let enums = parse_comma_separated_list(parser, TokenKind::RightBrace, parse_enumerator)?;
+        parser.expect(TokenKind::RightBrace)?;
+        Some(enums)
+    } else {
+        None
+    };
+
+    Ok(TypeSpec::Enum(tag, enumerators.map(|e| e.into()), underlying_type))
+}
+
+/// Parse enumerator
+fn parse_enumerator(parser: &mut Parser) -> Result<PNodeRef, ParseDiag> {
+    let (name, mut span) = parser.expect_name()?;
+    let value = if parser.accept(TokenKind::Assign).is_some() {
+        let expr = parser.parse_expr_assignment()?;
+        span = span.merge(parser.ast.get_node(expr).span);
+        Some(expr)
+    } else {
+        None
+    };
+
+    let node = parser.push_node(PNodeKind::EnumConstant(name, value), span);
+    Ok(node)
+}
+
+pub(crate) fn parse_pragma(parser: &mut Parser) -> Option<PNodeRef> {
+    let token = parser.try_current_token()?;
+    match token.kind {
+        TokenKind::PragmaPack(kind) => {
+            let node = parser.push_node(PNodeKind::PragmaPack(kind), token.span);
+            parser.advance();
+            Some(node)
+        }
+        TokenKind::PragmaVisibility(kind) => {
+            let node = parser.push_node(PNodeKind::PragmaVisibility(kind), token.span);
+            parser.advance();
+            Some(node)
+        }
+        _ => None,
+    }
+}
+
+fn has_record_or_enum_type(specifiers: &[DeclSpec]) -> bool {
+    specifiers
+        .iter()
+        .any(|s| matches!(s, DeclSpec::TypeSpec(TypeSpec::Record(..) | TypeSpec::Enum(..))))
+}
+
+fn parse_init_declarators_for_decl(
+    p: &mut Parser,
+    specifiers: &[DeclSpec],
+    first_declarator: DeclaratorRef,
+) -> Result<ThinVec<PInitDeclarator>, ParseDiag> {
+    let mut init_declarators = ThinVec::new();
+    let mut current_declarator = Some(first_declarator);
+
+    loop {
+        let start_span = p.current_token_span_or_empty();
+        let declarator = if let Some(d) = current_declarator.take() {
+            d
+        } else {
+            super::declarator::parse_declarator(p, false)?
+        };
+
+        let initializer = p.accept(TokenKind::Assign).map(|_| parse_initializer(p)).transpose()?;
+
+        let span = start_span.merge(p.last_token_span().unwrap_or(start_span));
+
+        if let Some(name) = super::declarator::get_declarator_name(&p.ast.parsed_types, declarator) {
+            if specifiers
+                .iter()
+                .any(|s| matches!(s, DeclSpec::StorageClass(StorageClass::Typedef)))
+            {
+                p.add_typedef(name);
+            } else {
+                p.symbol_table.define_parser_non_typedef(name, span);
+            }
+        }
+
+        init_declarators.push(PInitDeclarator {
+            declarator,
+            initializer,
+            span,
+        });
+
+        if p.accept(TokenKind::Comma).is_none() {
+            break;
+        }
+    }
+    Ok(init_declarators)
 }

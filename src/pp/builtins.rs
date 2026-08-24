@@ -9,6 +9,10 @@ use std::sync::Arc;
 use target_lexicon::{Architecture, OperatingSystem};
 
 impl<'src> Preprocessor<'src> {
+    pub(crate) fn is_64_bit(&self) -> bool {
+        self.target.pointer_width().ok().map(|w| w.bits()).unwrap_or(64) == 64
+    }
+
     /// Initialize built-in macros
     pub(crate) fn initialize_builtin_macros(&mut self, current_time: Option<DateTime<Utc>>) {
         let now: DateTime<Utc> = current_time.unwrap_or_else(Utc::now);
@@ -127,7 +131,7 @@ impl<'src> Preprocessor<'src> {
         }
 
         // Pointer width
-        if self.target.pointer_width().ok().map(|w| w.bits()).unwrap_or(64) == 64 {
+        if self.is_64_bit() {
             for macro_name in &["__LP64__", "_LP64"] {
                 self.define_builtin_macro_one(macro_name);
             }
@@ -165,7 +169,7 @@ impl<'src> Preprocessor<'src> {
             }
             OperatingSystem::Windows => {
                 self.define_builtin_macro_one("_WIN32");
-                if self.target.pointer_width().ok().map(|w| w.bits()).unwrap_or(32) == 64 {
+                if self.is_64_bit() {
                     self.define_builtin_macro_one("_WIN64");
                 }
             }
@@ -174,7 +178,7 @@ impl<'src> Preprocessor<'src> {
 
         let user_label_prefix = match self.target.operating_system {
             OperatingSystem::Darwin(_) => "_",
-            OperatingSystem::Windows if self.target.pointer_width().ok().map(|w| w.bits()).unwrap_or(32) == 32 => "_",
+            OperatingSystem::Windows if !self.is_64_bit() => "_",
             _ => "",
         };
         self.define_builtin_macro_lexed("__USER_LABEL_PREFIX__", user_label_prefix);
@@ -207,7 +211,7 @@ impl<'src> Preprocessor<'src> {
 
     fn init_builtin_macros_stdlib_types(&mut self) {
         // Type definitions
-        if self.target.pointer_width().ok().map(|w| w.bits()).unwrap_or(64) == 64 {
+        if self.is_64_bit() {
             self.define_builtin_macro_lexed("__SIZE_TYPE__", "unsigned long");
             self.define_builtin_macro_lexed("__PTRDIFF_TYPE__", "long");
             self.define_builtin_macro_with_val("__SIZE_WIDTH__", "64");
@@ -261,7 +265,7 @@ impl<'src> Preprocessor<'src> {
         self.define_builtin_function_macro("__UINT16_C", &["c"], "c");
         self.define_builtin_function_macro("__UINT32_C", &["c"], "c ## U");
 
-        if self.target.pointer_width().ok().map(|w| w.bits()).unwrap_or(64) == 64 {
+        if self.is_64_bit() {
             self.define_builtin_function_macro("__INT64_C", &["c"], "c ## L");
             self.define_builtin_function_macro("__UINT64_C", &["c"], "c ## UL");
         } else {

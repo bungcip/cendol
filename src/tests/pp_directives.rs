@@ -55,7 +55,10 @@ fn test_pragmas() {
     assert_pp_diag(r#"#pragma warning("This is a warning")"#, "This is a warning");
 
     // Pragma error
-    assert_pp_diag(r#"#pragma error("This is an error")"#, "PragmaError(\"This is an error\")");
+    assert_pp_diag(
+        r#"#pragma error("This is an error")"#,
+        "PragmaError(\"This is an error\")",
+    );
 
     // Pragma GCC poison
     let poison_src = r#"

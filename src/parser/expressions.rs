@@ -278,16 +278,16 @@ fn parse_gnu_statement_expression(parser: &mut Parser, start_loc: SourceLoc) -> 
 /// Extract the last expression from a compound statement for GNU statement expressions
 fn extract_last_expr_from_compound_stmt(parser: &mut Parser, compound_stmt: PNodeRef) -> PNodeRef {
     let node = parser.ast.get_node(compound_stmt);
-    if let PNodeKind::CompoundStmt(statements, _) = &node.kind {
-        if let Some(expr) = statements.iter().rev().find_map(|&s| {
+    if let PNodeKind::CompoundStmt(statements, _) = &node.kind
+        && let Some(expr) = statements.iter().rev().find_map(|&s| {
             if let PNodeKind::ExpressionStmt(Some(e)) = &parser.ast.get_node(s).kind {
                 Some(*e)
             } else {
                 None
             }
-        }) {
-            return expr;
-        }
+        })
+    {
+        return expr;
     }
     parser.push_node(PNodeKind::Dummy, node.span)
 }
@@ -382,7 +382,7 @@ fn is_type_name_in_parens(parser: &mut Parser) -> bool {
     depth != 0
         || parser
             .peek_token(peek_idx)
-            .map_or(true, |t| t.kind != TokenKind::LeftBrace)
+            .is_none_or(|t| t.kind != TokenKind::LeftBrace)
 }
 
 /// Shared parser for `sizeof` and `_Alignof` — both accept either `(type-name)` or expression.

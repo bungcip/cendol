@@ -360,28 +360,26 @@ impl<'src> Preprocessor<'src> {
             // Handle # __VA_OPT__(content)
             if token.kind == PPTokenKind::Hash
                 && let Some((next, after_next)) = next_remaining.split_first()
+                && let PPTokenKind::Identifier(sym) = next.kind
+                && sym == self.keywords.va_opt
+                && let Some((paren, _)) = after_next.split_first()
+                && paren.kind == PPTokenKind::LeftParen
+                && let Some(rparen_len) = Self::find_balanced_paren_range(after_next, 0)
             {
-                if let PPTokenKind::Identifier(sym) = next.kind
-                    && sym == self.keywords.va_opt
-                    && let Some((paren, _)) = after_next.split_first()
-                    && paren.kind == PPTokenKind::LeftParen
-                    && let Some(rparen_len) = Self::find_balanced_paren_range(after_next, 0)
-                {
-                    let substituted = if !is_empty {
-                        // The content is inside `after_next` starting from index 1 to `rparen_len - 1`
-                        let content = &after_next[1..rparen_len - 1];
-                        let mut content_ctx = *ctx;
-                        content_ctx.is_va_missing = false; // __VA_OPT__ content substitution doesn't use GNU comma swallowing
-                        self.substitute_tokens_slice(content, &content_ctx)?
-                    } else {
-                        Vec::new()
-                    };
-                    let mut stringified = self.stringify_tokens(&substituted, token.location)?;
-                    stringified.hide_set = token.hide_set;
-                    resolved.push(stringified);
-                    remaining = &after_next[rparen_len..];
-                    continue;
-                }
+                let substituted = if !is_empty {
+                    // The content is inside `after_next` starting from index 1 to `rparen_len - 1`
+                    let content = &after_next[1..rparen_len - 1];
+                    let mut content_ctx = *ctx;
+                    content_ctx.is_va_missing = false; // __VA_OPT__ content substitution doesn't use GNU comma swallowing
+                    self.substitute_tokens_slice(content, &content_ctx)?
+                } else {
+                    Vec::new()
+                };
+                let mut stringified = self.stringify_tokens(&substituted, token.location)?;
+                stringified.hide_set = token.hide_set;
+                resolved.push(stringified);
+                remaining = &after_next[rparen_len..];
+                continue;
             }
 
             // Handle __VA_OPT__(content)

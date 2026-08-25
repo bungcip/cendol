@@ -6,21 +6,16 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use crate::{
-    ast::{NameId, NodeRef},
-    semantic::QualType,
-};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use target_lexicon::Triple;
 
-use super::types::TypeClass;
-use super::types::{FieldLayout, LayoutKind};
+use super::types::{FieldLayout, LayoutKind, TypeClass};
 use super::{
     ArraySize, BuiltinType, EnumConstant, FunctionParam, RecordMember, Type, TypeKind, TypeLayout, TypeQuals, TypeRef,
 };
-use crate::ast::StorageClass;
-use crate::semantic::BuiltinFunctionKind;
+use crate::ast::{NameId, NodeRef, StorageClass};
+use crate::semantic::{BuiltinFunctionKind, QualType};
 
 /// Errors that can occur during type layout computation in the TypeRegistry.
 /// These are internal type system errors without source location information.
@@ -209,9 +204,11 @@ impl TypeRegistry {
 
     /// Create a new TypeRegistry with builtin types initialized.
     pub(crate) fn new(target_triple: Triple) -> Self {
+        // ⚡ Bolt: Pre-allocate capacity for the type arena vector to eliminate dynamic reallocations
+        // during builtin initialization and early semantic analysis.
         let mut reg = TypeRegistry {
             target_triple,
-            types: Vec::new(),
+            types: Vec::with_capacity(128),
             pointer_cache: FxHashMap::default(),
             array_cache: FxHashMap::default(),
             function_cache: FxHashMap::default(),

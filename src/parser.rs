@@ -543,18 +543,18 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     /// Push Declarator node to AST arena
     #[inline]
     pub(super) fn alloc_decl(&mut self, declarator: PDeclarator) -> DeclaratorRef {
-        self.ast.parsed_types.alloc_decl(declarator)
+        self.ast.arena.alloc_decl(declarator)
     }
 
     /// Push TypeSpec node to AST arena
     #[inline]
     pub(super) fn alloc_type_spec(&mut self, type_spec: TypeSpec) -> TypeSpecRef {
-        self.ast.parsed_types.alloc_type_spec(type_spec)
+        self.ast.arena.alloc_type_spec(type_spec)
     }
 
     /// Allocate function parameters and return the range
     #[inline]
     pub(super) fn alloc_params(&mut self, params: Vec<PParam>) -> PParamRange {
-        self.ast.parsed_types.alloc_params(params)
+        self.ast.arena.alloc_params(params)
     }
 }

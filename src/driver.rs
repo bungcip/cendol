@@ -8,4 +8,6 @@ pub mod cli;
 pub mod compiler;
 
 // Re-export public API
+pub use artifact::CompilePhase;
+pub use cli::CompileConfig;
 pub use compiler::{CompilerDriver, DriverError};

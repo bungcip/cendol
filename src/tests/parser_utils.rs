@@ -1,9 +1,6 @@
-use crate::ast::literal::{CharPrefix, LitVal};
-use crate::ast::{BinaryOp, UnaryOp};
-use crate::ast::{DeclSpec, DeclaratorRef, PAst, PDeclarator, PNodeKind, PNodeRef, TypeSpec};
-use crate::driver::CompilerDriver;
-use crate::driver::artifact::CompilePhase;
-use crate::driver::cli::CompileConfig;
+use crate::ast::literal::CharPrefix;
+use crate::ast::*;
+use crate::driver::{CompileConfig, CompilePhase, CompilerDriver};
 use crate::lang_options::CStandard;
 use crate::parser::statements::parse_compound_statement;
 use crate::parser::{BindingPower, Lexer, ParseDiag, Parser, declarations, statements};
@@ -226,7 +223,7 @@ pub(crate) fn resolve_node(ast: &PAst, node: PNodeRef) -> RNodeKind {
         PNodeKind::BuiltinBitCast(ty, expr) => RNodeKind::FunctionCall(
             Box::new(RNodeKind::Ident("__builtin_bit_cast".to_string())),
             vec![
-                RNodeKind::Ident(format!("parsed_type_{}", ty.base.get())),
+                RNodeKind::Ident(format!("ptype_{}", ty.base.get())),
                 resolve_node(ast, *expr),
             ],
         ),
@@ -419,7 +416,7 @@ pub(crate) fn resolve_node(ast: &PAst, node: PNodeRef) -> RNodeKind {
 }
 
 fn extract_declarator_name(ast: &PAst, declarator: DeclaratorRef) -> String {
-    let declarator = ast.parsed_types.get_decl(declarator);
+    let declarator = ast.arena.get_decl(declarator);
     match declarator {
         PDeclarator::Identifier(name) => name.map(|n| n.to_string()).unwrap_or_else(|| "<unnamed>".to_string()),
         PDeclarator::Pointer { inner, .. }
@@ -431,7 +428,7 @@ fn extract_declarator_name(ast: &PAst, declarator: DeclaratorRef) -> String {
 }
 
 fn extract_declarator_kind(ast: &PAst, declarator: DeclaratorRef) -> String {
-    let declarator = ast.parsed_types.get_decl(declarator);
+    let declarator = ast.arena.get_decl(declarator);
     match declarator {
         PDeclarator::Identifier(name) => {
             if name.is_some() {
@@ -463,7 +460,7 @@ fn extract_declarator_kind(ast: &PAst, declarator: DeclaratorRef) -> String {
             let mut param_str = if params.len == 0 {
                 "void".to_string()
             } else {
-                ast.parsed_types
+                ast.arena
                     .get_params(*params)
                     .iter()
                     .map(|param| extract_type_kind(ast, &param.ty))
@@ -494,8 +491,8 @@ fn extract_declarator_kind(ast: &PAst, declarator: DeclaratorRef) -> String {
     }
 }
 
-fn extract_base_kind(ast: &PAst, base: crate::ast::parsed_types::TypeSpecRef) -> String {
-    let base = ast.parsed_types.get_type_spec(base);
+fn extract_base_kind(ast: &PAst, base: TypeSpecRef) -> String {
+    let base = ast.arena.get_type_spec(base);
     match base {
         TypeSpec::Record(is_union, tag, _, _) => {
             let kind = if *is_union { "union" } else { "struct" };

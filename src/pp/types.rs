@@ -1,6 +1,6 @@
 use crate::ast::StringId;
 use crate::lang_options::LangOptions;
-use crate::pp::pp_lexer::PPToken;
+use crate::pp::PPToken;
 use crate::source_manager::{SourceId, SourceLoc};
 use chrono::{DateTime, Utc};
 use rustc_hash::FxHashMap;

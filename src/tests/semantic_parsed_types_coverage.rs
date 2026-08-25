@@ -139,7 +139,6 @@ fn test_anonymous_record_declarator() {
 
 #[test]
 fn test_sizeof_targeted_coverage() {
-    // Tests for branches in parsed_type_builder.rs hit during type-name parsing
     run_pass("int main() { int sz = sizeof(const); return 0; }", CompilePhase::Mir);
     run_pass(
         "int main() { int sz = sizeof(_Atomic(int)); return 0; }",
@@ -165,7 +164,6 @@ fn test_sizeof_targeted_coverage() {
         CompilePhase::Mir,
     );
 
-    // Hit merge_parsed_type_specifiers branches
     run_pass(
         "int main() { int sz = sizeof(long long long); return 0; }",
         CompilePhase::Mir,
@@ -242,7 +240,6 @@ fn test_default_to_int() {
 
 #[test]
 fn test_sizeof_struct_with_alignment_coverage() {
-    // Tests for alignment specifier processing in parsed_type_builder.rs (inside records)
     run_pass(
         r#"
         int main() {
@@ -257,7 +254,6 @@ fn test_sizeof_struct_with_alignment_coverage() {
 
 #[test]
 fn test_enum_evaluation_in_type_name() {
-    // Tests for enum evaluating in parsed_type_builder.rs
     run_pass(
         r#"
         int main() {
@@ -284,8 +280,6 @@ fn test_abstract_declarators_more() {
 
 #[test]
 fn test_type_mismatch_in_type_name() {
-    use crate::tests::test_utils::run_fail;
-    // This should hit merge_parsed_type_specifiers mismatch arm
     run_fail(
         "int main() { int sz = sizeof(int float); return 0; }",
         CompilePhase::Mir,

@@ -19,8 +19,7 @@ use cranelift::prelude::{
 use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-// Bolt ⚡: Use `FxHashMap` and `FxHashSet` (aliased as HashMap/HashSet) to eliminate hashing overhead for integer-like keys.
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 use target_lexicon::Triple;
 
 /// emitted from codegen
@@ -107,29 +106,29 @@ fn lower_type_alignment(mir_type: &MirType, _mir: &MirProgram) -> u64 {
 /// Context for constant emission
 pub(crate) struct EmitContext<'a> {
     pub mir: &'a MirProgram,
-    pub func_id_map: &'a HashMap<MirFunctionId, FuncId>,
-    pub data_id_map: &'a HashMap<GlobalId, DataId>,
+    pub func_id_map: &'a FxHashMap<MirFunctionId, FuncId>,
+    pub data_id_map: &'a FxHashMap<GlobalId, DataId>,
 }
 
 /// Context for emitting function bodies
 pub(crate) struct BodyEmitContext<'a, 'b> {
     pub builder: &'a mut FunctionBuilder<'b>,
     pub mir: &'a MirProgram,
-    pub stack_slots: &'a HashMap<LocalId, StackSlot>,
+    pub stack_slots: &'a FxHashMap<LocalId, StackSlot>,
     pub module: &'a mut ObjectModule,
-    pub clif_blocks: &'a HashMap<MirBlockId, Block>,
+    pub clif_blocks: &'a FxHashMap<MirBlockId, Block>,
     pub return_types: &'a [Type],
     pub return_ptr: Option<Value>,
     pub func: &'a MirFunction,
-    pub func_id_map: &'a HashMap<MirFunctionId, FuncId>,
-    pub data_id_map: &'a HashMap<GlobalId, DataId>,
-    pub pointee_to_pointer: &'a HashMap<TypeId, TypeId>,
+    pub func_id_map: &'a FxHashMap<MirFunctionId, FuncId>,
+    pub data_id_map: &'a FxHashMap<GlobalId, DataId>,
+    pub pointee_to_pointer: &'a FxHashMap<TypeId, TypeId>,
 }
 
 /// Context for lowering call signatures
 pub(crate) struct SignatureLoweringContext<'a> {
     pub mir: &'a MirProgram,
-    pub pointee_to_pointer: &'a HashMap<TypeId, TypeId>,
+    pub pointee_to_pointer: &'a FxHashMap<TypeId, TypeId>,
 }
 
 /// Helper to emit integer constants
@@ -1426,7 +1425,7 @@ fn emit_place(place: &Place, ctx: &mut BodyEmitContext, expected_type: Type) -> 
 }
 
 /// Helper function to get the Cranelift Type of an operand
-fn lower_operand_type(operand: &Operand, mir: &MirProgram, pointee_to_pointer: &HashMap<TypeId, TypeId>) -> Type {
+fn lower_operand_type(operand: &Operand, mir: &MirProgram, pointee_to_pointer: &FxHashMap<TypeId, TypeId>) -> Type {
     if let Operand::AddressOf(_) = operand {
         return types::I64;
     }
@@ -1446,7 +1445,7 @@ fn lower_operand_type(operand: &Operand, mir: &MirProgram, pointee_to_pointer: &
 }
 
 /// Helper function to check if a MIR type is signed
-fn is_operand_signed(operand: &Operand, mir: &MirProgram, pointee_to_pointer: &HashMap<TypeId, TypeId>) -> bool {
+fn is_operand_signed(operand: &Operand, mir: &MirProgram, pointee_to_pointer: &FxHashMap<TypeId, TypeId>) -> bool {
     if let Operand::AddressOf(_) = operand {
         return false;
     }
@@ -1455,7 +1454,11 @@ fn is_operand_signed(operand: &Operand, mir: &MirProgram, pointee_to_pointer: &H
 }
 
 /// Helper function to resolve an operand to its TypeId
-fn lower_operand_type_id(operand: &Operand, mir: &MirProgram, pointee_to_pointer: &HashMap<TypeId, TypeId>) -> TypeId {
+fn lower_operand_type_id(
+    operand: &Operand,
+    mir: &MirProgram,
+    pointee_to_pointer: &FxHashMap<TypeId, TypeId>,
+) -> TypeId {
     match operand {
         Operand::Constant(const_id) => mir.get_constant(*const_id).ty,
         Operand::Copy(place) => lower_place_type_id(place, mir, pointee_to_pointer),
@@ -1472,7 +1475,7 @@ fn lower_operand_type_id(operand: &Operand, mir: &MirProgram, pointee_to_pointer
 }
 
 /// Helper function to get the TypeId of a place
-fn lower_place_type_id(place: &Place, mir: &MirProgram, pointee_to_pointer: &HashMap<TypeId, TypeId>) -> TypeId {
+fn lower_place_type_id(place: &Place, mir: &MirProgram, pointee_to_pointer: &FxHashMap<TypeId, TypeId>) -> TypeId {
     match place {
         Place::Local(local_id) => mir.get_local(*local_id).type_id,
         Place::Global(global_id) => mir.get_global(*global_id).type_id,
@@ -2608,7 +2611,7 @@ fn emit_stack_slots(
     func: &MirFunction,
     mir: &MirProgram,
     builder: &mut FunctionBuilder,
-    clif_stack_slots: &mut HashMap<LocalId, StackSlot>,
+    clif_stack_slots: &mut FxHashMap<LocalId, StackSlot>,
 ) {
     clif_stack_slots.clear(); // Clear for each function
     clif_stack_slots.reserve(func.locals.len() + func.params.len());
@@ -2641,7 +2644,7 @@ fn finalize_function_processing(
     module: &mut ObjectModule,
     func_ctx: &mut cranelift::codegen::Context,
     emit_kind: EmitKind,
-    compiled_functions: &mut HashMap<String, String>,
+    compiled_functions: &mut FxHashMap<String, String>,
     visibility: Visibility,
 ) {
     // Now declare and define the function
@@ -2671,18 +2674,18 @@ pub struct ClifGen {
     pub(crate) builder_context: FunctionBuilderContext,
     pub(crate) module: ObjectModule,
     pub(crate) mir: MirProgram, // NOTE: need better nama
-    pub(crate) clif_stack_slots: HashMap<LocalId, StackSlot>,
-    // ⚡ Bolt: Reusable map to avoid allocating a new HashMap of blocks for every single function compiled.
-    pub(crate) clif_blocks: HashMap<MirBlockId, Block>,
+    pub(crate) clif_stack_slots: FxHashMap<LocalId, StackSlot>,
+    // ⚡ Bolt: Reusable map to avoid allocating a new FxHashMap of blocks for every single function compiled.
+    pub(crate) clif_blocks: FxHashMap<MirBlockId, Block>,
     // Store compiled functions for dumping
-    pub(crate) compiled_functions: HashMap<String, String>,
+    pub(crate) compiled_functions: FxHashMap<String, String>,
 
     pub(crate) emit_kind: EmitKind,
 
     // Mappings for relocations
-    pub(crate) func_id_map: HashMap<MirFunctionId, FuncId>,
-    pub(crate) data_id_map: HashMap<GlobalId, DataId>,
-    pub(crate) pointee_to_pointer: HashMap<TypeId, TypeId>,
+    pub(crate) func_id_map: FxHashMap<MirFunctionId, FuncId>,
+    pub(crate) data_id_map: FxHashMap<GlobalId, DataId>,
+    pub(crate) pointee_to_pointer: FxHashMap<TypeId, TypeId>,
 }
 
 /// NOTE: we use panic!() to ICE because codegen rely on correct MIR, so if we give invalid MIR, then problem is in previous phase
@@ -2716,15 +2719,15 @@ impl ClifGen {
             builder_context: FunctionBuilderContext::new(),
             // ctx: module.make_context(),
             module,
-            clif_stack_slots: HashMap::default(),
-            clif_blocks: HashMap::default(),
-            compiled_functions: HashMap::default(),
+            clif_stack_slots: FxHashMap::default(),
+            clif_blocks: FxHashMap::default(),
+            compiled_functions: FxHashMap::default(),
             emit_kind: EmitKind::Object,
-            func_id_map: HashMap::default(),
-            data_id_map: HashMap::default(),
+            func_id_map: FxHashMap::default(),
+            data_id_map: FxHashMap::default(),
             pointee_to_pointer: {
                 // Bolt ⚡: Pre-allocate capacity based on total MIR types to avoid rehashing.
-                let mut map = HashMap::with_capacity_and_hasher(mir.types.len(), Default::default());
+                let mut map = FxHashMap::with_capacity_and_hasher(mir.types.len(), Default::default());
                 for (i, ty) in mir.types.iter().enumerate() {
                     let id = TypeId::new((i + 1) as u32).unwrap();
                     if let MirType::Pointer { pointee } = ty {
@@ -3026,13 +3029,13 @@ impl ClifGen {
         );
     }
 
-    fn analyze_reachability(&self) -> (HashSet<MirFunctionId>, HashSet<GlobalId>) {
+    fn analyze_reachability(&self) -> (FxHashSet<MirFunctionId>, FxHashSet<GlobalId>) {
         // Bolt ⚡: Pre-allocate capacities for sets and worklists based on total MIR functions and globals
         // to avoid repetitive re-allocations and hashing rehashing during reachability analysis.
         let num_funcs = self.mir.functions.len();
         let num_globals = self.mir.globals.len();
-        let mut reachable_functions = HashSet::with_capacity_and_hasher(num_funcs, Default::default());
-        let mut reachable_globals = HashSet::with_capacity_and_hasher(num_globals, Default::default());
+        let mut reachable_functions = FxHashSet::with_capacity_and_hasher(num_funcs, Default::default());
+        let mut reachable_globals = FxHashSet::with_capacity_and_hasher(num_globals, Default::default());
         let mut worklist_functions = Vec::with_capacity(num_funcs);
         let mut worklist_globals = Vec::with_capacity(num_globals);
 
@@ -3096,8 +3099,8 @@ impl ClifGen {
         &self,
         stmt: &MirStmt,
         wf: &mut Vec<MirFunctionId>,
-        rf: &mut HashSet<MirFunctionId>,
-        rg: &mut HashSet<GlobalId>,
+        rf: &mut FxHashSet<MirFunctionId>,
+        rg: &mut FxHashSet<GlobalId>,
         wg: &mut Vec<GlobalId>,
     ) {
         match stmt {
@@ -3153,8 +3156,8 @@ impl ClifGen {
         &self,
         term: &Terminator,
         wf: &mut Vec<MirFunctionId>,
-        rf: &mut HashSet<MirFunctionId>,
-        rg: &mut HashSet<GlobalId>,
+        rf: &mut FxHashSet<MirFunctionId>,
+        rg: &mut FxHashSet<GlobalId>,
         wg: &mut Vec<GlobalId>,
     ) {
         match term {
@@ -3173,8 +3176,8 @@ impl ClifGen {
         &self,
         op: &Operand,
         wf: &mut Vec<MirFunctionId>,
-        rf: &mut HashSet<MirFunctionId>,
-        rg: &mut HashSet<GlobalId>,
+        rf: &mut FxHashSet<MirFunctionId>,
+        rg: &mut FxHashSet<GlobalId>,
         wg: &mut Vec<GlobalId>,
     ) {
         match op {
@@ -3188,8 +3191,8 @@ impl ClifGen {
         &self,
         place: &Place,
         wf: &mut Vec<MirFunctionId>,
-        rf: &mut HashSet<MirFunctionId>,
-        rg: &mut HashSet<GlobalId>,
+        rf: &mut FxHashSet<MirFunctionId>,
+        rg: &mut FxHashSet<GlobalId>,
         wg: &mut Vec<GlobalId>,
     ) {
         match place {
@@ -3213,8 +3216,8 @@ impl ClifGen {
         &self,
         rvalue: &Rvalue,
         wf: &mut Vec<MirFunctionId>,
-        rf: &mut HashSet<MirFunctionId>,
-        rg: &mut HashSet<GlobalId>,
+        rf: &mut FxHashSet<MirFunctionId>,
+        rg: &mut FxHashSet<GlobalId>,
         wg: &mut Vec<GlobalId>,
     ) {
         match rvalue {
@@ -3258,8 +3261,8 @@ impl ClifGen {
         &self,
         id: ConstValueId,
         wf: &mut Vec<MirFunctionId>,
-        rf: &mut HashSet<MirFunctionId>,
-        rg: &mut HashSet<GlobalId>,
+        rf: &mut FxHashSet<MirFunctionId>,
+        rg: &mut FxHashSet<GlobalId>,
         wg: &mut Vec<GlobalId>,
     ) {
         let cv = self.mir.get_constant(id);

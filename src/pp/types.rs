@@ -1,6 +1,8 @@
 use crate::ast::StringId;
 use crate::lang_options::LangOptions;
 use crate::pp::PPToken;
+use crate::pp::pp_lexer::PPTokenKind;
+use crate::source_manager::SourceManager;
 use crate::source_manager::{SourceId, SourceLoc};
 use chrono::{DateTime, Utc};
 use rustc_hash::FxHashMap;
@@ -136,20 +138,163 @@ impl HideSetTable {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct MacroParam {
+    pub(crate) name: StringId,
+    pub(crate) needs_expansion: bool,
+}
+
+impl MacroParam {
+    pub(crate) fn new(name: StringId) -> Self {
+        Self {
+            name,
+            needs_expansion: false,
+        }
+    }
+}
+
 /// Represents a macro definition
 #[derive(Clone, Default)]
 pub(crate) struct MacroInfo {
     pub(crate) location: SourceLoc,
     pub(crate) flags: MacroFlags, // Packed boolean flags
     pub(crate) tokens: Arc<[PPToken]>,
-    pub(crate) parameter_list: Arc<[StringId]>,
-    pub(crate) variadic_arg: Option<StringId>,
-    pub(crate) parameter_needs_expansion: Arc<[bool]>,
+    parameters: Arc<[MacroParam]>,
+    variadic_arg: Option<MacroParam>,
 }
 
 impl MacroInfo {
+    pub(crate) fn is_identical_signature(&self, other: &MacroInfo) -> bool {
+        self.parameters
+            .iter()
+            .map(|p| p.name)
+            .eq(other.parameters.iter().map(|p| p.name))
+            && self.variadic_arg.map(|p| p.name) == other.variadic_arg.map(|p| p.name)
+    }
+
+    pub(crate) fn is_identical_definition(&self, other: &MacroInfo, sm: &SourceManager) -> bool {
+        let identity_flags_mask = MacroFlags::FUNCTION_LIKE | MacroFlags::C99_VARARGS | MacroFlags::GNU_VARARGS;
+        if (self.flags & identity_flags_mask) != (other.flags & identity_flags_mask) {
+            return false;
+        }
+        if !self.is_identical_signature(other) {
+            return false;
+        }
+        if self.tokens.len() != other.tokens.len() {
+            return false;
+        }
+
+        self.tokens.iter().zip(other.tokens.iter()).all(|(a, b)| {
+            if a.kind != b.kind {
+                return false;
+            }
+            match a.kind {
+                PPTokenKind::Identifier(_) => true,
+                PPTokenKind::Number | PPTokenKind::StringLiteral | PPTokenKind::CharLiteral(_) => {
+                    a.get_text(sm) == b.get_text(sm)
+                }
+                _ => true,
+            }
+        })
+    }
+
+    pub(crate) fn with_parameters(mut self, parameters: Arc<[MacroParam]>, variadic_arg: Option<MacroParam>) -> Self {
+        self.parameters = parameters;
+        self.variadic_arg = variadic_arg;
+        self
+    }
+
+    pub(crate) fn with_location(mut self, location: SourceLoc) -> Self {
+        self.location = location;
+        self
+    }
+
+    pub(crate) fn with_flags(mut self, flags: MacroFlags) -> Self {
+        self.flags = flags;
+        self
+    }
+
+    pub(crate) fn with_tokens(mut self, tokens: Arc<[PPToken]>) -> Self {
+        self.tokens = tokens;
+        self
+    }
+
+    pub(crate) fn param_len(&self) -> usize {
+        self.parameters.len()
+    }
+
+    pub(crate) fn has_variadic(&self) -> bool {
+        self.variadic_arg.is_some()
+    }
+
+    pub(crate) fn is_variadic_param(&self, symbol: StringId) -> bool {
+        self.variadic_arg.is_some_and(|p| p.name == symbol)
+    }
+
+    /// Checks if a parameter token at index `i` is subject to stringification (#) or token pasting (##).
+    /// If so, the C standard dictates it should NOT be macro-expanded prior to substitution.
+    pub(crate) fn param_needs_expansion(tokens: &[PPToken], i: usize) -> bool {
+        let preceded_by_hash = i > 0 && tokens[i - 1].kind == PPTokenKind::Hash;
+        let preceded_by_hashhash = i > 0 && tokens[i - 1].kind == PPTokenKind::HashHash;
+        let followed_by_hashhash = i + 1 < tokens.len() && tokens[i + 1].kind == PPTokenKind::HashHash;
+        !preceded_by_hash && !preceded_by_hashhash && !followed_by_hashhash
+    }
+
+    /// Pre-calculates whether parameters need expansion based on # and ## operators.
+    /// Also detects the presence of __VA_OPT__ and returns true if found.
+    pub(crate) fn precalculate_expansion_needs(
+        tokens: &[PPToken],
+        parameters: &mut [MacroParam],
+        variadic_arg: &mut Option<MacroParam>,
+        va_opt_sym: StringId,
+    ) -> bool {
+        let mut has_va_opt = false;
+        for i in 0..tokens.len() {
+            let t = &tokens[i];
+            if let PPTokenKind::Identifier(sym) = t.kind {
+                // Check for __VA_OPT__
+                if variadic_arg.is_some() && sym == va_opt_sym {
+                    has_va_opt = true;
+                }
+
+                // Match parameter
+                let mut matched_param = parameters.iter_mut().find(|p| p.name == sym);
+                if matched_param.is_none() && variadic_arg.as_ref().is_some_and(|p| p.name == sym) {
+                    matched_param = variadic_arg.as_mut();
+                }
+
+                if let Some(param) = matched_param
+                    && Self::param_needs_expansion(tokens, i)
+                {
+                    param.needs_expansion = true;
+                }
+            }
+        }
+        has_va_opt
+    }
+
+    pub(crate) fn get_param_idx(&self, symbol: StringId) -> Option<usize> {
+        if let Some(idx) = self.parameters.iter().position(|p| p.name == symbol) {
+            Some(idx)
+        } else if self.is_variadic_param(symbol) {
+            Some(self.parameters.len())
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn get_param(&self, idx: usize) -> Option<&MacroParam> {
+        self.parameters.get(idx).or_else(|| {
+            if idx >= self.parameters.len() && self.variadic_arg.is_some() {
+                self.variadic_arg.as_ref()
+            } else {
+                None
+            }
+        })
+    }
+
     pub(crate) fn is_valid_arg_count(&self, count: usize) -> bool {
-        let expected = self.parameter_list.len();
+        let expected = self.parameters.len();
         if self.variadic_arg.is_some() {
             count >= expected
         } else {

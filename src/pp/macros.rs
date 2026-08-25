@@ -20,19 +20,6 @@ struct SubstitutionCtx<'a> {
     is_va_missing: bool,
 }
 
-enum ExpansionTask {
-    Function {
-        info: MacroInfo,
-        symbol: StringId,
-        end_idx: usize,
-        args: Vec<Vec<PPToken>>,
-    },
-    Object {
-        info: MacroInfo,
-        symbol: StringId,
-    },
-}
-
 impl<'src> Preprocessor<'src> {
     /// Expand a macro if it exists
     pub(super) fn expand_macro(&mut self, token: &PPToken) -> Result<Option<Vec<PPToken>>, PPDiag> {
@@ -50,7 +37,6 @@ impl<'src> Preprocessor<'src> {
             return Ok(None);
         }
 
-        // Bolt ⚡: Extract flags and drop the borrow of self.macros early to avoid borrow checker errors.
         let flags = self.macros.get(&symbol).map(|m| m.flags);
         let Some(flags) = flags else {
             return Ok(None);
@@ -102,7 +88,6 @@ impl<'src> Preprocessor<'src> {
         let mut cache = SourceBufferCache::new(self.sm);
 
         for (i, token) in tokens.iter().enumerate() {
-            // Bolt ⚡: Preserve leading spaces between tokens.
             if i > 0 && token.flags.contains(PPTokenFlags::LEADING_SPACE) {
                 result.push(' ');
             }
@@ -137,31 +122,22 @@ impl<'src> Preprocessor<'src> {
         Ok(self.create_virtual_buffer_tokens(&substituted, symbol, token.location))
     }
 
-    /// Expand a function-like macro
-    fn expand_function_macro(
+    fn execute_function_macro_expansion(
         &mut self,
         macro_info: &MacroInfo,
         symbol: StringId,
-        token: &PPToken,
+        mut args: Vec<Vec<PPToken>>,
+        token_loc: SourceLoc,
+        start_hide_set: u32,
+        end_hide_set: u32,
+        in_conditional: bool,
     ) -> Result<Vec<PPToken>, PPDiag> {
-        let (mut args, rparen_token) = match self.parse_macro_args_from_lexer(macro_info) {
-            Ok(args) => args,
-            Err(PPDiag {
-                kind: PPError::InvalidMacroParameter,
-                ..
-            }) => {
-                return self.emit_error(PPError::InvalidMacroParameter, token.location);
-            }
-            Err(e) => return Err(e),
-        };
-
         let (is_variadic_empty, is_va_missing) = self.precalculate_variadic_args(macro_info, &mut args);
 
-        // Pre-expand arguments (prescan)
         let mut expanded_args = Vec::with_capacity(args.len());
         for (idx, arg) in args.iter().enumerate() {
             let mut actually_needs_expansion = false;
-            let needs_expansion = macro_info.parameter_needs_expansion.get(idx).copied().unwrap_or(false);
+            let needs_expansion = macro_info.get_param(idx).is_some_and(|p| p.needs_expansion);
 
             if needs_expansion {
                 for t in arg {
@@ -174,28 +150,24 @@ impl<'src> Preprocessor<'src> {
 
             if actually_needs_expansion {
                 let mut arg_clone = arg.clone();
-                // GCC semantics: Arguments are pre-expanded in an independent context.
-                // Do not inherit caller's hide sets during pre-expansion!
                 for t in &mut arg_clone {
-                    if let PPTokenKind::Identifier(symbol) = t.kind
-                        && self.hide_sets.contains(t.hide_set, symbol)
+                    if let PPTokenKind::Identifier(sym) = t.kind
+                        && self.hide_sets.contains(t.hide_set, sym)
                     {
                         t.flags |= PPTokenFlags::DISABLE_EXPANSION;
                     }
                     t.hide_set = 0;
                 }
-                self.expand_tokens(&mut arg_clone, false)?;
+                let _ = self.expand_tokens(&mut arg_clone, in_conditional);
                 expanded_args.push(Cow::Owned(arg_clone));
             } else {
                 expanded_args.push(Cow::Borrowed(arg.as_slice()));
             }
         }
 
-        // Compute new hide set for expanded tokens.
-        let intersect_hs = self.hide_sets.intersection(token.hide_set, rparen_token.hide_set);
+        let intersect_hs = self.hide_sets.intersection(start_hide_set, end_hide_set);
         let new_hs = self.hide_sets.insert(intersect_hs, symbol);
 
-        // Substitute parameters in macro body
         let substituted = self.substitute_macro(SubstitutionCtx {
             macro_info,
             symbol,
@@ -207,7 +179,36 @@ impl<'src> Preprocessor<'src> {
             is_va_missing,
         })?;
 
-        Ok(self.create_virtual_buffer_tokens(&substituted, symbol, token.location))
+        Ok(self.create_virtual_buffer_tokens(&substituted, symbol, token_loc))
+    }
+
+    /// Expand a function-like macro
+    fn expand_function_macro(
+        &mut self,
+        macro_info: &MacroInfo,
+        symbol: StringId,
+        token: &PPToken,
+    ) -> Result<Vec<PPToken>, PPDiag> {
+        let (args, rparen_token) = match self.parse_macro_args_from_lexer(macro_info) {
+            Ok(args) => args,
+            Err(PPDiag {
+                kind: PPError::InvalidMacroParameter,
+                ..
+            }) => {
+                return self.emit_error(PPError::InvalidMacroParameter, token.location);
+            }
+            Err(e) => return Err(e),
+        };
+
+        self.execute_function_macro_expansion(
+            macro_info,
+            symbol,
+            args,
+            token.location,
+            token.hide_set,
+            rparen_token.hide_set,
+            false,
+        )
     }
 
     /// Parse macro arguments from the current lexer
@@ -228,7 +229,7 @@ impl<'src> Preprocessor<'src> {
         &mut self,
         macro_info: &MacroInfo,
     ) -> Result<(Vec<Vec<PPToken>>, PPToken), PPDiag> {
-        let mut args = Vec::with_capacity(macro_info.parameter_list.len());
+        let mut args = Vec::with_capacity(macro_info.param_len());
         let mut current_arg = Vec::new();
         let mut depth = 0;
 
@@ -246,7 +247,7 @@ impl<'src> Preprocessor<'src> {
                 PPTokenKind::RightParen => {
                     if !current_arg.is_empty() || !args.is_empty() {
                         args.push(current_arg);
-                    } else if macro_info.parameter_list.len() == 1 || macro_info.variadic_arg.is_some() {
+                    } else if macro_info.param_len() == 1 || macro_info.has_variadic() {
                         // Empty arguments are allowed in C99/C11.
                         // For a macro taking 1 argument or variadic args, an empty list of tokens
                         // between parentheses represents 1 empty argument.
@@ -278,10 +279,10 @@ impl<'src> Preprocessor<'src> {
     /// Bolt ⚡: This optimization allows get_macro_param_tokens to return &[PPToken] instead of Cow,
     /// eliminating redundant allocations in the substitution hot-path.
     fn precalculate_variadic_args(&mut self, macro_info: &MacroInfo, args: &mut Vec<Vec<PPToken>>) -> (bool, bool) {
-        if macro_info.variadic_arg.is_none() {
+        if !macro_info.has_variadic() {
             return (false, false);
         }
-        let start = macro_info.parameter_list.len();
+        let start = macro_info.param_len();
         let is_empty = self.is_variadic_args_empty(macro_info, args);
         let is_missing = args.len() <= start;
         let combined = self.collect_variadic_args_with_commas(args, start);
@@ -325,21 +326,16 @@ impl<'src> Preprocessor<'src> {
         symbol: StringId,
         args: &'a [T],
     ) -> Option<&'a [PPToken]> {
-        if let Some(idx) = macro_info.parameter_list.iter().position(|&p| p == symbol) {
+        if let Some(idx) = macro_info.get_param_idx(symbol)
+            && idx < args.len()
+        {
             return Some(args[idx].as_ref());
-        }
-        if macro_info.variadic_arg == Some(symbol) {
-            // Combined variadic tokens are stored at the index matching parameter_list.len()
-            let idx = macro_info.parameter_list.len();
-            if idx < args.len() {
-                return Some(args[idx].as_ref());
-            }
         }
         None
     }
 
     fn is_variadic_args_empty(&self, macro_info: &MacroInfo, args: &[Vec<PPToken>]) -> bool {
-        let start = macro_info.parameter_list.len();
+        let start = macro_info.param_len();
         if args.len() <= start {
             return true;
         }
@@ -483,8 +479,6 @@ impl<'src> Preprocessor<'src> {
                             let start_idx = result.len();
                             result.extend_from_slice(param_tokens);
 
-                            // Bolt ⚡: Transfer LEADING_SPACE flag from the parameter identifier in the macro body
-                            // to the first token of the argument expansion.
                             if token.flags.contains(PPTokenFlags::LEADING_SPACE) {
                                 result[start_idx].flags |= PPTokenFlags::LEADING_SPACE;
                             }
@@ -546,8 +540,7 @@ impl<'src> Preprocessor<'src> {
         if right_tokens.is_empty() {
             // Right operand is empty (placemarker).
             let is_comma = left.as_ref().is_some_and(|t| t.kind == PPTokenKind::Comma);
-            let is_variadic =
-                matches!(right_token.kind, PPTokenKind::Identifier(s) if macro_info.variadic_arg == Some(s));
+            let is_variadic = matches!(right_token.kind, PPTokenKind::Identifier(s) if macro_info.is_variadic_param(s));
 
             if is_comma && is_variadic && is_va_missing {
                 // GNU Comma Swallowing extension: swallow the comma only when
@@ -711,7 +704,7 @@ impl<'src> Preprocessor<'src> {
         }
         if !current_arg.is_empty() || !args.is_empty() {
             args.push(current_arg);
-        } else if macro_info.parameter_list.len() == 1 || macro_info.variadic_arg.is_some() {
+        } else if macro_info.param_len() == 1 || macro_info.has_variadic() {
             // Empty arguments are allowed in C99/C11.
             // For a macro taking 1 argument or variadic args, an empty list of tokens
             // between parentheses represents 1 empty argument.
@@ -864,53 +857,70 @@ impl<'src> Preprocessor<'src> {
                 continue;
             }
 
-            if let Some(task) = self.try_get_expansion_task(tokens, i) {
-                match task {
-                    ExpansionTask::Function {
-                        info,
-                        symbol,
-                        end_idx,
-                        args,
-                    } => {
-                        let mut expanded =
-                            self.do_function_expansion(info, symbol, end_idx, args, tokens, i, in_conditional)?;
-                        if !expanded.is_empty() {
-                            if tokens[i].flags.contains(PPTokenFlags::LEADING_SPACE) {
-                                expanded[0].flags |= PPTokenFlags::LEADING_SPACE;
-                            } else {
-                                expanded[0].flags &= !PPTokenFlags::LEADING_SPACE;
-                            }
-                        } else if i + 1 < tokens.len() && tokens[i].flags.contains(PPTokenFlags::LEADING_SPACE) {
-                            // Bolt ⚡: Propagation for empty expansion.
-                            tokens[i + 1].flags |= PPTokenFlags::LEADING_SPACE;
-                        }
+            let PPTokenKind::Identifier(symbol) = token.kind else {
+                unreachable!()
+            };
 
-                        if expanded.len() <= 10000 {
-                            tokens.splice(i..end_idx, expanded);
-                            continue;
-                        }
-                    }
-                    ExpansionTask::Object { info, symbol } => {
-                        let mut expanded = self.do_object_expansion(info, symbol, tokens, i)?;
-                        if !expanded.is_empty() {
-                            if tokens[i].flags.contains(PPTokenFlags::LEADING_SPACE) {
-                                expanded[0].flags |= PPTokenFlags::LEADING_SPACE;
-                            } else {
-                                expanded[0].flags &= !PPTokenFlags::LEADING_SPACE;
-                            }
-                        } else if i + 1 < tokens.len() && tokens[i].flags.contains(PPTokenFlags::LEADING_SPACE) {
-                            // Bolt ⚡: Propagation for empty expansion.
-                            tokens[i + 1].flags |= PPTokenFlags::LEADING_SPACE;
-                        }
-                        tokens.splice(i..i + 1, expanded);
-                        continue;
-                    }
-                }
-            } else if let PPTokenKind::Identifier(symbol) = tokens[i].kind {
+            let mut info_opt = None;
+            let mut func_data = None;
+
+            if self.hide_sets.contains(token.hide_set, symbol) {
                 // Bolt ⚡: Mark as permanently disabled for this rescan if it's in the hide-set.
-                // This satisfies recursive expansion invariants and speeds up consecutive scans.
-                if self.hide_sets.contains(tokens[i].hide_set, symbol) {
-                    tokens[i].flags |= PPTokenFlags::DISABLE_EXPANSION;
+                tokens[i].flags |= PPTokenFlags::DISABLE_EXPANSION;
+            } else if !token.flags.contains(PPTokenFlags::DISABLE_EXPANSION)
+                && let Some(m) = self.macros.get_mut(&symbol)
+                && !m.flags.contains(MacroFlags::DISABLED)
+            {
+                if m.flags.contains(MacroFlags::FUNCTION_LIKE) {
+                    if i + 1 < tokens.len()
+                        && tokens[i + 1].kind == PPTokenKind::LeftParen
+                        && let Some(end_idx) = Self::find_balanced_paren_range(tokens, i + 1)
+                    {
+                        let args = Self::collect_macro_args_from_slice(m, tokens, i + 2, end_idx - 1);
+                        if m.is_valid_arg_count(args.len()) {
+                            m.flags |= MacroFlags::USED;
+                            info_opt = Some(m.clone());
+                            func_data = Some((end_idx, args));
+                        }
+                    }
+                } else {
+                    m.flags |= MacroFlags::USED;
+                    info_opt = Some(m.clone());
+                }
+            }
+
+            if let Some(info) = info_opt {
+                let (mut expanded, end_idx) = if let Some((end, args)) = func_data {
+                    (
+                        self.execute_function_macro_expansion(
+                            &info,
+                            symbol,
+                            args,
+                            tokens[i].location,
+                            tokens[i].hide_set,
+                            tokens[end - 1].hide_set,
+                            in_conditional,
+                        )?,
+                        end,
+                    )
+                } else {
+                    (self.expand_object_macro(&info, symbol, &tokens[i])?, i + 1)
+                };
+
+                if !expanded.is_empty() {
+                    if tokens[i].flags.contains(PPTokenFlags::LEADING_SPACE) {
+                        expanded[0].flags |= PPTokenFlags::LEADING_SPACE;
+                    } else {
+                        expanded[0].flags &= !PPTokenFlags::LEADING_SPACE;
+                    }
+                } else if end_idx < tokens.len() && tokens[i].flags.contains(PPTokenFlags::LEADING_SPACE) {
+                    // Bolt ⚡: Propagation for empty expansion. We transfer LEADING_SPACE to the token immediately following the macro invocation.
+                    tokens[end_idx].flags |= PPTokenFlags::LEADING_SPACE;
+                }
+
+                if expanded.len() <= 10000 {
+                    tokens.splice(i..end_idx, expanded);
+                    continue;
                 }
             }
 
@@ -922,124 +932,6 @@ impl<'src> Preprocessor<'src> {
         }
 
         Ok(())
-    }
-
-    fn try_get_expansion_task(&mut self, tokens: &[PPToken], i: usize) -> Option<ExpansionTask> {
-        let PPTokenKind::Identifier(symbol) = tokens[i].kind else {
-            return None;
-        };
-
-        if self.hide_sets.contains(tokens[i].hide_set, symbol) {
-            // Mark as permanently disabled for this rescan.
-            return None;
-        }
-
-        if tokens[i].flags.contains(PPTokenFlags::DISABLE_EXPANSION) {
-            return None;
-        }
-
-        let m = self.macros.get_mut(&symbol)?;
-        if m.flags.contains(MacroFlags::DISABLED) {
-            return None;
-        }
-
-        if m.flags.contains(MacroFlags::FUNCTION_LIKE) {
-            // Try function-like expansion
-            if i + 1 < tokens.len()
-                && tokens[i + 1].kind == PPTokenKind::LeftParen
-                && let Some(end_idx) = Self::find_balanced_paren_range(tokens, i + 1)
-            {
-                let args = Self::collect_macro_args_from_slice(m, tokens, i + 2, end_idx - 1);
-
-                if m.is_valid_arg_count(args.len()) {
-                    m.flags |= MacroFlags::USED;
-                    let info = m.clone();
-                    return Some(ExpansionTask::Function {
-                        info,
-                        symbol,
-                        end_idx,
-                        args,
-                    });
-                }
-            }
-            None
-        } else {
-            // Object-like expansion
-            m.flags |= MacroFlags::USED;
-            let info = m.clone();
-            Some(ExpansionTask::Object { info, symbol })
-        }
-    }
-
-    fn do_function_expansion(
-        &mut self,
-        info: MacroInfo,
-        symbol: StringId,
-        end_idx: usize,
-        mut args: Vec<Vec<PPToken>>,
-        tokens: &[PPToken],
-        i: usize,
-        in_conditional: bool,
-    ) -> Result<Vec<PPToken>, PPDiag> {
-        let (is_variadic_empty, is_va_missing) = self.precalculate_variadic_args(&info, &mut args);
-
-        // Pre-expand arguments (prescan)
-        let mut expanded_args = Vec::with_capacity(args.len());
-        for (idx, arg) in args.iter().enumerate() {
-            let needs_expansion = info.parameter_needs_expansion.get(idx).copied().unwrap_or(false);
-
-            if needs_expansion {
-                let mut arg_clone = arg.clone();
-                // Bolt ⚡: Ignore errors during argument prescan to match original behavior.
-                let _ = self.expand_tokens(&mut arg_clone, in_conditional);
-                expanded_args.push(Cow::Owned(arg_clone));
-            } else {
-                expanded_args.push(Cow::Borrowed(arg.as_slice()));
-            }
-        }
-
-        let intersect_hs = self
-            .hide_sets
-            .intersection(tokens[i].hide_set, tokens[end_idx - 1].hide_set);
-        let new_hs = self.hide_sets.insert(intersect_hs, symbol);
-
-        let substituted = self.substitute_macro(SubstitutionCtx {
-            macro_info: &info,
-            symbol,
-            args: &args,
-            expanded_args: &expanded_args,
-            intersect_hs,
-            new_hs,
-            is_variadic_empty,
-            is_va_missing,
-        })?;
-
-        Ok(self.create_virtual_buffer_tokens(&substituted, symbol, tokens[i].location))
-    }
-
-    fn do_object_expansion(
-        &mut self,
-        info: MacroInfo,
-        symbol: StringId,
-        tokens: &[PPToken],
-        i: usize,
-    ) -> Result<Vec<PPToken>, PPDiag> {
-        let new_hs = self.hide_sets.insert(tokens[i].hide_set, symbol);
-        let substituted = self.substitute_tokens_slice(
-            &info.tokens,
-            &SubstitutionCtx {
-                macro_info: &info,
-                symbol,
-                args: &[],
-                expanded_args: &[],
-                intersect_hs: tokens[i].hide_set,
-                new_hs,
-                is_variadic_empty: false,
-                is_va_missing: false,
-            },
-        )?;
-
-        Ok(self.create_virtual_buffer_tokens(&substituted, symbol, tokens[i].location))
     }
 
     fn create_virtual_buffer_tokens(

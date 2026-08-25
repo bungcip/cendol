@@ -99,7 +99,6 @@ impl std::fmt::Display for ValidationError {
 pub(crate) struct MirValidator<'a> {
     mir: &'a MirProgram,
     errors: Vec<ValidationError>,
-    // Bolt ⚡: Use FxHashMap for integer-like TypeId keys to eliminate hashing overhead during MIR validation.
     pointee_to_pointer: rustc_hash::FxHashMap<TypeId, TypeId>,
     bool_type: Option<TypeId>,
     i32_type: Option<TypeId>,

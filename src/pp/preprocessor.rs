@@ -611,7 +611,6 @@ impl<'src> Preprocessor<'src> {
 
     /// Push a conditional that is lazily skipped (nested in a skipped block)
     pub(super) fn push_skipped_conditional(&mut self) {
-        // Bolt ⚡: Optimized to avoid redundant set_skipping call.
         let info = PPConditionalInfo {
             was_skipping: true,
             found_else: false,

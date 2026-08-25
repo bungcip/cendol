@@ -1,6 +1,7 @@
 use super::Preprocessor;
 use crate::ast::StringId;
 use crate::pp::pp_lexer::PPLexer;
+use crate::pp::types::MacroParam;
 use crate::pp::types::{MacroFlags, MacroInfo};
 use crate::pp::{PPToken, PPTokenFlags, PPTokenKind};
 use crate::source_manager::{FileKind, SourceId, SourceLoc, SourceManager};
@@ -365,21 +366,16 @@ impl<'src> Preprocessor<'src> {
         let tokens = self.lex_macro_value(value_str, "<command-line>");
 
         let symbol = StringId::new(name);
-        let macro_info = MacroInfo {
-            tokens: Arc::from(tokens),
-            ..Default::default()
-        };
+        let macro_info = MacroInfo::default().with_tokens(Arc::from(tokens));
         self.macros.insert(symbol, macro_info);
     }
 
     /// Define a built-in macro
     fn define_builtin_macro(&mut self, name: &str, tokens: Vec<PPToken>) {
         let symbol = StringId::new(name);
-        let macro_info = MacroInfo {
-            flags: MacroFlags::BUILTIN,
-            tokens: Arc::from(tokens),
-            ..Default::default()
-        };
+        let macro_info = MacroInfo::default()
+            .with_flags(MacroFlags::BUILTIN)
+            .with_tokens(Arc::from(tokens));
         self.macros.insert(symbol, macro_info);
     }
 
@@ -390,28 +386,13 @@ impl<'src> Preprocessor<'src> {
         let tokens = self.lex_macro_value(body, "<builtin>");
 
         // Pre-calculate expansion needs for built-in function-like macros
-        let mut needs_expansion = vec![false; param_symbols.len()];
-        for i in 0..tokens.len() {
-            if let PPTokenKind::Identifier(sym) = tokens[i].kind
-                && let Some(idx) = param_symbols.iter().position(|&p| p == sym)
-            {
-                let preceded_by_hash = i > 0 && tokens[i - 1].kind == PPTokenKind::Hash;
-                let preceded_by_hashhash = i > 0 && tokens[i - 1].kind == PPTokenKind::HashHash;
-                let followed_by_hashhash = i + 1 < tokens.len() && tokens[i + 1].kind == PPTokenKind::HashHash;
+        let mut parameters: Vec<MacroParam> = param_symbols.into_iter().map(MacroParam::new).collect();
+        MacroInfo::precalculate_expansion_needs(&tokens, &mut parameters, &mut None, self.keywords.va_opt);
 
-                if !preceded_by_hash && !preceded_by_hashhash && !followed_by_hashhash {
-                    needs_expansion[idx] = true;
-                }
-            }
-        }
-
-        let macro_info = MacroInfo {
-            flags: MacroFlags::BUILTIN | MacroFlags::FUNCTION_LIKE,
-            tokens: Arc::from(tokens),
-            parameter_list: Arc::from(param_symbols),
-            parameter_needs_expansion: Arc::from(needs_expansion),
-            ..Default::default()
-        };
+        let macro_info = MacroInfo::default()
+            .with_flags(MacroFlags::BUILTIN | MacroFlags::FUNCTION_LIKE)
+            .with_tokens(Arc::from(tokens))
+            .with_parameters(Arc::from(parameters), None);
         self.macros.insert(symbol, macro_info);
     }
 }

@@ -54,10 +54,11 @@ struct FunctionCtx {
 #[derive(Debug, Clone, Default)]
 pub struct SemanticInfo {
     pub types: Vec<Option<QualType>>,
+    pub value_categories: Vec<ValueCategory>,
+
     // Bolt ⚡: Optimization: Use a sparse HashMap for conversions to save memory.
     // Most nodes do not have implicit conversions.
     pub conversions: FxHashMap<usize, SmallVec<[Conversion; 1]>>,
-    pub value_categories: Vec<ValueCategory>,
     pub generic_selections: FxHashMap<usize, NodeRef>, // Maps NodeIndex of GenericSelection to selected result_expr
     pub choose_expressions: FxHashMap<usize, NodeRef>, // Maps NodeIndex of BuiltinChooseExpr to selected branch
     pub offsetof_results: FxHashMap<usize, i64>,       // Maps NodeIndex of BuiltinOffsetof to computed offset
@@ -1141,7 +1142,6 @@ impl<'a> SemanticAnalyzer<'a> {
                         if p.is_function() {
                             self.set_category(node, ValueCategory::FunctionDesignator);
                         } else {
-                            // Bolt ⚡: Eagerly set value category to LValue for dereference.
                             self.set_category(node, ValueCategory::LValue);
                         }
                     }
@@ -3873,7 +3873,6 @@ impl<'a> SemanticAnalyzer<'a> {
         let _ = self.registry.ensure_layout(qt.ty());
         self.visit_init(init, qt);
 
-        // Bolt ⚡: Eagerly set value category to LValue for compound literals.
         self.set_category(node, ValueCategory::LValue);
 
         Some(qt)

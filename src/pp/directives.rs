@@ -3,6 +3,7 @@ use crate::diagnostic::{Diagnostic, DiagnosticLevel};
 use crate::lang_options::Visibility;
 use crate::pp::error::{PPDiag, PPError};
 use crate::pp::preprocessor::Preprocessor;
+use crate::pp::types::MacroParam;
 use crate::pp::types::{MacroFlags, MacroInfo, PPConditionalInfo};
 use crate::pp::{DirectiveKind, PPToken, PPTokenFlags, PPTokenKind, PragmaPackKind, PragmaVisibilityKind};
 use crate::source_manager::{FileKind, SourceId, SourceLoc, SourceManager, SourceSpan};
@@ -169,48 +170,27 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn check_macro_redefinition(&mut self, name: StringId, name_token: &PPToken, macro_info: &MacroInfo) -> bool {
-        if let Some(existing) = self.macros.get(&name) {
-            // Check if definition is different
-            // Mask out runtime state flags (USED, DISABLED) that don't affect definition identity.
-            // We also exclude BUILTIN from the comparison itself because we want to allow
-            // the user to redefine a built-in macro with an identical definition.
-            let identity_flags_mask = MacroFlags::FUNCTION_LIKE | MacroFlags::C99_VARARGS | MacroFlags::GNU_VARARGS;
+        let Some(existing) = self.macros.get(&name) else {
+            return true;
+        };
 
-            let is_different = (existing.flags & identity_flags_mask) != (macro_info.flags & identity_flags_mask)
-                || existing.parameter_list != macro_info.parameter_list
-                || existing.variadic_arg != macro_info.variadic_arg
-                || existing.tokens.len() != macro_info.tokens.len()
-                || existing.tokens.iter().zip(macro_info.tokens.iter()).any(|(a, b)| {
-                    if a.kind != b.kind {
-                        return true;
-                    }
-                    // For tokens that store text externally, compare the text
-                    match a.kind {
-                        PPTokenKind::Identifier(_) => false, // Already covered by a.kind != b.kind (stores sym)
-                        PPTokenKind::Number | PPTokenKind::StringLiteral | PPTokenKind::CharLiteral(_) => {
-                            a.get_text(self.sm) != b.get_text(self.sm)
-                        }
-                        _ => false,
-                    }
-                });
+        let is_different = !existing.is_identical_definition(macro_info, self.sm);
 
-            if existing.flags.contains(MacroFlags::BUILTIN) {
-                if is_different {
-                    self.report_warning_with_name(
-                        name_token.location,
-                        format!("Redefinition of built-in macro '{}'", name),
-                        "builtin-macro-redefined",
-                    );
-                }
-                // Return false to block overwriting the built-in macro,
-                // but we only warn if it was actually different.
-                return false;
-            }
-
+        if existing.flags.contains(MacroFlags::BUILTIN) {
             if is_different {
-                let err = self.error(PPError::MacroRedefined(name), name_token.location);
-                self.report_pp_warning(err);
+                self.report_warning_with_name(
+                    name_token.location,
+                    format!("Redefinition of built-in macro '{}'", name),
+                    "builtin-macro-redefined",
+                );
             }
+            // Return false to block overwriting the built-in macro
+            return false;
+        }
+
+        if is_different {
+            let err = self.error(PPError::MacroRedefined(name), name_token.location);
+            self.report_pp_warning(err);
         }
         true
     }
@@ -220,49 +200,23 @@ impl<'src> Preprocessor<'src> {
         let (flags, params, variadic_arg) = self.parse_define_args(name)?;
         let tokens = self.collect_tokens_until_eod();
 
-        let mut macro_info = MacroInfo {
-            location: name_token.location,
-            flags,
-            tokens: Arc::from(tokens),
-            parameter_list: Arc::from(params),
-            variadic_arg,
-            ..Default::default()
+        let mut parameters: Vec<MacroParam> = params.iter().map(|&name| MacroParam::new(name)).collect();
+        let mut var_param = variadic_arg.map(MacroParam::new);
+
+        let has_va_opt =
+            MacroInfo::precalculate_expansion_needs(&tokens, &mut parameters, &mut var_param, self.keywords.va_opt);
+
+        let final_flags = if has_va_opt {
+            flags | MacroFlags::HAS_VA_OPT
+        } else {
+            flags
         };
 
-        // Bolt ⚡: Pre-calculate expansion needs and detect __VA_OPT__.
-        let mut needs_expansion =
-            vec![false; macro_info.parameter_list.len() + if variadic_arg.is_some() { 1 } else { 0 }];
-
-        for i in 0..macro_info.tokens.len() {
-            let t = &macro_info.tokens[i];
-            if let PPTokenKind::Identifier(sym) = t.kind {
-                // Check for __VA_OPT__
-                if variadic_arg.is_some() && sym == self.keywords.va_opt {
-                    macro_info.flags |= MacroFlags::HAS_VA_OPT;
-                }
-
-                // Check for parameter usage that requires expansion
-                let param_idx = if let Some(pos) = macro_info.parameter_list.iter().position(|&p| p == sym) {
-                    Some(pos)
-                } else if variadic_arg == Some(sym) {
-                    Some(macro_info.parameter_list.len())
-                } else {
-                    None
-                };
-
-                if let Some(idx) = param_idx {
-                    let preceded_by_hash = i > 0 && macro_info.tokens[i - 1].kind == PPTokenKind::Hash;
-                    let preceded_by_hashhash = i > 0 && macro_info.tokens[i - 1].kind == PPTokenKind::HashHash;
-                    let followed_by_hashhash =
-                        i + 1 < macro_info.tokens.len() && macro_info.tokens[i + 1].kind == PPTokenKind::HashHash;
-
-                    if !preceded_by_hash && !preceded_by_hashhash && !followed_by_hashhash {
-                        needs_expansion[idx] = true;
-                    }
-                }
-            }
-        }
-        macro_info.parameter_needs_expansion = Arc::from(needs_expansion);
+        let macro_info = MacroInfo::default()
+            .with_location(name_token.location)
+            .with_flags(final_flags)
+            .with_tokens(Arc::from(tokens))
+            .with_parameters(Arc::from(parameters), var_param);
 
         if self.check_macro_redefinition(name, &name_token, &macro_info) {
             self.macros.insert(name, macro_info);

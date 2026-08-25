@@ -227,17 +227,9 @@ impl<'a> ConstEvalCtx<'a> {
             LitVal::Char(_, prefix) => prefix.get_type(self.registry),
             LitVal::Float { suffix, .. } => suffix.get_type(self.registry),
             LitVal::String { value, prefix } => {
-                // Bolt ⚡: Use metadata-only accessors.
                 let builtin_type = get_string_builtin_type(*prefix);
                 let size = get_string_literal_size(value, *prefix);
-                let builtin_base = match builtin_type {
-                    BuiltinType::Char => self.registry.type_char,
-                    BuiltinType::Int => self.registry.type_int,
-                    BuiltinType::UShort => self.registry.type_short_unsigned,
-                    BuiltinType::UInt => self.registry.type_int_unsigned,
-                    BuiltinType::UChar => self.registry.type_char_unsigned,
-                    _ => self.registry.type_char,
-                };
+                let builtin_base = self.registry.get_builtin_type(builtin_type);
                 self.registry
                     .find_array_type(builtin_base, ArraySize::Constant(size))
                     .unwrap_or(self.registry.type_error)

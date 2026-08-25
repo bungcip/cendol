@@ -204,9 +204,11 @@ impl TypeRegistry {
 
     /// Create a new TypeRegistry with builtin types initialized.
     pub(crate) fn new(target_triple: Triple) -> Self {
+        // ⚡ Bolt: Pre-allocate capacity for the type arena vector to eliminate dynamic reallocations
+        // during builtin initialization and early semantic analysis.
         let mut reg = TypeRegistry {
             target_triple,
-            types: Vec::new(),
+            types: Vec::with_capacity(128),
             pointer_cache: FxHashMap::default(),
             array_cache: FxHashMap::default(),
             function_cache: FxHashMap::default(),

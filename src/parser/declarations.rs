@@ -108,7 +108,7 @@ fn parse_function_definition_tail(
 ) -> Result<PNodeRef, ParseDiag> {
     let scope_id = parser
         .ast
-        .parsed_types
+        .arena
         .get_declarator_scope(declarator)
         .unwrap_or(ScopeId::GLOBAL);
     let old_scope = parser.symbol_table.current_scope();
@@ -218,9 +218,9 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>,
                 {
                     parser.advance(); // consume `_Atomic`
                     parser.expect(TokenKind::LeftParen)?;
-                    let parsed_type = parse_type_name(parser)?;
+                    let ptype = parse_type_name(parser)?;
                     parser.expect(TokenKind::RightParen)?;
-                    specifiers.push(DeclSpec::TypeSpec(TypeSpec::Atomic(parsed_type)));
+                    specifiers.push(DeclSpec::TypeSpec(TypeSpec::Atomic(ptype)));
                     has_type_specifier = true;
                     continue;
                 }
@@ -290,8 +290,8 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>,
                 };
 
                 let alignment = if is_type_start {
-                    let parsed_type = parse_type_name(parser)?;
-                    PAlignmentSpec::Type(parsed_type)
+                    let ptype = parse_type_name(parser)?;
+                    PAlignmentSpec::Type(ptype)
                 } else {
                     PAlignmentSpec::Expr(parser.parse_expr_min()?)
                 };
@@ -758,7 +758,7 @@ fn parse_init_declarators_for_decl(
 
         let span = start_span.merge(p.last_token_span().unwrap_or(start_span));
 
-        if let Some(name) = super::declarator::get_declarator_name(&p.ast.parsed_types, declarator) {
+        if let Some(name) = super::declarator::get_declarator_name(&p.ast.arena, declarator) {
             if specifiers
                 .iter()
                 .any(|s| matches!(s, DeclSpec::StorageClass(StorageClass::Typedef)))

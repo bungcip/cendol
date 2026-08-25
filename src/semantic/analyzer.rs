@@ -8,14 +8,13 @@ use crate::{
     diagnostic::{DiagnosticEngine, DiagnosticLevel},
     lang_options::{CStandard, LangOptions, PedanticMode},
     semantic::{
-        ArraySize, BuiltinFunctionKind, BuiltinType, QualType, RecordMember, TypeKind, TypeQuals, TypeRef,
+        ArraySize, BuiltinFunctionKind, BuiltinType, QualType, RecordMember, TypeClass, TypeKind, TypeQuals, TypeRef,
         TypeRegistry,
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticDiag, SemanticError},
         literal_utils::get_string_builtin_type,
         symbol_table::{SymbolClass, SymbolKind, SymbolRef, SymbolTable},
-        types::TypeClass,
     },
 };
 

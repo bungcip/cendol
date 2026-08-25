@@ -1,7 +1,6 @@
 use crate::{
     ast::{
-        BinaryOp, FunctionSpec, NameId, PType, SourceSpan, StorageClass, StringLitRef, TypeQualifier, UnaryOp,
-        literal::LitRef,
+        BinaryOp, FunctionSpec, LitRef, NameId, PType, SourceSpan, StorageClass, StringLitRef, TypeQualifier, UnaryOp,
     },
     lang_options::Visibility,
     semantic::{ScopeId, TypeQuals},
@@ -35,7 +34,7 @@ pub type PNodeRef = NonZeroU32;
 #[derive(Clone, Default)]
 pub struct PAst {
     pub nodes: Vec<PNode>,
-    pub parsed_types: PTypeArena,
+    pub arena: PTypeArena,
 }
 
 impl PAst {

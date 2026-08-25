@@ -1,4 +1,5 @@
 use crate::ast::literal::StrPrefix;
+use crate::ast::literal::get_string_literal_size;
 use crate::semantic::BuiltinType;
 
 pub struct StringLiteralValue {
@@ -8,8 +9,6 @@ pub struct StringLiteralValue {
 }
 
 /// Metadata about a string literal without its full value buffer.
-/// Bolt ⚡: This allows phases like semantic analysis and lowering to resolve
-/// literal types and sizes without incurring the heap allocation cost of a Vec<i64>.
 pub(crate) fn get_string_builtin_type(prefix: StrPrefix) -> BuiltinType {
     match prefix {
         StrPrefix::Wide => BuiltinType::Int,
@@ -19,8 +18,6 @@ pub(crate) fn get_string_builtin_type(prefix: StrPrefix) -> BuiltinType {
         StrPrefix::None => BuiltinType::Char,
     }
 }
-
-pub use crate::ast::literal::get_string_literal_size;
 
 pub(crate) fn lower_string_literal(content: &[u8], prefix: StrPrefix) -> StringLiteralValue {
     let builtin_type = get_string_builtin_type(prefix);

@@ -85,6 +85,18 @@ impl Ast {
         self.push_node(NodeKind::Dummy, span)
     }
 
+    /// Add multiple dummy nodes to the AST and return the first one's reference
+    #[inline]
+    pub(crate) fn push_dummies(&mut self, count: usize, span: SourceSpan) -> NodeRef {
+        if count == 0 {
+            return NodeRef::ROOT;
+        }
+        let first_node = self.next_node_ref();
+        self.kinds.resize(self.kinds.len() + count, NodeKind::Dummy);
+        self.spans.resize(self.spans.len() + count, span);
+        first_node
+    }
+
     /// Get node kind by reference
     #[inline]
     pub(crate) fn get_kind(&self, node: NodeRef) -> &NodeKind {

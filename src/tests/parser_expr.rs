@@ -485,7 +485,7 @@ fn test_builtin_bit_cast() {
     insta::assert_yaml_snapshot!(resolved, @"
     FunctionCall:
       - Ident: __builtin_bit_cast
-      - - Ident: parsed_type_1
+      - - Ident: ptype_1
         - LiteralInt: 42
     ");
 }

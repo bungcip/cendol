@@ -133,10 +133,10 @@ fn merge_type_specs(current: &TypeSpec, new: &TypeSpec) -> Result<TypeSpec, Pars
 /// Convert a TypeSpec to a PTypeSpecRef (verifying constraints)
 fn parse_base_type(parser: &mut Parser, ts: TypeSpec) -> Result<TypeSpecRef, ParseDiag> {
     use TypeSpec::*;
-    if let Atomic(parsed_type) = &ts {
+    if let Atomic(ptype) = &ts {
         // C11 6.7.2.4p3: "The type name in an atomic type specifier shall not designate
         // an array type, a function type, an atomic type, or an incomplete type."
-        let decl = parser.ast.parsed_types.get_decl(parsed_type.declarator);
+        let decl = parser.ast.arena.get_decl(ptype.declarator);
         match decl {
             PDeclarator::Array { .. } => {
                 return Err(ParseDiag {
@@ -153,7 +153,7 @@ fn parse_base_type(parser: &mut Parser, ts: TypeSpec) -> Result<TypeSpecRef, Par
             _ => {}
         }
 
-        let base = parser.ast.parsed_types.get_type_spec(parsed_type.base);
+        let base = parser.ast.arena.get_type_spec(ptype.base);
         if let Atomic(_) = base {
             return Err(ParseDiag {
                 span: parser.previous_token_span(),

@@ -7,9 +7,8 @@ use rustc_hash::FxHashSet as HashSet;
 use std::fmt;
 use std::fmt::Formatter;
 
-use crate::ast::literal::LitVal;
 use crate::ast::parsed::{PAst, PNodeKind, PNodeRef};
-use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind, NodeRef};
+use crate::ast::{Ast, DesignatedInitializer, Designator, LitVal, NodeKind, NodeRef};
 use crate::semantic::{SymbolKind, SymbolRef, SymbolTable, TypeRef, TypeRegistry};
 
 pub(crate) struct PAstDisplay<'a>(pub(crate) &'a PAst);

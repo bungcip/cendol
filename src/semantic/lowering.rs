@@ -14,13 +14,14 @@ use rustc_hash::FxHashMap;
 use smallvec::{SmallVec, smallvec};
 use thin_vec::ThinVec;
 
+use crate::ast::literal::get_string_literal_size;
 use crate::ast::parsed::{PDecl, PFunctionDef, PNodeKind, PNodeRef, TypeSpec};
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, DiagnosticLevel};
 use crate::lang_options::{CStandard, LangOptions, PedanticMode, Visibility};
 use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::errors::{SemanticDiag, SemanticError};
-use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
+use crate::semantic::literal_utils::get_string_builtin_type;
 use crate::semantic::symbol_table::{Function, SymbolTableError};
 use crate::semantic::{
     ArraySize, BuiltinFunctionKind, BuiltinType, DefinitionState, EnumConstant, FunctionParam, Namespace, QualType,
@@ -320,7 +321,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.report_error(span, SemanticError::ArrayQualifierOutsideParameter);
             }
         } else if (has_static || !quals.is_empty())
-            && !matches!(self.parsed_ast.parsed_types.get_decl(base), PDeclarator::Identifier(..))
+            && !matches!(self.parsed_ast.arena.get_decl(base), PDeclarator::Identifier(..))
         {
             if has_static {
                 self.report_error(span, SemanticError::ArrayStaticNotOutermost);
@@ -1059,9 +1060,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         let decl_len = total_semantic_nodes as u32;
-        let mut reserved_slots = Vec::with_capacity(decl_len as usize);
-        for _ in 0..decl_len {
-            reserved_slots.push(self.push_dummy(span));
+        let decl_start = self.ast.push_dummies(total_semantic_nodes, span);
+
+        // Translation Unit could be large, but it's only called once per TU, so Vec is fine.
+        let mut reserved_slots = Vec::with_capacity(total_semantic_nodes);
+        for i in 0..total_semantic_nodes {
+            reserved_slots.push(NodeRef::new(decl_start.raw() + i as u32).unwrap());
         }
 
         let mut current_slot_idx = 0;
@@ -1102,13 +1106,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             total_stmt_nodes += self.count_semantic_nodes(stmt);
         }
 
-        let mut stmt_slots = Vec::with_capacity(total_stmt_nodes);
-        for _ in 0..total_stmt_nodes {
-            stmt_slots.push(self.push_dummy(span));
-        }
+        let stmt_start = self.ast.push_dummies(total_stmt_nodes, span);
+        let stmt_len = total_stmt_nodes as u32;
 
-        let stmt_start = stmt_slots.first().copied().unwrap_or(NodeRef::ROOT);
-        let stmt_len = stmt_slots.len() as u32;
+        let mut stmt_slots: SmallVec<[NodeRef; 16]> = SmallVec::with_capacity(total_stmt_nodes);
+        for i in 0..total_stmt_nodes {
+            stmt_slots.push(NodeRef::new(stmt_start.raw() + i as u32).unwrap());
+        }
 
         let old_scope = self.symbol_table.current_scope();
         self.symbol_table.set_current_scope(scope_id);
@@ -1416,7 +1420,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let scope_id = self
             .parsed_ast
-            .parsed_types
+            .arena
             .get_declarator_scope(func_def.declarator)
             .unwrap_or(ScopeId::GLOBAL);
         let old_scope = self.symbol_table.current_scope();
@@ -1430,11 +1434,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let parameters = self.get_definition_params(func_def.declarator).unwrap_or_default();
         let param_len = parameters.len() as u16;
 
-        let mut child_dummies = Vec::with_capacity(param_len as usize + 1);
-        for _ in 0..=param_len {
-            child_dummies.push(self.push_dummy(span));
-        }
-        let child_start = child_dummies[0];
+        let child_start = self.ast.push_dummies(param_len as usize + 1, span);
 
         // 1. Visit parameters and copy to [0..param_len]
         for (i, param) in parameters.iter().enumerate() {
@@ -1456,7 +1456,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     .expect("Failed to define parameter"),
             };
 
-            let param_dummy = child_dummies[i];
+            let param_dummy = NodeRef::new(child_start.raw() + i as u32).unwrap();
             self.ast.set_kind(
                 param_dummy,
                 NodeKind::Param(Param {
@@ -1468,7 +1468,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         // 2. Visit body directly into the last dummy slot
-        let body_dummy = child_dummies[param_len as usize];
+        let body_dummy = NodeRef::new(child_start.raw() + param_len as u32).unwrap();
         self.visit_single_statement_into(func_def.body, body_dummy);
 
         self.symbol_table.set_current_scope(old_scope);
@@ -1680,7 +1680,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if self.registry.get(base_qt.ty()).kind == TypeKind::AutoType
             && !matches!(
-                self.parsed_ast.parsed_types.get_decl(init.declarator),
+                self.parsed_ast.arena.get_decl(init.declarator),
                 PDeclarator::Identifier(..)
             )
         {
@@ -2071,7 +2071,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn lower_type_inner(&mut self, pty: PType, span: SourceSpan, in_param: bool) -> Result<QualType, SemanticDiag> {
-        let base_type_node = self.parsed_ast.parsed_types.get_type_spec(pty.base);
+        let base_type_node = self.parsed_ast.arena.get_type_spec(pty.base);
         let qbase = self.resolve_type_spec(base_type_node, span)?;
         let qbase = self.merge_quals_with_check(qbase, pty.quals, span);
 
@@ -2096,7 +2096,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn extract_array_param_quals(&self, declarator: DeclaratorRef) -> TypeQuals {
-        let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
+        let declarator = self.parsed_ast.arena.get_decl(declarator);
         match declarator {
             PDeclarator::Array { inner, size } => {
                 let inner_quals = self.extract_array_param_quals(*inner);
@@ -2112,7 +2112,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn extract_name(&self, declarator: DeclaratorRef) -> Option<NameId> {
-        let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
+        let declarator = self.parsed_ast.arena.get_decl(declarator);
         match declarator {
             PDeclarator::Identifier(name) => *name,
             PDeclarator::Pointer { inner, .. } => self.extract_name(*inner),
@@ -2146,14 +2146,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn visit_function_call(&mut self, func: PNodeRef, args: &[PNodeRef], span: SourceSpan) -> NodeKind {
         let f = self.visit_expr(func);
-        let mut arg_dummies = Vec::with_capacity(args.len());
-        for _ in 0..args.len() {
-            arg_dummies.push(self.push_dummy(span));
-        }
+        let arg_start = self.ast.push_dummies(args.len(), span);
+
         for (i, &arg) in args.iter().enumerate() {
-            self.visit_expression_into(arg, arg_dummies[i]);
+            let arg_ref = NodeRef::new(arg_start.raw() + i as u32).unwrap();
+            self.visit_expression_into(arg, arg_ref);
         }
-        let arg_start = arg_dummies.first().copied().unwrap_or(NodeRef::ROOT);
 
         NodeKind::FunctionCall(CallExpr {
             callee: f,
@@ -2183,21 +2181,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn visit_generic_selection(&mut self, control: PNodeRef, assocs: &[PGenericAssoc], span: SourceSpan) -> NodeKind {
         let c = self.visit_expr(control);
         let assoc_len = assocs.len() as u16;
-        let mut assoc_dummies = Vec::with_capacity(assocs.len());
-        for _ in 0..assoc_len {
-            assoc_dummies.push(self.push_dummy(span));
-        }
+        let assoc_start = self.ast.push_dummies(assoc_len as usize, span);
 
         for (i, a) in assocs.iter().enumerate() {
             let ty = a.type_name.map(|t| self.visit_type(t, span));
             let expr = self.visit_expr(a.result_expr);
             self.ast.set_kind(
-                assoc_dummies[i],
+                NodeRef::new(assoc_start.raw() + i as u32).unwrap(),
                 NodeKind::GenericAssoc(GenericAssoc { ty, result_expr: expr }),
             );
         }
 
-        let assoc_start = assoc_dummies.first().copied().unwrap_or(NodeRef::ROOT);
         NodeKind::GenericSelection(GenericSelection {
             control: c,
             assoc_start,
@@ -2206,19 +2200,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn visit_initializer_list(&mut self, inits: &[PDesignatedInitializer], span: SourceSpan) -> NodeKind {
-        let mut init_dummies = Vec::with_capacity(inits.len());
-        for _ in 0..inits.len() {
-            init_dummies.push(self.push_dummy(span));
-        }
+        let init_start = self.ast.push_dummies(inits.len(), span);
 
         for (i, init) in inits.iter().enumerate() {
             let expr = self.visit_expr(init.initializer);
             let designator_count = init.designation.len() as u16;
-            let mut designator_dummies = Vec::with_capacity(designator_count as usize);
-
-            for _ in 0..designator_count {
-                designator_dummies.push(self.push_dummy(span));
-            }
+            let designator_start = self.ast.push_dummies(designator_count as usize, span);
 
             for (j, d) in init.designation.iter().enumerate() {
                 let node_kind = match d {
@@ -2232,20 +2219,23 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         Designator::ArrayRange(self.visit_expr(*start), self.visit_expr(*end))
                     }
                 };
-                self.ast
-                    .set_kind(designator_dummies[j], NodeKind::Designator(node_kind));
+                self.ast.set_kind(
+                    NodeRef::new(designator_start.raw() + j as u32).unwrap(),
+                    NodeKind::Designator(node_kind),
+                );
             }
 
-            let designator_start = designator_dummies.first().copied().unwrap_or(NodeRef::ROOT);
             let di = DesignatedInitializer {
                 designator_start,
                 designator_len: designator_count,
                 initializer: expr,
             };
-            self.ast.set_kind(init_dummies[i], NodeKind::InitializerItem(di));
+            self.ast.set_kind(
+                NodeRef::new(init_start.raw() + i as u32).unwrap(),
+                NodeKind::InitializerItem(di),
+            );
         }
 
-        let init_start = init_dummies.first().copied().unwrap_or(NodeRef::ROOT);
         NodeKind::InitializerList(InitializerList {
             init_start,
             init_len: inits.len() as u32,
@@ -2677,8 +2667,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn try_deduce_string_initializer_size(&mut self, init_node: NodeRef, element_type: TypeRef) -> Option<usize> {
         match self.ast.get_kind(init_node) {
-            NodeKind::Literal(literal_id) => match literal_id.get_val() {
-                // Bolt ⚡: Use metadata-only accessor to avoid full literal lowering.
+            NodeKind::Literal(lit) => match lit.get_val() {
                 LitVal::String { value, prefix } => Some(get_string_literal_size(&value, prefix)),
                 _ => None,
             },
@@ -2687,13 +2676,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     && item.designator_len == 0
                     && let NodeKind::Literal(literal_id) = self.ast.get_kind(item.initializer)
                     && let LitVal::String { value, prefix } = literal_id.get_val()
-                    // Bolt ⚡: Use metadata-only accessors.
                     && let builtin_type = get_string_builtin_type(prefix)
                     && let size = get_string_literal_size(&value, prefix)
-                    && self.registry.is_compatible_unqual(
-                        element_type,
-                        self.registry.get_builtin_type(builtin_type),
-                    )
+                    && self
+                        .registry
+                        .is_compatible_unqual(element_type, self.registry.get_builtin_type(builtin_type))
                 {
                     Some(size)
                 } else {
@@ -2845,25 +2832,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         // Brace elision logic
-        enum AggTask {
-            Record(Arc<[RecordMember]>),
-            Array(TypeRef, usize),
-            Scalar,
-        }
-        let task = {
-            let type_info = self.registry.get(element_type);
-            match &type_info.kind {
-                TypeKind::Record { members, .. } => AggTask::Record(Arc::clone(members)),
-                TypeKind::Array {
-                    element_type,
-                    size: ArraySize::Constant(len),
-                } => AggTask::Array(*element_type, *len),
-                _ => AggTask::Scalar,
-            }
-        };
+        let kind = self.registry.get(element_type).kind.clone();
 
-        match task {
-            AggTask::Record(members) => {
+        match kind {
+            TypeKind::Record { members, .. } => {
                 let mut is_first_member = true;
                 for member in members.iter() {
                     let allow = allow_array_designator && is_first_member;
@@ -2880,7 +2852,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     }
                 }
             }
-            AggTask::Array(element_type, len) => {
+            TypeKind::Array {
+                element_type,
+                size: ArraySize::Constant(len),
+            } => {
                 let mut is_first = true;
                 for _ in 0..len {
                     let allow = allow_array_designator && is_first;
@@ -2896,14 +2871,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     }
                 }
             }
-            AggTask::Scalar => {
+            _ => {
                 // Scalar or Variable/Incomplete array. Consume 1 item for safety.
                 iter.next();
             }
         }
     }
     fn extract_bit_field_width(&mut self, declarator: DeclaratorRef) -> Option<u16> {
-        let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
+        let declarator = self.parsed_ast.arena.get_decl(declarator);
         match declarator {
             PDeclarator::BitField { inner: _, width } => {
                 let width_expr = self.visit_expr(*width);
@@ -2938,7 +2913,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         mut spec_info: Option<&mut DeclSpecInfo>,
         ctx: DeclaratorContext,
     ) -> QualType {
-        let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
+        let declarator = self.parsed_ast.arena.get_decl(declarator);
         match declarator {
             PDeclarator::Identifier(..) => current_type,
             PDeclarator::Pointer { quals, inner } => {
@@ -2970,7 +2945,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     self.report_error(span, SemanticError::AutoTypeNotAllowed("function return type"));
                 }
 
-                let params_list = self.parsed_ast.parsed_types.get_params(*params);
+                let params_list = self.parsed_ast.arena.get_params(*params);
                 let processed_params = self.visit_function_params(params_list, false, *scope_id);
                 let is_noreturn = spec_info.as_ref().map(|s| s.is_noreturn).unwrap_or(false);
                 let function_type = self.registry.function_type(
@@ -3461,7 +3436,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn get_definition_params(&mut self, declarator: DeclaratorRef) -> Option<Vec<FunctionParam>> {
-        let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
+        let declarator = self.parsed_ast.arena.get_decl(declarator);
         match declarator {
             PDeclarator::Function {
                 inner,
@@ -3472,7 +3447,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 if let Some(inner_params) = self.get_definition_params(*inner) {
                     Some(inner_params)
                 } else {
-                    let params_list = self.parsed_ast.parsed_types.get_params(*params);
+                    let params_list = self.parsed_ast.arena.get_params(*params);
                     Some(self.visit_function_params(params_list, true, *scope_id))
                 }
             }
@@ -3595,7 +3570,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         for param in params {
             let span = param.span;
 
-            if let TypeSpec::AutoType = self.parsed_ast.parsed_types.get_type_spec(param.ty.base) {
+            if let TypeSpec::AutoType = self.parsed_ast.arena.get_type_spec(param.ty.base) {
                 self.report_error(span, SemanticError::AutoTypeNotAllowed("function parameter"));
             }
 

@@ -178,14 +178,14 @@ fn parse_trailing_declarators(
         match token.kind {
             TokenKind::LeftBracket => {
                 parser.advance();
-                validate_declarator(&parser.ast.parsed_types, base, DeclaratorKind::Array, token.span)?;
+                validate_declarator(&parser.ast.arena, base, DeclaratorKind::Array, token.span)?;
                 let size = parse_array_size(parser)?;
                 parser.expect(TokenKind::RightBracket)?;
                 base = parser.alloc_decl(PDeclarator::Array { inner: base, size });
             }
             TokenKind::LeftParen => {
                 parser.advance();
-                validate_declarator(&parser.ast.parsed_types, base, DeclaratorKind::Function, token.span)?;
+                validate_declarator(&parser.ast.arena, base, DeclaratorKind::Function, token.span)?;
                 let (param_range, flags, scope_id) = parse_function_parameters(parser)?;
                 parser.expect(TokenKind::RightParen)?;
                 base = parser.alloc_decl(PDeclarator::Function {
@@ -266,7 +266,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(PParamRange, Functi
 
         let span = start_span.merge(parser.last_token_span().unwrap_or(start_span));
 
-        let name = declarator.and_then(|d| get_declarator_name(&parser.ast.parsed_types, d));
+        let name = declarator.and_then(|d| get_declarator_name(&parser.ast.arena, d));
         let param_ptype = build_type(parser, &specifiers, declarator)?;
 
         let (storage, is_thread_local, is_inline, is_noreturn, alignment) = extract_param_flags(&specifiers);

@@ -185,4 +185,5 @@ pub mod semantic_gnu_local_label;
 pub mod semantic_mir_label_addr;
 pub mod semantic_types_compatible;
 pub mod test_utils;
+pub mod semantic_constant_ptr_coverage;
 pub mod tuti_const_eval_coverage;

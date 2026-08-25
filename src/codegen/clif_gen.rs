@@ -1322,7 +1322,7 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                     if inner_type.is_float() {
                         mir_type.is_signed()
                     } else {
-                        is_operand_signed(inner_operand, ctx.mir, ctx.pointee_to_pointer)
+                        lower_operand_type_info(inner_operand, ctx.mir, ctx.pointee_to_pointer).1
                     },
                     ctx.builder,
                 )
@@ -1425,32 +1425,31 @@ fn emit_place(place: &Place, ctx: &mut BodyEmitContext, expected_type: Type) -> 
 }
 
 /// Helper function to get the Cranelift Type of an operand
-fn lower_operand_type(operand: &Operand, mir: &MirProgram, pointee_to_pointer: &FxHashMap<TypeId, TypeId>) -> Type {
+fn lower_operand_type_info(
+    operand: &Operand,
+    mir: &MirProgram,
+    pointee_to_pointer: &FxHashMap<TypeId, TypeId>,
+) -> (Type, bool) {
     if let Operand::AddressOf(_) = operand {
-        return types::I64;
+        return (types::I64, false);
     }
     let type_id = lower_operand_type_id(operand, mir, pointee_to_pointer);
     let mir_type = mir.get_type(type_id);
+    let is_signed = mir_type.is_signed();
 
     if let Some(clif_type) = lower_type(mir_type) {
-        return clif_type;
+        return (clif_type, is_signed);
     }
 
     if mir_type.is_aggregate() {
-        return types::I64;
+        return (types::I64, is_signed);
     }
 
-    // Fallback for types that lower_type returns None for but aren't aggregates (shoudn't happen with valid MIR)
-    types::I32
+    (types::I32, is_signed)
 }
 
-/// Helper function to check if a MIR type is signed
-fn is_operand_signed(operand: &Operand, mir: &MirProgram, pointee_to_pointer: &FxHashMap<TypeId, TypeId>) -> bool {
-    if let Operand::AddressOf(_) = operand {
-        return false;
-    }
-    let type_id = lower_operand_type_id(operand, mir, pointee_to_pointer);
-    mir.get_type(type_id).is_signed()
+fn lower_operand_type(operand: &Operand, mir: &MirProgram, pointee_to_pointer: &FxHashMap<TypeId, TypeId>) -> Type {
+    lower_operand_type_info(operand, mir, pointee_to_pointer).0
 }
 
 /// Helper function to resolve an operand to its TypeId
@@ -1830,7 +1829,8 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                 }
                 Rvalue::Use(operand) => emit_operand(operand, ctx, expected_type),
                 Rvalue::UnaryIntOp(op, operand) => {
-                    let operand_clif_type = lower_operand_type(operand, ctx.mir, ctx.pointee_to_pointer);
+                    let (operand_clif_type, _is_signed) =
+                        lower_operand_type_info(operand, ctx.mir, ctx.pointee_to_pointer);
                     let val = emit_operand(operand, ctx, operand_clif_type);
 
                     match op {
@@ -1935,8 +1935,11 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                 }
 
                 Rvalue::BinaryIntOp(op, left_operand, right_operand) => {
-                    let left_clif_type = lower_operand_type(left_operand, ctx.mir, ctx.pointee_to_pointer);
-                    let right_clif_type = lower_operand_type(right_operand, ctx.mir, ctx.pointee_to_pointer);
+                    let (left_clif_type, is_left_signed) =
+                        lower_operand_type_info(left_operand, ctx.mir, ctx.pointee_to_pointer);
+                    let (right_clif_type, is_right_signed) =
+                        lower_operand_type_info(right_operand, ctx.mir, ctx.pointee_to_pointer);
+                    let _is_signed = is_left_signed;
 
                     // Determine common type for the operation
                     // This handles mixing different integer widths (e.g. i8 + i32 literal)
@@ -1950,22 +1953,17 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     let left_val_raw = emit_operand(left_operand, ctx, left_clif_type);
                     let right_val_raw = emit_operand(right_operand, ctx, right_clif_type);
 
-                    let left_val = emit_type_conversion(
-                        left_val_raw,
-                        left_clif_type,
-                        common_type,
-                        is_operand_signed(left_operand, ctx.mir, ctx.pointee_to_pointer),
-                        ctx.builder,
-                    );
+                    let left_val =
+                        emit_type_conversion(left_val_raw, left_clif_type, common_type, is_left_signed, ctx.builder);
                     let right_val = emit_type_conversion(
                         right_val_raw,
                         right_clif_type,
                         common_type,
-                        is_operand_signed(right_operand, ctx.mir, ctx.pointee_to_pointer),
+                        is_right_signed,
                         ctx.builder,
                     );
 
-                    let is_signed = is_operand_signed(left_operand, ctx.mir, ctx.pointee_to_pointer);
+                    let is_signed = is_left_signed;
                     match op {
                         BinaryIntOp::Add => {
                             if ctx.mir.signed_overflow_mode == SignedOverflowMode::Trap && is_signed {
@@ -2001,14 +1999,14 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                             }
                         }
                         BinaryIntOp::Div => {
-                            if is_operand_signed(left_operand, ctx.mir, ctx.pointee_to_pointer) {
+                            if is_left_signed {
                                 ctx.builder.ins().sdiv(left_val, right_val)
                             } else {
                                 ctx.builder.ins().udiv(left_val, right_val)
                             }
                         }
                         BinaryIntOp::Mod => {
-                            if is_operand_signed(left_operand, ctx.mir, ctx.pointee_to_pointer) {
+                            if is_left_signed {
                                 ctx.builder.ins().srem(left_val, right_val)
                             } else {
                                 ctx.builder.ins().urem(left_val, right_val)
@@ -2019,7 +2017,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                         BinaryIntOp::BitXor => ctx.builder.ins().bxor(left_val, right_val),
                         BinaryIntOp::LShift => ctx.builder.ins().ishl(left_val, right_val),
                         BinaryIntOp::RShift => {
-                            if is_operand_signed(left_operand, ctx.mir, ctx.pointee_to_pointer) {
+                            if is_left_signed {
                                 ctx.builder.ins().sshr(left_val, right_val)
                             } else {
                                 ctx.builder.ins().ushr(left_val, right_val)
@@ -2034,7 +2032,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                             emit_bool_to_int(cond, expected_type, ctx.builder)
                         }
                         BinaryIntOp::Lt => {
-                            let cond = if is_operand_signed(left_operand, ctx.mir, ctx.pointee_to_pointer) {
+                            let cond = if is_left_signed {
                                 ctx.builder.ins().icmp(IntCC::SignedLessThan, left_val, right_val)
                             } else {
                                 ctx.builder.ins().icmp(IntCC::UnsignedLessThan, left_val, right_val)
@@ -2042,7 +2040,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                             emit_bool_to_int(cond, expected_type, ctx.builder)
                         }
                         BinaryIntOp::Le => {
-                            let cond = if is_operand_signed(left_operand, ctx.mir, ctx.pointee_to_pointer) {
+                            let cond = if is_left_signed {
                                 ctx.builder
                                     .ins()
                                     .icmp(IntCC::SignedLessThanOrEqual, left_val, right_val)
@@ -2054,7 +2052,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                             emit_bool_to_int(cond, expected_type, ctx.builder)
                         }
                         BinaryIntOp::Gt => {
-                            let cond = if is_operand_signed(left_operand, ctx.mir, ctx.pointee_to_pointer) {
+                            let cond = if is_left_signed {
                                 ctx.builder.ins().icmp(IntCC::SignedGreaterThan, left_val, right_val)
                             } else {
                                 ctx.builder.ins().icmp(IntCC::UnsignedGreaterThan, left_val, right_val)
@@ -2062,7 +2060,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                             emit_bool_to_int(cond, expected_type, ctx.builder)
                         }
                         BinaryIntOp::Ge => {
-                            let cond = if is_operand_signed(left_operand, ctx.mir, ctx.pointee_to_pointer) {
+                            let cond = if is_left_signed {
                                 ctx.builder
                                     .ins()
                                     .icmp(IntCC::SignedGreaterThanOrEqual, left_val, right_val)

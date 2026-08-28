@@ -506,3 +506,82 @@ fn test_const_eval_coverage() {
     ";
     run_pass(source, CompilePhase::SemanticLowering);
 }
+
+#[test]
+fn test_is_constant_pointer_to_static_duration_object_coverage() {
+    let src = r#"
+        int global_int;
+        int arr[10];
+
+        struct S { int x; };
+        struct S s;
+        struct Outer { struct S s[1]; } out;
+        struct S arr_s[1];
+        struct T { int *p; } t;
+        struct U { struct T *tp; } u = { &t };
+
+        // Hit when Deref is evaluated: `&*(ptr)`
+        int *g_cast = &(*((int*)&global_int));
+        int *g_ident = &(*arr);
+        int *g_member = &*(u.tp->p);
+
+        // Hit when AddrOf is evaluated: `&(expr)`
+        int *g_cast2 = &((int)global_int);
+        int *g_deref = &*(&global_int);
+        int *g_false2 = &(1 + 1);
+
+        int main() { return 0; }
+    "#;
+    crate::tests::test_utils::run_fail_with_message(src, "not");
+}
+
+#[test]
+fn test_is_constant_pointer_to_static_duration_object_coverage_2() {
+    let src = "struct S { int x; }; struct S s; int *fail1 = &(((struct S*)((void*)&s))->x);";
+    crate::tests::test_utils::run_fail_with_message(src, "not");
+}
+
+#[test]
+fn test_is_constant_pointer_to_static_duration_object_coverage_3() {
+    let src = "struct S { int x; }; struct Outer { struct S s[1]; } out; int *fail2 = &out.s->x;";
+    crate::tests::test_utils::run_fail_with_message(src, "not");
+}
+
+#[test]
+fn test_is_constant_pointer_to_static_duration_object_coverage_4() {
+    let src = "struct S { int x; }; struct S s; int *fail3 = &(0 ? &s : &s)->x;";
+    crate::tests::test_utils::run_fail_with_message(src, "not");
+}
+
+#[test]
+fn test_is_constant_pointer_to_static_duration_object_coverage_5() {
+    let src = "int arr[10]; int *g_false = &*(0 ? arr : arr);";
+    crate::tests::test_utils::run_fail_with_message(src, "not");
+}
+
+#[test]
+fn test_is_constant_pointer_to_static_duration_object_coverage_6() {
+    let src = "struct S { int x; }; struct S arr_s[1]; int *valid = &arr_s->x;";
+    // This also fails with "not computable at load time", which means it returns false for constant!
+    crate::tests::test_utils::run_fail_with_message(src, "not");
+}
+
+#[test]
+fn test_is_constant_pointer_to_static_duration_object_coverage_7() {
+    let src = "int arr[10]; int *test_ptr = &(((int*)arr)[0]);";
+    crate::tests::test_utils::run_pass(src, crate::driver::artifact::CompilePhase::Mir);
+}
+#[test]
+fn test_is_constant_pointer_to_static_duration_object_coverage_8() {
+    let src = r#"
+        struct S { int x; };
+        struct S *ptr;
+        int *test_ptr = &(((struct S)*ptr).x);
+    "#;
+    crate::tests::test_utils::run_fail_with_message(src, "not");
+}
+#[test]
+fn test_hit_2527() {
+    let src = "int arr[10]; int *test_ptr = &(((int*)arr)[0]);";
+    crate::tests::test_utils::run_pass(src, crate::driver::artifact::CompilePhase::Mir);
+}

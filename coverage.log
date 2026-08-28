@@ -1,0 +1,1746 @@
+info: cargo-llvm-cov currently setting cfg(coverage); you can opt-out it by passing --no-cfg-coverage
+   Compiling cendol v0.5.0 (/app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.92s
+     Running unittests src/lib.rs (target/llvm-cov-target/debug/deps/cendol-89e58b3fadfc9f8e)
+
+running 1566 tests
+test ast::literal::tests::test_literal_coverage ... ok
+test ast::literal::tests::test_intern_and_get_int ... ok
+test ast::literal::tests::test_intern_and_get_float ... ok
+test ast::literal::get_type_tests::test_literal_get_type_coverage ... ok
+test ast::literal_parsing::tests::test_escape_sequences ... ok
+test ast::literal_parsing::tests::test_escape_edge_cases ... ok
+test ast::literal_parsing::tests::test_float_literal_edge_cases ... ok
+test ast::literal_parsing::tests::test_float_literal_suffixes ... ok
+test ast::literal_parsing::tests::test_hex_float_edge_cases ... ok
+test ast::literal_parsing::tests::test_uppercase_hex_literals ... ok
+test codegen::link_gen::tests::test_link_empty_object_files ... ok
+test codegen::link_gen::tests::test_link_error_display ... ok
+test codegen::mir_gen_ops::tests::test_mir_ops_mapping ... ok
+test driver::cli::tests::test_double_dash_terminator ... ok
+test codegen::mir_gen_ops::tests::test_mir_ops_mapping_panics ... ok
+test driver::cli::tests::test_basic_config ... ok
+test driver::cli::tests::test_dump_flags_coverage ... ok
+test driver::cli::tests::test_help_and_version ... ok
+test driver::cli::tests::test_fpic_last_wins ... ok
+test driver::cli::tests::test_g_with_suffix ... ok
+test driver::cli::tests::test_fvisibility_parsing ... ok
+test driver::cli::tests::test_no_input_files ... ok
+test driver::cli::tests::test_optimization_bare_o ... ok
+test driver::cli::tests::test_o_juxtaposed ... ok
+test driver::cli::tests::test_path_or_buffer ... ok
+test driver::cli::tests::test_pthread ... ok
+test driver::cli::tests::test_w_bare_maps_to_extra ... ok
+test driver::cli::tests::test_std_option ... ok
+test driver::cli::tests::test_unrecognized_f_flags_are_ignored ... ok
+test driver::cli::tests::test_wl_linker_args ... ok
+test driver::cli::tests::test_signed_overflow_mode ... ok
+test driver::cli::tests::test_xlinker ... ok
+test lang_options::tests::test_c_standard_default ... ok
+test lang_options::tests::test_c_standard_from_str ... ok
+test lang_options::tests::test_c_standard_is_c11 ... ok
+test pp::error::tests::test_error_hints ... ok
+test pp::error::tests::test_error_formatting_and_diagnostic ... ok
+test pp::pp_lexer::tests::test_lex_identifier_fast_path ... ok
+test pp::pp_lexer::tests::test_de_splice_utf8 ... ok
+test pp::pp_lexer::tests::test_fast_skip_to_directive ... ok
+test pp::pp_lexer::tests::test_lex_identifier_splice_fallback ... ok
+test pp::preprocessor::tests::test_hide_set_table ... ok
+test pp::types::tests::test_hidesettable_methods ... ok
+test semantic::symbol_table::tests::test_symbol_table_coverage ... ok
+test source_manager::tests::test_builtin ... ok
+test pp::preprocessor::tests::test_is_directive ... ok
+test source_manager::tests::test_empty ... ok
+test source_manager::tests::test_line_window_empty_line_starts ... ok
+test source_manager::tests::test_source_manager_get_buffer_arc_invalid ... ok
+test source_manager::tests::test_sourceloc_default ... ok
+test source_manager::tests::test_sourcespan_display ... ok
+test tests::codegen_abi::test_fixed_struct_param ... ok
+test tests::codegen_abi::test_hfa_packing ... ok
+test tests::codegen_alignas::test_local_alignas_8 ... ok
+test tests::codegen_alias::test_asm_label_initialized ... ok
+test tests::codegen_alignas::test_local_alignas ... ok
+test tests::codegen_alias::test_alias_and_asm_linkage ... ok
+test tests::codegen_alignas::test_local_alignas_large ... ok
+test tests::codegen_asm::test_asm_supported ... ok
+test tests::codegen_alignas::test_local_alignas_type ... ok
+test tests::codegen_alignas::test_local_alignas_on_decl ... ok
+test tests::codegen_atomic::test_atomic_compound_assignment_mir ... ok
+test tests::codegen_atomic::test_atomic_inc_dec_mir ... ok
+test tests::codegen_atomic::test_atomic_load_store_mir ... ok
+test tests::codegen_atomic::test_atomic_codegen ... ok
+test tests::codegen_asm::test_asm_ignored ... ok
+test tests::codegen_basics::test_constant_range_validation ... ok
+test tests::codegen_basics::test_boolean_logic_lowering ... ok
+test tests::codegen_basics::test_deref_hang_regression ... ok
+test tests::codegen_atomic::test_atomic_thread_fence_codegen ... ok
+test tests::codegen_basics::test_function_pointer_address_of ... ok
+test tests::codegen_basics::test_cleanup_goto_backward ... ok
+test tests::codegen_basics::test_deeply_nested_unary_ops_stack_overflow ... ok
+test tests::codegen_basics::test_movi_unsigned_constant_codegen ... ok
+test tests::codegen_basics::test_string_literal_pointer_cast_ ... ok
+test tests::codegen_basics::test_thread_local_codegen ... ok
+test tests::codegen_basics::test_func_ptr_global_comparison ... ok
+test tests::codegen_basics::test_label_map_cleared_between_functions ... ok
+test tests::codegen_basics::test_global_variable_modification_not_folded ... ok
+test tests::codegen_basics::test_thread_local_runtime ... ok
+test tests::codegen_bitfield::test_bitfield_assign_eval ... ok
+test tests::codegen_bitfield::test_bitfield_compound_assign_eval ... ok
+test tests::codegen_bitfield::test_bitfield_global_init ... ok
+test tests::codegen_bitfield::test_bitfield_assignment ... ok
+test tests::codegen_bitfield::test_bitfield_local_init ... ok
+test tests::codegen_bitfield::test_bitfield_packing_overlap ... ok
+test tests::codegen_bitfield::test_enum_bitfield_all_positive ... ok
+test tests::codegen_bitfield::test_bitfield_mixed_types ... ok
+test tests::codegen_bitfield::test_enum_bitfield_with_negative ... ok
+test tests::codegen_bool_cast::test_bool_cast_function_pointer ... ok
+test tests::codegen_bool_cast::test_bool_cast_global_init ... ok
+test tests::codegen_bool_cast::test_bool_cast_global_variable_pointer ... ok
+test tests::codegen_bool_cast::test_bool_cast_negative_to_bool ... ok
+test tests::codegen_bool_cast::test_bool_cast_nonzero_to_bool ... ok
+test tests::codegen_bool_cast::test_bool_implicit_from_even_int ... ok
+test tests::codegen_bool_cast::test_bool_cast_zero_to_bool ... ok
+test tests::codegen_bool_cast::test_bool_implicit_from_float ... ok
+test tests::codegen_bool_cast::test_bool_implicit_from_pointer ... ok
+test tests::codegen_bool_cast::test_bool_increment_bitfield ... ok
+test tests::codegen_bool_cast::test_bool_increment_normal ... ok
+test tests::codegen_builtins::test_builtin_constant_p_runtime ... ok
+test tests::codegen_bool_cast::test_integer_truncation_no_panic ... ok
+test tests::codegen_builtins::test_builtin_offsetof_anonymous ... ok
+test tests::codegen_builtins::test_builtin_offsetof_constant_context ... ok
+test tests::codegen_builtins::test_builtin_offsetof_array ... ok
+test tests::codegen_builtins::test_builtin_prefetch_codegen ... ok
+test tests::codegen_builtins::test_builtin_prefetch_side_effects ... ok
+test tests::codegen_builtins::test_builtin_unreachable ... ok
+test tests::codegen_builtins::test_builtin_offsetof_nested ... ok
+test tests::codegen_builtins::test_builtin_offsetof_stddef ... ok
+test tests::codegen_builtins::test_codegen_choose_expr_basic ... ok
+test tests::codegen_builtins::test_codegen_choose_expr_side_effects ... ok
+test tests::codegen_builtins::test_builtin_offsetof_simple ... ok
+test tests::codegen_builtins::test_builtin_unreachable_traps ... ok
+test tests::codegen_float::float_to_int_out_of_bounds ... ok
+test tests::codegen_float::test_f128_constant_promotion ... ok
+test tests::codegen_builtins::test_builtins_bitwise ... ok
+test tests::codegen_float::test_float_condition_while_nan ... ok
+test tests::codegen_float::test_float_condition_if_nan ... ok
+test tests::codegen_float::test_float_condition_ternary_nan ... ok
+test tests::codegen_float::test_float_to_char_conversion ... ok
+test tests::codegen_float::test_hex_float_negative_exponent ... ok
+test tests::codegen_float::test_float_condition_zero ... ok
+test tests::codegen_float::test_unreachable_float_return ... ok
+test tests::codegen_float::test_float_to_bool_cast_nan ... ok
+test tests::codegen_float::test_negative_float_to_int_cast_regression ... ok
+test tests::codegen_float::test_negative_float_to_int_implicit_cast_regression ... ok
+test tests::codegen_global_redeclaration::test_global_extern_then_definition ... ok
+test tests::codegen_global_redeclaration::test_global_extern_then_static ... ok
+test tests::codegen_global_redeclaration::test_global_extern_then_tentative ... ok
+test tests::codegen_structs::test_array_in_condition_fix ... ok
+test tests::codegen_global_redeclaration::test_global_static_then_extern ... ok
+test tests::codegen_structs::test_array_literal_initialization_fix ... ok
+test tests::codegen_structs::test_array_with_large_zero_init ... ok
+test tests::codegen_structs::test_array_literal_codegen ... ok
+test tests::codegen_structs::test_arrow_on_array_deref_panic_regression ... ok
+test tests::codegen_structs::test_compile_struct_pointer_access ... ok
+test tests::codegen_structs::test_compile_union_field_access ... ok
+test tests::codegen_global_redeclaration::test_global_tentative_then_extern ... ok
+test tests::codegen_structs::test_array_size_in_tenary ... ok
+test tests::codegen_structs::test_nested_struct_compound_literal_init ... ok
+test tests::codegen_structs::test_compound_literal_address_at_file_scope ... ok
+test tests::codegen_structs::test_global_struct_init_compound_literal ... ok
+test tests::codegen_structs::test_struct_identity_cast_cranelift_ir ... ok
+test tests::codegen_structs::test_struct_literal_codegen ... ok
+test tests::codegen_structs::test_global_wrap_function_ptr ... ok
+test tests::codegen_switch::test_implicit_constant_conversion_warning ... ok
+test tests::codegen_switch::test_switch_case_duplicate_after_promotion ... ok
+test tests::codegen_switch::test_switch_case_overflow ... ok
+test tests::codegen_switch::test_switch_unreachable_cases ... ok
+test tests::codegen_structs::test_store_truncation_overflow_regression ... ok
+test tests::codegen_structs::test_vla_static_pointer ... ok
+test tests::codegen_structs::test_void_cast_on_array_parameter_regression ... ok
+test tests::codegen_variadic::test_builtin_va_copy ... ok
+test tests::codegen_variadic::test_indirect_variadic_call_validation ... ok
+test tests::codegen_trapv::test_trapv_addition ... ok
+test tests::codegen_variadic::test_partial_load_struct_arg ... ok
+test tests::codegen_trapv::test_trapv_multiplication ... ok
+test tests::codegen_trapv::test_trapv_subtraction ... ok
+test tests::codegen_variadic::test_local_va_list ... ok
+test tests::codegen_variadic::test_printf_float_signature ... ok
+test tests::codegen_variadic::test_pass_va_list ... ok
+test tests::codegen_variadic::test_printf_double ... ok
+test tests::codegen_variadic::test_printf_long_double ... ok
+test tests::codegen_variadic::test_printf_hfa_mixed_args ... ok
+test tests::codegen_variadic::test_printf_mixed_int_double_str ... ok
+test tests::codegen_variadic::test_printf_mixed_long_double ... ok
+test tests::codegen_variadic::test_variadic_struct_arg ... ok
+test tests::codegen_variadic::test_printf_multiple_doubles ... ok
+test tests::codegen_visibility::test_attribute_visibility_codegen ... ok
+test tests::codegen_visibility::test_attribute_visibility_merging_with_hidden_default ... ok
+test tests::codegen_visibility::test_compilation_with_hidden_visibility ... ok
+test tests::codegen_visibility::test_lower_mir_linkage_mapping ... ok
+test tests::codegen_visibility::test_pragma_visibility_codegen ... ok
+test tests::driver_ast_dumper::test_atomic_ops_and_case_range ... ok
+test tests::driver_ast_dumper::test_dump_parsed_ast_simple ... ok
+test tests::driver_ast_dumper::test_dump_parsed_ast_with_arrays ... ok
+test tests::driver_ast_dumper::test_dump_parsed_ast_with_chars ... ok
+test tests::driver_ast_dumper::test_dump_parsed_ast_with_conditional ... ok
+test tests::driver_ast_dumper::test_dump_parsed_ast_with_enums ... ok
+test tests::driver_ast_dumper::test_dump_parsed_ast_with_floats ... ok
+test tests::driver_ast_dumper::test_dump_parsed_ast_with_loops ... ok
+test tests::driver_ast_dumper::test_dump_parsed_ast_with_pointers ... ok
+test tests::driver_ast_dumper::test_dump_parsed_ast_with_strings ... ok
+test tests::driver_ast_dumper::test_dump_parsed_ast_with_structs ... ok
+test tests::driver_ast_dumper::test_dump_parsed_ast_with_switch ... ok
+test tests::driver_ast_dumper::test_dump_parsed_ast_with_variables ... ok
+test tests::driver_ast_dumper::test_dump_parser_ast ... ok
+test tests::driver_ast_dumper::test_dump_parser_ast_with_designated_initializers ... ok
+test tests::driver_ast_dumper::test_dump_parser_ast_with_functions ... ok
+test tests::codegen_variadic::test_va_arg_limit_hfa ... ok
+test tests::driver_ast_dumper::test_dump_type_registry ... ok
+test tests::driver_ast_dumper::test_dump_type_registry_with_complex_types ... ok
+test tests::driver_ast_dumper::test_parsed_ast_access ... ok
+test tests::driver_ast_dumper::test_parsed_ast_compound_literal ... ok
+test tests::driver_ast_dumper::test_parsed_ast_empty_stmt ... ok
+test tests::driver_ast_dumper::test_parsed_ast_generic ... ok
+test tests::driver_ast_dumper::test_parsed_ast_gnu_stmt_expr ... ok
+test tests::driver_ast_dumper::test_parsed_ast_sizeof_alignof ... ok
+test tests::driver_ast_dumper::test_parsed_ast_labels ... ok
+test tests::driver_ast_dumper::test_parsed_ast_ternary ... ok
+test tests::driver_ast_dumper::test_parsed_ast_static_assert ... ok
+test tests::driver_ast_dumper::test_parser_ast_access ... ok
+test tests::driver_ast_dumper::test_parser_ast_builtin_offsetof ... ok
+test tests::driver_ast_dumper::test_parser_ast_control_flow ... ok
+test tests::driver_ast_dumper::test_parser_ast_compound_literal ... ok
+test tests::driver_ast_dumper::test_parser_ast_generic ... ok
+test tests::driver_ast_dumper::test_parser_ast_gnu_stmt_expr ... ok
+test tests::driver_ast_dumper::test_parser_ast_labels ... ok
+test tests::driver_ast_dumper::test_parser_ast_ops ... ok
+test tests::driver_ast_dumper::test_parser_ast_switch ... ok
+test tests::driver_ast_dumper::test_parser_ast_sizeof_alignof ... ok
+test tests::driver_ast_dumper::test_scope_of_function_decl ... ok
+test tests::codegen_variadic::test_va_arg_long_double ... ok
+test tests::driver_cli_handling::test_driver_defines ... ok
+test tests::driver_cli_handling::test_external_object_handling ... ok
+test tests::driver_source_manager::test_add_file_error ... ok
+test tests::driver_source_manager::test_line_directive_ord ... ok
+test tests::driver_source_manager::test_line_map_add_entry ... ok
+test tests::driver_ast_dumper::test_type_registry_complex ... ok
+test tests::driver_source_manager::test_line_map_add_entry_unsorted - should panic ... ok
+test tests::driver_source_manager::test_line_map_empty ... ok
+test tests::driver_cli_handling::test_driver_defines_with_value ... ok
+test tests::driver_source_manager::test_line_map_performance_many_lookups ... ok
+test tests::driver_source_manager::test_line_map_presumed_location_before_first_entry ... ok
+test tests::driver_source_manager::test_line_map_presumed_location_filename_only ... ok
+test tests::driver_source_manager::test_line_map_presumed_location_multiple_entries ... ok
+test tests::driver_source_manager::test_line_map_presumed_location_no_mapping ... ok
+test tests::driver_source_manager::test_line_map_presumed_location_with_mapping ... ok
+test tests::driver_source_manager::test_source_loc_max_file_id ... ok
+test tests::driver_source_manager::test_source_loc_max_offset ... ok
+test tests::driver_source_manager::test_reserved_source_id_behavior ... ok
+test tests::driver_source_manager::test_source_loc_packing ... ok
+test tests::driver_source_manager::test_source_manager_empty_file ... ok
+test tests::driver_source_manager::test_source_manager_add_buffer ... ok
+test tests::driver_source_manager::test_source_manager_edge_cases ... ok
+test tests::driver_source_manager::test_source_manager_file_without_newlines ... ok
+test tests::driver_source_manager::test_source_manager_get_buffer ... ok
+test tests::driver_source_manager::test_source_manager_get_buffer_invalid_id - should panic ... ok
+test tests::driver_source_manager::test_source_manager_get_buffer_arc_invalid_id - should panic ... ok
+test tests::driver_source_manager::test_source_manager_get_buffer_reserved_id - should panic ... ok
+test tests::driver_source_manager::test_source_manager_get_file_id ... ok
+test tests::driver_source_manager::test_source_manager_get_file_info ... ok
+test tests::driver_source_manager::test_source_manager_get_line_column ... ok
+test tests::driver_source_manager::test_source_manager_get_line_column_before_start ... ok
+test tests::driver_source_manager::test_source_manager_get_line_column_end_of_file ... ok
+test tests::driver_source_manager::test_source_manager_get_presumed_location ... ok
+test tests::driver_source_manager::test_source_manager_get_presumed_location_no_mapping ... ok
+test tests::driver_source_manager::test_source_manager_get_source_text ... ok
+test tests::driver_source_manager::test_source_manager_get_source_text_invalid_range - should panic ... ok
+test tests::driver_source_manager::test_source_manager_multiple_files ... ok
+test tests::driver_source_manager::test_source_span_empty ... ok
+test tests::driver_source_manager::test_source_span_length_limit ... ok
+test tests::driver_source_manager::test_source_span_mixed_ids ... ok
+test tests::driver_source_manager::test_source_span_merge ... ok
+test tests::driver_source_manager::test_source_span_new ... ok
+test tests::driver_source_manager::test_source_span_new_with_length ... ok
+test tests::driver_source_manager::test_source_span_new_with_length_limit ... ok
+test tests::driver_source_manager::test_source_span_new_with_length_offset_overflow - should panic ... ok
+test tests::driver_source_manager::test_source_span_offset_overflow - should panic ... ok
+test tests::driver_source_manager::test_source_span_source_id ... ok
+test tests::driver_source_manager::test_struct_sizes ... ok
+test tests::driver_warning_formatting::test_diagnostic_engine_writer ... ok
+test tests::driver_warning_formatting::test_warning_builtin_macro_redefined_formatting ... ok
+test tests::driver_warning_formatting::test_warning_attributes_formatting ... ok
+test tests::driver_warning_formatting::test_warning_hash_warnings_formatting ... ok
+test tests::guardian_address_of_array_always_true::test_address_of_array_always_true_if ... ok
+test tests::guardian_address_of_array_always_true::test_address_of_array_always_true_not ... ok
+test tests::guardian_address_of_array_always_true::test_address_of_array_always_true_ternary ... ok
+test tests::guardian_address_of_array_always_true::test_address_of_array_always_true_while ... ok
+test tests::guardian_alias_completeness::test_generic_association_typeof_incomplete_rejected ... ok
+test tests::guardian_alias_completeness::test_generic_association_typeof_complete_accepted ... ok
+test tests::guardian_alias_completeness::test_generic_association_typeof_vla_rejected ... ok
+test tests::guardian_alignas_constraints::test_alignas_on_function_prohibited ... ok
+test tests::guardian_alignas_constraints::test_alignas_on_bitfield_prohibited ... ok
+test tests::guardian_alignas_constraints::test_alignas_on_parameter_prohibited ... ok
+test tests::guardian_alignas_constraints::test_alignas_on_register_prohibited ... ok
+test tests::guardian_alignas_constraints::test_alignas_invalid_values ... ok
+test tests::guardian_alignas_constraints::test_alignas_on_typedef_prohibited ... ok
+test tests::guardian_alignas_vla::test_alignas_pointer_to_vla_prohibited ... ok
+test tests::guardian_alignas_vla::test_alignas_vla_prohibited ... ok
+test tests::guardian_alignof_bitfield::test_alignof_bitfield_prohibited ... ok
+test tests::guardian_array_init::test_array_init_designator_exceeds_bounds ... ok
+test tests::guardian_array_init::test_array_init_designator_excess ... ok
+test tests::guardian_array_init::test_array_init_designator_reset ... ok
+test tests::guardian_array_init::test_array_init_exact_elements ... ok
+test tests::guardian_array_init::test_array_init_excess_elements ... ok
+test tests::guardian_array_init::test_array_init_fewer_elements ... ok
+test tests::guardian_array_init::test_string_init_exact_fit_no_null ... ok
+test tests::guardian_array_init::test_string_init_excess_chars ... ok
+test tests::guardian_array_init::test_string_init_with_room ... ok
+test tests::guardian_array_of_functions::test_array_of_functions_rejected ... ok
+test tests::guardian_array_of_functions::test_array_of_function_pointers_accepted ... ok
+test tests::guardian_bitfield_constraints::test_bitfield_non_constant_width ... ok
+test tests::guardian_bitfield_constraints::test_bitfield_atomic_prohibited ... ok
+test tests::guardian_bitfield_constraints::test_bitfield_invalid_types ... ok
+test tests::guardian_bitfield_constraints::test_bitfield_valid_types ... ok
+test tests::guardian_bitfield_constraints::test_bitfield_width_constraints ... ok
+test tests::guardian_block_scope_func::test_block_scope_extern_func_call ... ok
+test tests::guardian_block_scope_func::test_block_scope_static_func_def_prohibited ... ok
+test tests::guardian_block_scope_func::test_block_scope_static_func_prohibited ... ok
+test tests::guardian_block_scope_func::test_block_scope_extern_func_usage ... ok
+test tests::guardian_break_not_in_loop_or_switch::test_break_in_if_not_in_loop ... ok
+test tests::guardian_break_not_in_loop_or_switch::test_break_in_if_in_loop ... ok
+test tests::guardian_break_not_in_loop_or_switch::test_break_in_loop ... ok
+test tests::guardian_break_not_in_loop_or_switch::test_break_in_switch ... ok
+test tests::guardian_break_not_in_loop_or_switch::test_break_not_in_loop ... ok
+test tests::codegen_variadic::test_variadic_struct_argument_crash ... ok
+test tests::guardian_builtin_complex_const::test_builtin_complex_constant_evaluation ... ok
+test tests::guardian_case_not_in_switch::test_case_inside_if_but_not_switch ... ok
+test tests::guardian_builtin_complex_const::test_builtin_complex_global_init ... ok
+test tests::guardian_case_not_in_switch::test_case_not_in_switch ... ok
+test tests::guardian_case_not_in_switch::test_default_not_in_switch ... ok
+test tests::guardian_cast_constraints::test_cast_int_to_struct ... ok
+test tests::guardian_choose_expr::test_builtin_choose_expr_bitfield_constraints ... ok
+test tests::guardian_cast_constraints::test_cast_struct_to_int ... ok
+test tests::guardian_choose_expr::test_builtin_choose_expr_lazy_semantics ... ok
+test tests::guardian_choose_expr::test_builtin_choose_expr_lvalue_preservation ... ok
+test tests::guardian_choose_expr::test_builtin_choose_expr_npc_preservation ... ok
+test tests::guardian_compound_literal_constraints::test_compound_literal_array_unknown_size_accepted ... ok
+test tests::guardian_compound_literal_constraints::test_compound_literal_function_type_prohibited ... ok
+test tests::guardian_choose_expr::test_builtin_choose_expr_register_constraints ... ok
+test tests::guardian_compound_literal_constraints::test_compound_literal_incomplete_type ... ok
+test tests::guardian_compound_literal_constraints::test_compound_literal_vla_prohibited ... ok
+test tests::guardian_compound_literal_constraints::test_compound_literal_pointer_to_vla_accepted ... ok
+test tests::guardian_const_eval_builtins::test_const_eval_builtin_choose_expr_float ... ok
+test tests::guardian_const_eval_builtins::test_const_eval_bswap ... ok
+test tests::guardian_const_eval_builtins::test_const_eval_builtin_choose_expr_inf ... ok
+test tests::guardian_const_eval_builtins::test_const_eval_expect ... ok
+test tests::guardian_const_eval_builtins::test_const_eval_constant_p ... ok
+test tests::guardian_const_eval_builtins::test_const_eval_builtin_inf_nan ... ok
+test tests::guardian_continue_not_in_loop::test_continue_in_if_not_in_loop ... ok
+test tests::guardian_continue_not_in_loop::test_continue_in_loop ... ok
+test tests::guardian_continue_not_in_loop::test_continue_in_switch_in_loop ... ok
+test tests::guardian_continue_not_in_loop::test_continue_not_in_loop ... ok
+test tests::guardian_continue_not_in_loop::test_continue_in_switch_not_in_loop ... ok
+test tests::guardian_duplicate_case::test_duplicate_case_nested_allowed ... ok
+test tests::guardian_duplicate_case::test_duplicate_case_rejected ... ok
+test tests::guardian_expected_array_type::test_expected_array_type_subscript ... ok
+test tests::guardian_enum_compatibility::test_generic_selection_distinguishes_different_enums ... ok
+test tests::guardian_expected_array_type::test_expected_array_type_subscript_struct ... ok
+error: invalid use of structure with flexible array member as a member
+ --> example.c:5:33
+  |
+5 |         struct outer { union u2 u2; int y; };
+  |                                 ^^
+test tests::guardian_fam_struct_member::test_struct_can_contain_fam_struct ... ok
+test tests::guardian_fam_union_constraints::test_nested_fam_constraints ... ok
+test tests::guardian_fam_union_constraints::test_union_can_contain_fam_struct ... ok
+test tests::guardian_function_return_type_constraints::test_function_returning_array_rejected ... error: invalid use of structure with flexible array member as a member
+ --> example.c:4:32
+  |
+4 |         struct outer { union u u; int y; };
+  |                                ^ok
+
+error: invalid use of structure with flexible array member as a member
+ --> example.c:4:39
+  |
+4 |         struct outer { int n; union u u; };
+  |                                       ^
+test tests::guardian_fam_union_constraints::test_union_with_fam_as_last_member_prohibited ... ok
+test tests::guardian_function_return_type_constraints::test_function_returning_function_rejected ... ok
+test tests::guardian_function_return_type_constraints::test_function_returning_multidimensional_array_rejected ... ok
+error: invalid use of structure with flexible array member as an array element
+ --> example.c:4:25
+  |
+4 |         union u array[10];
+  |                         ^^
+test tests::guardian_fam_union_constraints::test_struct_cannot_contain_union_with_fam ... ok
+test tests::guardian_function_return_type_constraints::test_function_returning_pointer_to_array_accepted ... ok
+test tests::guardian_function_return_type_constraints::test_function_returning_pointer_to_function_accepted ... ok
+test tests::guardian_generic::test_generic_atomic_lvalue_conversion ... ok
+test tests::guardian_generic::generic_selection_distinguishes_atomic_types ... ok
+test tests::guardian_generic::test_generic_function_allowed ... ok
+test tests::guardian_generic::test_generic_complete_object_types_allowed ... ok
+test tests::guardian_generic::test_generic_incomplete_array_allowed ... ok
+test tests::guardian_generic::test_generic_incomplete_struct_prohibited ... ok
+test tests::guardian_generic::test_generic_matches_multiple_associations ... ok
+test tests::guardian_generic::test_generic_lvalue_conversion_strips_qualifiers ... ok
+test tests::guardian_generic::test_generic_selection_lvalue_preservation ... ok
+test tests::guardian_generic::test_generic_selection_npc_preservation ... ok
+test tests::guardian_generic::test_generic_matches_qualified_pointer_types ... ok
+test tests::guardian_generic::test_generic_selection_bitfield_constraints ... ok
+test tests::guardian_generic::test_generic_selection_qualifier_compatibility_constraints ... ok
+test tests::guardian_generic::test_generic_selection_register_constraints ... ok
+test tests::guardian_generic::test_generic_selection_rejects_compatible_array_types ... ok
+test tests::guardian_generic::test_generic_selection_rejects_compatible_function_pointers ... ok
+test tests::guardian_generic::test_generic_selection_rejects_compatible_enum_type ... ok
+test tests::guardian_generic::test_generic_void_allowed ... ok
+test tests::guardian_increment_completeness::test_postfix_decrement_function_pointer_prohibited ... ok
+test tests::guardian_generic::test_generic_selection_rejects_vla_associations ... ok
+test tests::guardian_increment_completeness::test_prefix_decrement_non_scalar_prohibited ... ok
+test tests::guardian_increment_completeness::test_postfix_increment_void_pointer_prohibited ... ok
+test tests::guardian_increment_completeness::test_prefix_increment_incomplete_struct_pointer_prohibited ... ok
+test tests::guardian_index_completeness::test_subscript_commutative_allowed ... ok
+test tests::guardian_index_completeness::test_subscript_complete_object_allowed ... ok
+test tests::guardian_index_completeness::test_subscript_function_pointer_prohibited ... ok
+test tests::guardian_index_completeness::test_subscript_incomplete_struct_pointer_prohibited ... ok
+test tests::guardian_index_completeness::test_subscript_incomplete_array_complete_element_allowed ... ok
+test tests::guardian_indirection_requires_pointer::test_indirection_requires_pointer ... ok
+test tests::guardian_index_completeness::test_subscript_void_pointer_prohibited ... ok
+test tests::guardian_index_completeness::test_subscript_index_non_integer_prohibited ... ok
+test tests::guardian_invalid_function_specifier::test_inline_on_typedef ... ok
+test tests::guardian_invalid_function_specifier::test_inline_on_struct_member ... ok
+test tests::guardian_invalid_function_specifier::test_inline_on_variable ... ok
+test tests::guardian_invalid_atomic_specifier::test_guardian_invalid_atomic_qualifier ... ok
+test tests::guardian_invalid_function_specifier::test_noreturn_on_function_pointer ... ok
+test tests::guardian_invalid_function_specifier::test_noreturn_on_variable ... ok
+test tests::guardian_invalid_atomic_specifier::test_guardian_invalid_atomic_specifier ... ok
+test tests::guardian_invalid_number_of_arguments::test_variadic_arguments_too_few ... ok
+test tests::guardian_invalid_number_of_arguments::test_too_many_arguments ... ok
+test tests::guardian_invalid_number_of_arguments::test_too_few_arguments ... ok
+test tests::guardian_invalid_restrict::test_restrict_on_array_via_typedef ... ok
+test tests::guardian_invalid_restrict::test_restrict_on_function_pointer ... ok
+test tests::guardian_invalid_storage_class_for_function::test_auto_function_rejected ... ok
+test tests::guardian_invalid_restrict::test_restrict_on_valid_pointer ... ok
+test tests::guardian_invalid_storage_class_for_function::test_block_scope_static_function_rejected ... ok
+test tests::guardian_invalid_restrict::test_restrict_on_non_pointer ... ok
+test tests::guardian_invalid_storage_class_for_function::test_register_function_rejected ... ok
+test tests::guardian_invalid_storage_class_for_function::test_thread_local_function_rejected ... ok
+test tests::guardian_invalid_storage_class_for_function::test_extern_and_static_function_accepted ... ok
+test tests::guardian_invalid_unary_operand::bitnot_float ... ok
+test tests::guardian_invalid_unary_operand::increment_incomplete_type ... ok
+test tests::guardian_invalid_unary_operand::unary_plus_pointer ... ok
+test tests::guardian_jump_into_scope_vla::test_jump_into_scope_vla_switch ... ok
+test tests::guardian_lvalue_assignment::test_array_not_modifiable_lvalue ... ok
+test tests::guardian_jump_into_scope_vla::test_jump_into_scope_vla_goto ... ok
+test tests::guardian_lvalue_assignment::test_assignment_not_lvalue ... ok
+test tests::guardian_lvalue_assignment::test_cast_not_lvalue ... ok
+test tests::guardian_lvalue_assignment::test_comma_not_lvalue ... ok
+test tests::guardian_lvalue_assignment::test_function_not_modifiable_lvalue ... ok
+test tests::guardian_lvalue_assignment::test_ternary_not_lvalue ... ok
+test tests::guardian_modifiable_lvalue::test_assignment_to_const_nested_struct ... ok
+test tests::guardian_modifiable_lvalue::test_assignment_to_const_struct ... ok
+test tests::guardian_modifiable_lvalue::test_assignment_to_incomplete_struct ... ok
+test tests::guardian_modifiable_lvalue::test_assignment_to_void_lvalue ... ok
+test tests::guardian_modifiable_lvalue::test_increment_const_member ... ok
+test tests::guardian_modifiable_lvalue::test_increment_incomplete_type ... ok
+test tests::guardian_noreturn_has_return::test_noreturn_function_has_return ... ok
+test tests::guardian_noreturn_has_return::test_noreturn_function_has_return_with_expr ... ok
+test tests::guardian_noreturn_switch::test_noreturn_choose_expr_no_fallthrough ... ok
+test tests::guardian_noreturn_switch::test_noreturn_generic_selection_no_fallthrough ... ok
+test tests::guardian_noreturn_switch::test_noreturn_switch_missing_default_falls_through ... ok
+test tests::guardian_noreturn_switch::test_noreturn_switch_with_break_falls_through ... ok
+test tests::guardian_npc_propagation::test_arithmetic_npc_propagation ... ok
+test tests::guardian_noreturn_switch::test_noreturn_switch_with_default_no_fallthrough ... ok
+test tests::guardian_npc_propagation::test_choose_expr_npc_propagation ... ok
+test tests::guardian_npc_propagation::test_generic_npc_propagation ... ok
+test tests::guardian_offsetof::test_offsetof_anonymous_bitfield ... ok
+test tests::guardian_offsetof::test_offsetof_bitfield ... ok
+test tests::guardian_npc_propagation::test_nested_npc_propagation ... ok
+test tests::guardian_npc_propagation::test_real_imag_npc_propagation ... ok
+test tests::guardian_offsetof::test_offsetof_incomplete_struct ... ok
+test tests::guardian_offsetof::test_offsetof_nested_bitfield ... ok
+test tests::guardian_offsetof::test_offsetof_incomplete_union ... ok
+test tests::guardian_parameter_compatibility::test_function_pointer_array_parameter_compatibility ... ok
+test tests::guardian_parameter_compatibility::test_function_pointer_atomic_parameter_compatibility ... ok
+test tests::guardian_parameter_compatibility::test_function_pointer_const_parameter_compatibility ... ok
+test tests::guardian_parameter_completeness::test_incomplete_struct_parameter_prohibited ... ok
+test tests::guardian_parameter_completeness::test_named_void_parameter_prohibited ... ok
+test tests::guardian_parameter_completeness::test_void_parameter_in_list_prohibited ... ok
+test tests::guardian_pointer_assignment_nested_qualifiers::test_pointer_assignment_nested_qualifiers_prohibited ... ok
+test tests::guardian_pointer_assignment_nested_qualifiers::test_pointer_assignment_nested_qualifiers_multiple_levels ... ok
+test tests::guardian_pointer_assignment_nested_qualifiers::test_pointer_assignment_nested_qualifiers_valid ... ok
+test tests::guardian_parameter_completeness::test_valid_parameter_declarations_accepted ... ok
+test tests::guardian_register_constraints::test_register_array_decay_prohibited ... ok
+test tests::guardian_register_constraints::test_non_register_aggregate_address_allowed ... ok
+test tests::guardian_register_constraints::test_register_array_index_address_prohibited ... ok
+test tests::guardian_register_constraints::test_register_nested_member_address_prohibited ... ok
+test tests::guardian_register_constraints::test_register_selection_expression_array_decay_prohibited ... ok
+test tests::guardian_register_constraints::test_register_struct_member_address_prohibited ... ok
+test tests::guardian_register_constraints::test_register_union_member_address_prohibited ... ok
+test tests::guardian_register_constraints::test_register_selection_expression_member_address_prohibited ... ok
+error: void function 'bar' should not return a value
+ --> example.c:4:20
+  |
+4 |             return foo();
+  |                    ^^^^^
+test tests::guardian_return_local_address::diagnostic_return_local_array_address ... ok
+test tests::guardian_return_local_address::diagnostic_return_local_address ... ok
+test tests::guardian_sizeof_alignof::test_alignof_function_type_prohibited ... ok
+test tests::guardian_return_constraints::test_return_constraints ... ok
+test tests::guardian_sizeof_alignof::test_alignof_incomplete_type_prohibited ... ok
+test tests::guardian_sizeof_alignof::test_alignof_rvalue_bitfield_allowed ... ok
+test tests::guardian_sizeof_alignof::test_alignof_lvalue_bitfield_rejected ... ok
+test tests::guardian_sizeof_alignof::test_sizeof_bitfield_prohibited ... ok
+test tests::guardian_sizeof_alignof::test_sizeof_lvalue_bitfield_rejected ... ok
+test tests::guardian_sizeof_alignof::test_sizeof_rvalue_bitfield_allowed ... ok
+test tests::guardian_static_array_constraints::test_static_in_block_scope_array_prohibited ... ok
+test tests::guardian_sizeof_alignof::test_sizeof_function_type_prohibited ... ok
+test tests::guardian_static_array_constraints::test_qualifiers_in_typedef_array_prohibited ... ok
+test tests::guardian_static_array_constraints::test_static_in_file_scope_array_prohibited ... ok
+test tests::guardian_static_array_constraints::test_static_in_function_parameter_allowed ... ok
+test tests::guardian_static_array_constraints::test_static_in_typedef_array_prohibited ... ok
+test tests::guardian_storage_class_parameter::test_auto_prohibited_for_parameter ... ok
+test tests::guardian_storage_class_parameter::test_extern_prohibited_for_parameter ... ok
+test tests::guardian_storage_class_parameter::test_register_allowed_for_parameter ... ok
+test tests::guardian_storage_class_parameter::test_static_prohibited_for_parameter ... ok
+test tests::guardian_switch_multiple_default::test_multiple_default_labels_rejected ... ok
+test tests::guardian_switch_multiple_default::test_nested_switch_default_labels_allowed ... ok
+test tests::guardian_ternary_pointer_constraints::test_ternary_incompatible_pointers_rejected ... ok
+test tests::guardian_ternary_pointer_constraints::test_ternary_lvalue_to_rvalue_strips_top_level_quals ... ok
+test tests::guardian_ternary_pointer_constraints::test_ternary_pointer_qualifier_merging ... ok
+test tests::guardian_ternary_pointer_constraints::test_ternary_null_pointer_constant ... ok
+test tests::guardian_ternary_pointer_constraints::test_ternary_lvalue_to_rvalue_with_comma_operator ... ok
+test tests::guardian_ternary_pointer_constraints::test_ternary_pointer_qualifier_mismatch_assignment_rejected ... ok
+test tests::guardian_ternary_pointer_constraints::test_ternary_pointer_to_incomplete_struct ... ok
+test tests::guardian_typedef_member_function::test_typedef_member_function_pointer_allowed ... ok
+test tests::guardian_ternary_pointer_constraints::test_ternary_void_result ... ok
+test tests::guardian_ternary_pointer_constraints::test_ternary_void_pointer_qualifier_merging ... ok
+test tests::guardian_typedef_member_function::test_typedef_member_function_prohibited ... ok
+test tests::guardian_typedef_redefinition::test_typedef_redefinition_atomic ... ok
+test tests::guardian_typedef_redefinition::test_typedef_redefinition_qualifiers ... ok
+test tests::guardian_typedef_redefinition::test_typedef_redefinition_different_type ... ok
+test tests::guardian_typedef_redefinition::test_typedef_redefinition_same_type_allowed ... ok
+test tests::guardian_vla::test_nested_vla_initialization_rejected ... ok
+test tests::guardian_vla::test_vla_pointer_initialization ... ok
+test tests::guardian_vm_linkage_constraints::test_vla_pointer_block_scope_no_linkage_allowed ... ok
+test tests::guardian_vla::test_vla_non_integer_size ... ok
+test tests::guardian_vm_linkage_constraints::test_vla_pointer_extern_linkage_prohibited ... ok
+test tests::guardian_vla::test_vla_star_outside_prototype_scope ... ok
+test tests::guardian_vm_linkage_constraints::test_vla_pointer_static_storage_allowed ... ok
+test tests::guardian_vla::test_vla_star_in_prototype_scope ... ok
+test tests::guardian_vm_linkage_constraints::test_vla_pointer_thread_local_prohibited ... ok
+test tests::guardian_vm_linkage_constraints::test_vla_pointer_file_scope_prohibited ... ok
+test tests::mir_dumper_coverage::test_dump_basic_module ... ok
+test tests::guardian_vm_linkage_constraints::test_vla_static_storage_prohibited ... ok
+test tests::guardian_zero_or_negative_size_array::test_zero_size_array_c23 ... ok
+test tests::mir_gen_compound_assignment::test_compound_assignment_truncation ... ok
+test tests::mir_gen_compound_assignment::test_compound_assignment_truncation_16 ... ok
+test tests::mir_gen_compound_assignment::test_compound_assignment_truncation_32 ... ok
+test tests::mir_gen_sizeof::test_alignof_return_type ... ok
+test tests::mir_gen_sizeof::test_offsetof_return_type ... ok
+test tests::mir_gen_sizeof::test_sizeof_array_size_macro ... ok
+test tests::mir_gen_sizeof::test_sizeof_return_type ... ok
+test tests::mir_unit::test_binary_float_op_is_comparison ... ok
+test tests::mir_unit::test_binary_int_op_is_comparison ... ok
+test tests::mir_unit::test_mir_type_is_aggregate ... ok
+test tests::mir_unit::test_mir_type_is_float ... ok
+test tests::mir_unit::test_mir_type_is_int ... ok
+test tests::mir_unit::test_mir_type_is_pointer ... ok
+test tests::mir_unit::test_mir_type_is_signed ... ok
+test tests::mir_unit::test_mir_type_predicates_combinations ... ok
+test tests::mir_unit::test_mir_type_width ... ok
+test tests::mir_validation::test_block_missing_statement ... ok
+test tests::mir_validation::test_call_arg_count_mismatch ... ok
+test tests::mir_validation::test_call_void_with_dest ... ok
+test tests::mir_validation::test_constant_value_out_of_range ... ok
+test tests::mir_validation::test_flexible_assignment ... ok
+test tests::mir_validation::test_function_missing_block ... ok
+test tests::mir_validation::test_function_missing_local ... ok
+test tests::mir_validation::test_function_missing_return_type ... ok
+test tests::mir_validation::test_invalid_cast_in_assignment ... ok
+test tests::mir_validation::test_invalid_function_name ... ok
+test tests::mir_validation::test_missing_function ... ok
+test tests::mir_validation::test_missing_global ... ok
+test tests::mir_validation::test_missing_type ... ok
+test tests::mir_validation::test_operand_cast_missing_type ... ok
+test tests::mir_validation::test_operand_missing_constant ... ok
+test tests::mir_validation::test_place_deref_non_pointer ... ok
+test tests::mir_validation::test_place_field_out_of_bounds ... ok
+test tests::mir_validation::test_rvalue_cast_aggregate_invalid ... ok
+test tests::mir_validation::test_struct_field_access_on_non_record ... ok
+test tests::mir_validation::test_terminator_missing_block ... ok
+test tests::mir_validation::test_valid_mir ... ok
+test tests::mir_validation::test_validation_error_display ... ok
+test tests::parser_c23_attributes::test_attribute_coverage ... ok
+test tests::parser_c23_attributes::test_c23_attribute_fail_c11 ... ok
+test tests::parser_c23_attributes::test_c23_attribute_parsing_basic ... ok
+test tests::parser_c23_attributes::test_c23_attribute_parsing_complex ... ok
+test tests::parser_c23_attributes::test_c23_attribute_parsing_on_declarators ... ok
+test tests::parser_c23_attributes::test_c23_attribute_parsing_on_statements ... ok
+test tests::parser_c23_attributes::test_c23_attribute_parsing_on_structs ... ok
+test tests::parser_c23_attributes::test_trailing_attributes ... ok
+test tests::parser_decl::test_anonymous_struct_declaration ... ok
+test tests::parser_decl::test_array_declaration ... ok
+test tests::parser_decl::test_array_declaration_with_initializer ... ok
+test tests::parser_decl::test_array_of_function_pointers ... ok
+test tests::parser_decl::test_array_of_pointers_with_initializer ... ok
+test tests::parser_decl::test_atomic_qualifier_syntax ... ok
+test tests::parser_decl::test_atomic_specifier_syntax ... ok
+test tests::parser_decl::test_atomic_type_specifier ... ok
+test tests::parser_decl::test_atomic_type_specifier_with_pointer ... ok
+test tests::parser_decl::test_bitfield_builder_coverage ... ok
+test tests::parser_decl::test_bitfield_declaration ... ok
+test tests::parser_decl::test_bitfield_with_large_width ... ok
+test tests::parser_decl::test_bitfield_with_mixed_members ... ok
+test tests::parser_decl::test_callback_style_function ... ok
+test tests::parser_decl::test_cast_attribute_pointer ... ok
+test tests::parser_decl::test_complex_abstract_declarator_function ... ok
+test tests::parser_decl::test_complex_declaration ... ok
+test tests::parser_decl::test_complex_declarator_arr_of_ptr_to_func ... ok
+test tests::parser_decl::test_complex_declarator_ret_ptr_to_func ... ok
+test tests::parser_decl::test_complex_function_param_declarators ... ok
+test tests::parser_decl::test_const_volatile_pointer ... ok
+test tests::parser_decl::test_declaration_with_initializer ... ok
+test tests::parser_decl::test_deeply_mixed_declarators ... ok
+test tests::parser_decl::test_designated_initializer_mixed_single_and_range ... ok
+test tests::parser_decl::test_designated_initializer_multiple_ranges ... ok
+test tests::parser_decl::test_designated_initializer_range_syntax ... ok
+test tests::parser_decl::test_designated_initializer_range_with_expressions ... ok
+test tests::parser_decl::test_designated_initializer_simple_array ... ok
+test tests::parser_decl::test_designated_initializer_struct_with_range ... ok
+test tests::parser_decl::test_enum_declaration_with_values ... ok
+test tests::parser_decl::test_function_definition ... ok
+test tests::parser_decl::test_function_pointer_with_cast_initializer ... ok
+test tests::parser_decl::test_function_pointer_with_initializer ... ok
+test tests::parser_decl::test_function_returning_pointer_to_function ... ok
+test tests::parser_decl::test_function_with_array_abstract_declarator ... ok
+test tests::parser_decl::test_function_with_array_of_pointer_param ... ok
+test tests::parser_decl::test_insane_parentheses_on_pointer_to_array_to_function ... ok
+test tests::parser_decl::test_invalid_enum_decl ... ok
+test tests::parser_decl::test_invalid_struct_decl ... ok
+test tests::parser_decl::test_madness_with_parentheses ... ok
+test tests::parser_decl::test_mixed_declarators_simple ... ok
+test tests::parser_decl::test_multiple_declarators ... ok
+test tests::parser_decl::test_param_attribute_int ... ok
+test tests::parser_decl::test_parentheses_that_do_nothing ... ok
+test tests::parser_decl::test_parse_bitfield ... ok
+test tests::parser_decl::test_parse_noreturn_function_declaration ... ok
+test tests::parser_decl::test_pointer_declaration ... ok
+test tests::parser_decl::test_simple_declaration ... ok
+test tests::parser_decl::test_simple_struct_declaration ... ok
+test tests::parser_decl::test_static_assert ... ok
+test tests::parser_decl::test_static_assert_c23_no_message ... ok
+test tests::parser_decl::test_static_assert_missing_string_literal ... ok
+test tests::parser_decl::test_struct_declaration_with_body ... ok
+test tests::parser_decl::test_struct_definition_and_variable ... ok
+test tests::parser_decl::test_struct_member_multiple_declarators ... ok
+test tests::parser_decl::test_struct_variable_declaration ... ok
+test tests::parser_decl::test_top_level_semicolon_regression ... ok
+test tests::parser_decl::test_translation_unit ... ok
+test tests::parser_decl::test_variadic_function_declaration ... ok
+test tests::parser_decl::test_void_pointer_param ... ok
+test tests::parser_declarator_coverage::test_abstract_declarator_builder_coverage ... ok
+test tests::mir_gen_sizeof::test_float_constant_folding_in_global_init ... ok
+error: Unexpected token: expected ), found int
+ --> example.c:1:15
+  |
+1 | void f(int (* int));
+  |               ^^^
+error: Unexpected token: expected ), found p
+ --> example.c:1:42
+  |
+1 | typedef int my_int; void f(int (* my_int p));
+  |                                          ^
+test tests::mir_gen_sizeof::test_sizeof_nested_statement_expression ... ok
+test tests::parser_declarator_coverage::test_abstract_declarator_complex_coverage ... ok
+test tests::parser_declarator_coverage::test_abstract_declarator_dead_arms_attempt ... ok
+test tests::mir_gen_sizeof::test_sizeof_double_nested_statement_expression ... ok
+test tests::parser_declarator_coverage::test_abstract_declarator_in_declarator ... ok
+test tests::parser_declarator_coverage::test_abstract_declarator_with_attributes ... ok
+test tests::parser_declarator_coverage::test_abstract_declarator_left_paren_gaps ... ok
+test tests::parser_declarator_coverage::test_array_size_qualifiers ... ok
+test tests::parser_declarator_coverage::test_bitfield_exhaustive ... ok
+test tests::parser_declarator_coverage::test_abstract_declarator_exhaustive ... ok
+test tests::parser_declarator_coverage::test_get_declarator_name_bitfield ... ok
+error: Unexpected token: expected ), found 10
+ --> example.c:1:21
+  |
+1 | void f(int (*)(int)[10]);
+  |                     ^^
+test tests::parser_declarator_coverage::test_array_size_variations_coverage ... ok
+test tests::parser_declarator_coverage::test_complex_abstract_declarators_trailing ... ok
+test tests::parser_declarator_coverage::test_get_declarator_params_coverage ... ok
+test tests::parser_declarator_coverage::test_is_type_name_start_c23_attr ... ok
+test tests::parser_declarator_coverage::test_nested_function_params_coverage ... ok
+test tests::parser_declarator_coverage::test_pointer_qualifier_abstract ... ok
+error: Unexpected token: expected identifier, literal, or '(', found [
+ --> example.c:1:8
+  |
+1 | int x [[maybe_unused]] [[attr((1))]] [[123]], y __asm__("y") [[maybe_unused]] = 1;
+  |        ^test tests::parser_declarator_coverage::test_peek_past_attribute_exhaustive ...
+ok
+test tests::parser_declarator_coverage::test_type_qualifiers_atomic_restrict ... ok
+test tests::parser_declarator_coverage::test_mega_coverage_declarations ... ok
+test tests::parser_errors::test_parse_diag_display_and_eof ... ok
+test tests::parser_declarator_coverage::test_vla_star_size ... ok
+test tests::parser_declarator_coverage::test_pointer_qualifiers_coverage ... ok
+test tests::parser_expr::test_array_indexing ... ok
+test tests::parser_expr::test_array_indexing_with_expression ... ok
+test tests::parser_expr::test_builtin_alloca ... ok
+test tests::parser_expr::test_builtin_bit_cast ... ok
+test tests::parser_expr::test_assignment ... ok
+test tests::parser_expr::test_builtin_convertvector ... ok
+test tests::parser_expr::test_builtin_trap ... ok
+test tests::parser_expr::test_chained_assignment ... ok
+test tests::parser_expr::test_chained_subtraction ... ok
+test tests::parser_expr::test_compound_literal ... ok
+test tests::parser_expr::test_complex_expression ... ok
+test tests::parser_expr::test_compound_literal_struct ... ok
+test tests::parser_expr::test_enum_with_non_literal_value ... ok
+test tests::parser_expr::test_generic_selection_simple ... ok
+test tests::parser_expr::test_function_call ... ok
+test tests::parser_expr::test_generic_selection_with_assignment ... ok
+test tests::parser_expr::test_generic_selection_with_default ... ok
+test tests::parser_expr::test_generic_selection_with_function_call ... ok
+test tests::parser_expr::test_generic_selection_with_multiple_associations ... ok
+test tests::parser_expr::test_generic_selection_with_qualified_type ... ok
+test tests::parser_expr::test_generic_selection_with_pointer_types ... ok
+test tests::parser_expr::test_member_access ... ok
+test tests::parser_expr::test_precedence ... ok
+test tests::parser_expr::test_parenthesized_expression ... ok
+test tests::parser_expr::test_simple_addition ... ok
+test tests::parser_expr::test_sizeof_array_size_macro_pattern ... ok
+test tests::parser_expr::test_postfix_operator_precedence ... ok
+test tests::parser_expr::test_sizeof_compound_literal_expr ... ok
+test tests::parser_expr::test_sizeof_expr_with_postfix_index ... ok
+test tests::parser_expr::test_sizeof_expr_with_postfix_member ... ok
+test tests::parser_expr::test_sizeof_compound_literal_postfix ... ok
+test tests::parser_expr::test_sizeof_expression ... ok
+test tests::parser_expr::test_ternary_with_assignment ... ok
+test tests::parser_expr::test_ternary_with_assignment_in_middle_operand ... ok
+test tests::parser_expr::test_ternary_with_comma_in_middle ... ok
+test tests::parser_expr::test_sizeof_expr_with_postfix_tail_coverage ... ok
+test tests::parser_expr::test_unary_operators ... ok
+test tests::parser_gcc_extensions::test_asm_and_attributes ... ok
+test tests::parser_gcc_extensions::test_asm_label ... ok
+test tests::parser_gcc_extensions::test_attribute_in_cast ... ok
+test tests::parser_gcc_extensions::test_const_keyword_underscores ... ok
+test tests::parser_gcc_extensions::test_gnu_statement_expression ... ok
+test tests::parser_gcc_extensions::test_gcc_keywords_in_parameters ... ok
+test tests::parser_gcc_extensions::test_gnu_statement_expression_empty ... ok
+test tests::parser_gcc_extensions::test_multiple_attributes_function_decl ... ok
+test tests::parser_gcc_extensions::test_restrict_keyword ... ok
+test tests::parser_gcc_extensions::test_restrict_keyword_underscores ... ok
+test tests::parser_lexer_coverage::test_token_kind_display ... ok
+test tests::parser_gcc_extensions::test_struct_anonymous_member_attributes ... ok
+<unknown>: Unexpected token: expected }, found end of file
+test tests::parser_gcc_extensions::test_struct_member_attributes ... ok
+test tests::parser_lexical::test_identifier_boundary_cases ... ok
+test tests::parser_lexical::test_char_literals ... ok
+test tests::parser_lexical::test_keywords ... ok
+test tests::parser_lexical::test_lexer_display ... ok
+test tests::parser_lexical::test_operators ... ok
+test tests::parser_lexical::test_float_literals ... ok
+test tests::parser_stmt::test_ambiguous_compound_statement ... ok
+test tests::parser_stmt::test_ambiguous_compound_statement_with_typedef ... ok
+test tests::parser_stmt::test_attribute_statement ... ok
+test tests::parser_lexical::test_integer_literals ... ok
+test tests::parser_lexical::test_string_literals ... ok
+test tests::parser_stmt::test_case_range_statement ... ok
+test tests::parser_stmt::test_for_statement_with_declaration_no_init ... ok
+test tests::parser_stmt::test_for_multiple_declarations ... ok
+test tests::parser_stmt::test_for_statement_with_declaration ... ok
+test tests::parser_stmt::test_goto_with_complex_label_name ... ok
+test tests::parser_stmt::test_label_followed_by_empty_statement ... ok
+test tests::parser_stmt::test_label_followed_by_compound_statement_with_declaration ... ok
+test tests::parser_stmt::test_label_followed_by_function_call ... ok
+test tests::parser_stmt::test_label_followed_by_goto ... ok
+test tests::parser_stmt::test_label_with_compound_statement ... ok
+test tests::parser_stmt::test_label_with_break_statement ... ok
+test tests::parser_stmt::test_label_with_continue_statement ... ok
+test tests::parser_stmt::test_label_with_if_statement ... ok
+test tests::parser_stmt::test_label_with_expression_statement ... ok
+test tests::parser_stmt::test_label_with_numeric_suffix ... ok
+test tests::parser_stmt::test_label_with_while_loop ... ok
+test tests::parser_stmt::test_multiple_statements_with_labels ... ok
+test tests::parser_stmt::test_parse_pragma_pack_statement ... ok
+test tests::parser_stmt::test_multiple_labels_sequence ... ok
+test tests::parser_struct_pragmas::test_struct_with_pragmas ... ok
+test tests::parser_typedef_shadowing::test_typedef_param_shadowing ... ok
+test tests::parser_typedef_shadowing::test_typedef_restored_after_scope ... ok
+test tests::parser_typeof_unqual::test_typeof_unqual_c11_fails ... ok
+test tests::parser_typedef_shadowing::test_typedef_shadowing ... ok
+test tests::parser_typeof_unqual::test_typeof_unqual_comma_expr ... ok
+test tests::parser_typeof_unqual::test_typeof_unqual_type ... ok
+test tests::parser_typeof_unqual::test_typeof_unqual_expr ... ok
+test tests::parser_types::test_char8_type_specifier ... ok
+test tests::parser_types::test_typeof_comma_expr ... ok
+test tests::parser_errors::test_parser_errors ... ok
+test tests::parser_types::test_typeof_expr ... ok
+test tests::parser_types::test_typeof_type ... ok
+test tests::pp_conditionals::test_has_include_builtin ... ok
+test tests::pp_conditionals::test_has_include_computed ... ok
+test tests::pp_conditionals::test_has_include_next_builtin ... ok
+test tests::parser_types::test_type_combinations ... ok
+test tests::pp_conditionals::test_logical_operators ... ok
+test tests::pp_conditionals::test_pp_arithmetic_overflow ... ok
+test tests::pp_conditionals::test_ifdef_ifndef_elif ... ok
+test tests::pp_conditionals::test_pp_binary_operators_coverage ... ok
+test tests::pp_conditionals::test_pp_conditional_unsigned_promotion ... ok
+test tests::pp_conditionals::test_constant_expressions ... ok
+test tests::pp_conditionals::test_pp_conditional_diagnostics ... ok
+test tests::pp_conditionals::test_pp_short_circuit_evaluation ... ok
+test tests::pp_conditionals::test_skipping_rules ... ok
+test tests::pp_conditionals::test_pp_unary_operators_coverage ... ok
+test tests::pp_directives::test_eod_and_eof ... ok
+test tests::pp_directives::test_error_and_warning_directives ... ok
+test tests::pp_directives::test_misc_directives ... ok
+test tests::pp_directives::test_line_directives ... ok
+test tests::pp_directives::test_push_pop_macro ... ok
+test tests::pp_dumper_coverage::test_dumper_regression_out_of_bounds ... ok
+test tests::parser_types::test_type_spec_combinations ... ok
+test tests::pp_dumper_coverage::test_dumper_with_includes ... ok
+test tests::pp_embed::test_embed_basic ... ok
+test tests::pp_directives::test_pragmas ... ok
+test tests::pp_embed::test_embed_limit ... ok
+test tests::pp_directives::test_pragma_operator_and_once ... ok
+test tests::pp_embed::test_embed_macro ... ok
+test tests::pp_embed::test_embed_not_found ... ok
+test tests::pp_dumper_coverage::test_dumper_snapshots ... ok
+test tests::pp_error_coverage::test_pperror_display ... ok
+test tests::pp_features::test_has_builtin ... ok
+test tests::pp_features::test_has_attribute ... ok
+test tests::pp_features::test_has_feature ... ok
+test tests::pp_features::test_has_c_attribute ... ok
+test tests::pp_includes::test_circular_include_in_memory ... ok
+test tests::pp_features::test_has_include_next ... ok
+test tests::pp_includes::test_computed_include_string ... ok
+test tests::pp_includes::test_include_next_builtin ... ok
+test tests::pp_includes::test_include_next_paths ... ok
+test tests::pp_includes::test_include_same_file_twice_without_pragma_once ... ok
+test tests::pp_includes::test_pragma_once_path_dedup ... ok
+test tests::pp_internal::test_destringize ... ok
+test tests::pp_lexical::test_adjacent_string_literals_not_combined ... ok
+test tests::pp_lexical::test_all_keyword_tokens ... ok
+test tests::pp_lexical::test_all_literal_tokens ... ok
+test tests::pp_lexical::test_all_punctuation_tokens ... ok
+test tests::pp_internal::test_header_search_include_next ... ok
+test tests::pp_lexical::test_char_literal_escapes ... ok
+test tests::pp_lexical::test_consecutive_splices ... ok
+test tests::pp_lexical::test_eod_at_eof_in_directive ... ok
+test tests::pp_lexical::test_eod_token_production ... ok
+test tests::pp_lexical::test_hash_starts_pp_line ... ok
+test tests::pp_lexical::test_eod_for_various_directives ... ok
+test tests::pp_lexical::test_hashhash_no_starts_pp_line ... ok
+test tests::pp_internal::test_header_search_resolution ... ok
+test tests::pp_lexical::test_hex_float_literal ... ok
+test tests::pp_lexical::test_hex_literal_minus_sign_regression ... ok
+test tests::pp_lexical::test_indented_hash_starts_pp_line ... ok
+test tests::pp_includes::test_computed_includes_errors ... ok
+test tests::pp_lexical::test_invalid_ucn ... ok
+test tests::pp_lexical::test_lexer_line_splicing_with_whitespace ... ok
+test tests::pp_lexical::test_line_splicing_comprehensive ... ok
+test tests::pp_lexical::test_not_u8_literal ... ok
+test tests::pp_lexical::test_line_splicing_in_skip_whitespace ... ok
+test tests::pp_lexical::test_u8_char_literal ... ok
+test tests::pp_lexical::test_pp_wide_char_arithmetic ... ok
+test tests::pp_lexical::test_u8_string_literal ... ok
+test tests::pp_lexical::test_raw_utf8_identifier ... ok
+test tests::pp_lexical::test_u8_string_literal_with_escapes ... ok
+test tests::pp_lexical::test_preprocessor_multiline_directive_with_splice ... ok
+test tests::pp_lexical::test_various_bmp_characters ... ok
+test tests::pp_lexical::test_ucn_identifier ... ok
+test tests::pp_lexical::test_ucn_string_literal ... ok
+test tests::pp_lexical::test_utf_macros ... ok
+test tests::pp_lexical::test_wide_character_literals ... ok
+test tests::pp_lexical::test_wide_string_literals ... ok
+test tests::pp_macros::test_brace_comma_separation ... ok
+test tests::pp_macros::test_counter_macro ... ok
+test tests::pp_macros::test_counter_macro_pasting_no_prescan ... ok
+test tests::pp_macros::test_complex_macro_expansion_and_recursion_limit ... ok
+test tests::pp_macros::test_defer_recursive_expansion ... ok
+test tests::pp_macros::test_define_with_trailing_comment ... ok
+test tests::pp_macros::test_deferred_expansion_nested_expand ... ok
+test tests::pp_macros::test_deferred_macro_expansion ... ok
+test tests::pp_macros::test_different_macro_redefinition_warns ... ok
+test tests::pp_macros::test_expand_tokens_magic_macro_coverage ... ok
+test tests::pp_macros::test_expand_tokens_pragma_operator_coverage ... ok
+test tests::pp_macros::test_directive_in_macro_args ... ok
+test tests::pp_macros::test_empty_macro_arg ... ok
+test tests::pp_macros::test_file_macro ... ok
+test tests::pp_macros::test_function_like_macro_not_expanded_when_not_followed_by_paren ... ok
+test tests::pp_macros::test_gcc_recursive_macro_painted_blue ... ok
+test tests::pp_macros::test_gcc_extension_keywords ... ok
+test tests::pp_macros::test_gcc_version_macros ... ok
+test tests::pp_macros::test_identical_builtin_redefinition_no_warning ... ok
+test tests::pp_macros::test_gnu_comma_elision_with_empty_variadic_arg ... ok
+test tests::pp_macros::test_identical_macro_redefinition_no_warning ... ok
+test tests::pp_macros::test_indirect_recursion_prosser ... ok
+test tests::pp_macros::test_gnu_variadic_macros ... ok
+test tests::pp_macros::test_int_constant_macros ... ok
+test tests::pp_macros::test_macro_expansion_arguments_hide_set_regression ... ok
+test tests::pp_macros::test_macro_expansion_chain_not_blocked ... ok
+test tests::pp_macros::test_macro_expansion_creates_incomplete_nested_call ... ok
+test tests::pp_macros::test_macro_recursive_pasting ... ok
+test tests::pp_macros::test_magic_macros ... ok
+test tests::pp_macros::test_nested_macro_expansion_in_args ... ok
+test tests::pp_macros::test_macro_invalid_parameters_and_edge_cases ... ok
+test tests::pp_macros::test_nested_macro_expansion_self_referential ... ok
+test tests::pp_macros::test_nested_macro_produces_incomplete_function_call ... ok
+test tests::pp_macros::test_macro_parameter_list_errors ... ok
+test tests::pp_macros::test_parameter_macro_definition_and_expansion ... ok
+test tests::pp_macros::test_nested_macros_with_recursion_produce_incomplete_call ... ok
+test tests::pp_macros::test_paren_comma_protection ... ok
+test tests::pp_macros::test_paste_numbers ... ok
+test tests::pp_macros::test_paste_va_args ... ok
+test tests::pp_macros::test_recursive_expansion_issue ... ok
+test tests::pp_macros::test_recursive_macro_expansion_regression ... ok
+test tests::pp_macros::test_redefine_builtin_macro_should_fail ... ok
+test tests::pp_macros::test_simple_macro_definition_and_expansion ... ok
+test tests::pp_macros::test_stringification_escaping_literal ... ok
+test tests::pp_macros::test_stddef_stdint_integration ... ok
+test tests::pp_macros::test_stdint_h_constant_macros ... ok
+test tests::pp_macros::test_placemarker_concatenation ... ok
+test tests::pp_macros::test_stringification_whitespace_handling ... ok
+test tests::pp_macros::test_undef_builtin_macro_should_warn ... ok
+test tests::pp_macros::test_type_builtins ... ok
+test tests::pp_macros::test_va_args_stringification ... ok
+test tests::pp_macros::test_va_opt_basic ... ok
+test tests::pp_macros::test_va_opt_empty ... ok
+test tests::pp_macros::test_va_opt_stringification ... ok
+warning: embedding a directive within macro arguments is not portable [-Wembedded-directive]
+ --> example.c:7:9
+  |
+7 |         #if USE_FEATURE_B
+  |         ^
+warning: '$' in identifier or number [-Wdollar-in-identifier-extension]
+ --> example.c:3:17
+  |
+3 |             int x$ = 1;
+  |                 ^
+warning: embedding a directive within macro arguments is not portable [-Wembedded-directive]
+ --> example.c:9:9
+  |
+9 |         #else
+  |         ^
+warning: embedding a directive within macro arguments is not portable [-Wembedded-directive]
+  --> example.c:11:9
+   |
+11 |         #endif
+   |         ^
+test tests::pp_macros::test_variadic_macro_rescan_bug ... ok
+warning: '$' in identifier or number [-Wdollar-in-identifier-extension]
+ --> example.c:3:21
+  |
+3 |             int x = 0$;
+  |                     ^
+test tests::pp_pedantic::test_dollar_in_number ... ok
+error: embedding a directive within macro arguments is not portable
+ --> example.c:7:9
+  |
+7 |         #if USE_FEATURE_B
+  |         ^
+error: embedding a directive within macro arguments is not portable
+ --> example.c:9:9
+  |
+9 |         #else
+  |         ^
+error: embedding a directive within macro arguments is not portable
+  --> example.c:11:9
+   |
+11 |         #endif
+   |         ^
+test tests::semantic_alignment::test_alignas_alias_on_bitfield_fails ... ok
+test tests::semantic_alignment::test_alignas_on_bitfield_fails ... ok
+error: '$' in identifier or number
+ --> example.c:3:17
+  |
+3 |             int x$ = 1;
+  |                 ^
+test tests::pp_pedantic::test_directive_in_macro_args ... ok
+test tests::semantic_alignment::test_gnu_alignas_alias_on_bitfield_passes ... ok
+test tests::semantic_alignment::test_gnu_aligned_on_bitfield_passes ... ok
+test tests::semantic_alignment::test_mixed_alignment_on_bitfield_fails ... ok
+test tests::pp_pedantic::test_dollar_in_identifier ... ok
+error: '_Alignof' applied to an expression is a GNU extension
+ --> example.c:4:20
+  |
+4 |             return _Alignof x;
+  |                    ^^^^^^^^^^
+test tests::semantic_alignof_expr::test_alignof_expression_pedantic ... ok
+test tests::semantic_alignof_expr::test_alignof_expression_nested ... ok
+test tests::semantic_alignof_expr::test_alignof_expression_sizeof_interaction ... ok
+test tests::semantic_alignof_expr::test_alignof_expression_basic ... ok
+test tests::semantic_arrays::test_array_declaration_with_constant_size ... ok
+test tests::semantic_alignof_expr::test_alignof_expression_alignas ... ok
+test tests::semantic_arrays::test_array_of_incomplete_type ... ok
+test tests::semantic_arrays::test_array_in_condition_warning ... ok
+test tests::semantic_arrays::test_array_of_qualified_type ... ok
+test tests::semantic_arrays::test_array_of_pointers_static_pass ... ok
+test tests::semantic_arrays::test_array_parameter_qualifiers_pass ... ok
+test tests::semantic_arrays::test_array_parameter_static_pass ... ok
+test tests::semantic_arrays::test_array_qualifier_not_outermost_fail ... ok
+test tests::semantic_arrays::test_array_qualifiers_outside_parameter_fail ... ok
+test tests::semantic_arrays::test_array_static_outside_parameter_fail ... ok
+test tests::semantic_arrays::test_array_static_not_outermost_fail ... ok
+test tests::semantic_arrays::test_pointer_to_array_static_fail ... ok
+test tests::semantic_arrays::test_negative_array_size ... ok
+test tests::semantic_arrays::test_multidimensional_array_qualified ... ok
+test tests::semantic_arrays::test_sizeof_array_deref_in_enum ... ok
+test tests::semantic_arrays::test_sizeof_array_deref_global ... ok
+test tests::semantic_arrays::test_sizeof_array_constant_expression ... ok
+test tests::semantic_arrays::test_sizeof_multi_dim_array_deref ... ok
+test tests::semantic_arrays::test_sizeof_string_literal_constant_expression ... ok
+test tests::semantic_arrays::test_vla_ice_fix ... ok
+test tests::semantic_arrays::test_vla_in_block_scope ... ok
+test tests::semantic_arrays::test_sizeof_vla_supported ... ok
+test tests::semantic_arrays::test_zero_sized_array ... ok
+error: use of GNU zero-length array extension
+ --> example.c:1:20
+  |
+1 | int main() { int a[0]; }
+  |                    ^
+test tests::semantic_arrays::test_zero_sized_array_pedantic ... ok
+test tests::semantic_assignment_coverage::test_compound_assignments ... ok
+test tests::semantic_atomic::test_atomic_qualifier_constraints ... ok
+test tests::semantic_atomic::test_atomic_qualifier_on_void_prohibited ... ok
+test tests::semantic_atomic::test_atomic_specifier_constraints ... ok
+test tests::semantic_atomic::test_atomic_specifier_on_void_prohibited ... ok
+test tests::semantic_atomic::test_atomic_specifier_success ... ok
+test tests::semantic_auto_type::test_auto_type_basic ... ok
+test tests::semantic_auto_type::test_auto_type_complex_declarator ... ok
+test tests::semantic_auto_type::test_auto_type_decay ... ok
+test tests::semantic_auto_type::test_auto_type_forbidden_contexts ... ok
+test tests::semantic_auto_type::test_auto_type_function_return ... ok
+test tests::semantic_auto_type::test_auto_type_initializer_list ... ok
+test tests::semantic_auto_type::test_auto_type_multiple_declarators ... ok
+test tests::semantic_auto_type::test_auto_type_no_initializer ... ok
+test tests::semantic_auto_type::test_auto_type_qualifiers ... ok
+test tests::semantic_binary_conversion::test_binary_conversion_complex_cast ... ok
+test tests::semantic_binary_invalid_operands::test_invalid_binary_operands_comparison ... ok
+test tests::semantic_bitfield::test_bitfield_promotion ... ok
+test tests::semantic_bitfield::test_bitfield_promotion_unsigned ... ok
+test tests::semantic_alignof_expr::test_alignof_max_align_t ... ok
+test tests::semantic_arrays::test_vla_scoping_advanced ... ok
+test tests::semantic_arrays::test_vla_sizeof_parameters ... ok
+test tests::semantic_bool_literals::test_c23_bool_literals_basic ... ok
+test tests::semantic_bool_literals::test_c23_bool_literals_const_eval ... ok
+test tests::semantic_bool_literals::test_c23_bool_literals_pp ... ok
+test tests::semantic_bool_literals::test_c23_bool_literals_types ... ok
+test tests::semantic_bitfield::test_complex_bitfield_init_shift ... ok
+test tests::semantic_bitfield::test_nameless_bitfield_init_repro_output ... ok
+test tests::semantic_brace_elision::test_anonymous_struct_designator_init ... ok
+test tests::semantic_builtin_complex::test_builtin_complex_basic ... ok
+test tests::semantic_builtin_complex::test_builtin_complex_execution ... ok
+test tests::semantic_builtin_complex::test_builtin_complex_int ... ok
+test tests::semantic_builtin_complex::test_builtin_complex_invalid_operand ... ok
+test tests::semantic_builtin_complex::test_builtin_complex_invalid_operand_2 ... ok
+test tests::semantic_builtin_complex::test_builtin_complex_promotion ... ok
+test tests::semantic_caserange::test_case_range_coverage ... ok
+test tests::semantic_brace_elision::test_nested_struct_string_brace_elision_init ... ok
+test tests::semantic_caserange::test_case_range_overlap_reverse ... ok
+test tests::semantic_caserange::test_case_range_overlap ... ok
+test tests::semantic_cleanup_coverage::test_cleanup_not_a_function ... ok
+test tests::semantic_caserange::test_large_case_range_timeout ... ok
+test tests::semantic_cleanup_diag::test_cleanup_on_global ... ok
+test tests::semantic_cleanup_diag::test_cleanup_on_typedef ... ok
+test tests::semantic_cleanup_diag::test_cleanup_on_static_local ... ok
+test tests::semantic_complex_types::test_complex_atomic ... ok
+test tests::semantic_complex_types::test_complex_addition ... ok
+test tests::semantic_complex_types::test_complex_cmplx_const_eval ... ok
+test tests::semantic_complex_types::test_complex_comparison ... ok
+test tests::semantic_complex_types::test_complex_cmplx_signed_zero ... ok
+test tests::semantic_complex_types::test_complex_conjugate ... ok
+test tests::semantic_complex_types::test_complex_comparison_v2 ... ok
+test tests::semantic_complex_types::test_complex_declarations ... ok
+test tests::semantic_complex_types::test_complex_division ... ok
+test tests::semantic_brace_elision::test_struct_brace_elision_init ... ok
+test tests::semantic_complex_types::test_complex_h_cmplx ... ok
+test tests::semantic_complex_types::test_complex_inc_dec ... ok
+test tests::semantic_complex_types::test_complex_lvalue_in_expressions ... ok
+test tests::semantic_complex_types::test_complex_multiplication ... ok
+test tests::semantic_complex_types::test_complex_i_usage ... ok
+test tests::semantic_complex_types::test_complex_ops_double ... ok
+test tests::semantic_complex_types::test_complex_real_imag_operators ... ok
+test tests::semantic_complex_types::test_complex_ops_float ... ok
+test tests::semantic_complex_types::test_complex_real_interaction ... ok
+error: Invalid operands for binary operation: have '_Complex float' and '_Complex float'
+ --> example.c:4:24
+  |
+4 |             int res = (a < b);
+  |                        ^test tests::semantic_complex_types::test_complex_real_lvalue ...
+ok
+test tests::semantic_complex_types::test_complex_relational_error - should panic ... ok
+test tests::semantic_complex_types::test_complex_subtraction ... ok
+test tests::semantic_complex_types::test_imag_lvalue_rejected ... ok
+test tests::semantic_complex_types::test_invalid_real_imag_operands ... ok
+test tests::semantic_composite::test_array_completion_composite ... ok
+test tests::semantic_complex_types::test_real_type_lvalue_real_imag ... ok
+test tests::semantic_composite::test_array_completion_reverse ... ok
+test tests::semantic_composite::test_atomic_bitfield_prohibited ... ok
+test tests::semantic_composite::test_array_of_pointers_composite ... ok
+test tests::semantic_composite::test_atomic_specifier_bitfield_prohibited ... ok
+test tests::semantic_composite::test_atomic_typedef_bitfield_prohibited ... ok
+test tests::semantic_composite::test_atomic_volatile_bitfield_prohibited ... ok
+test tests::semantic_composite::test_bitfield_width_exceeds_type ... ok
+test tests::semantic_composite::test_bitfield_invalid_type ... ok
+test tests::semantic_composite::test_bitfield_zero_width_unnamed ... ok
+test tests::semantic_composite::test_duplicate_member ... ok
+test tests::semantic_composite::test_conflicting_array_composite ... ok
+test tests::semantic_composite::test_fam_in_otherwise_empty_struct_prohibited ... ok
+test tests::semantic_composite::test_fam_not_last_prohibited ... ok
+test tests::semantic_composite::test_fam_in_union_prohibited ... ok
+test tests::semantic_composite::test_function_member_prohibited ... ok
+test tests::semantic_composite::test_function_composite_type ... ok
+test tests::semantic_composite::test_incomplete_struct_member_prohibited ... ok
+test tests::semantic_composite::test_member_access_on_non_struct ... ok
+test tests::semantic_composite::test_sizeof_based_array_size_in_struct ... ok
+test tests::semantic_composite::test_unnamed_atomic_bitfield_prohibited ... ok
+test tests::semantic_composite::test_vla_member_prohibited ... ok
+test tests::semantic_composite::test_void_member_prohibited ... ok
+test tests::semantic_composite::test_volatile_bitfield_allowed ... ok
+test tests::semantic_const_eval::test_alignof ... ok
+test tests::semantic_const_eval::test_arithmethic_with_predence ... ok
+test tests::semantic_const_eval::test_arithmetic ... ok
+test tests::semantic_const_eval::test_bitwise ... ok
+test tests::semantic_const_eval::test_builtin_fabs_eval_test ... ok
+test tests::semantic_const_eval::test_builtin_functions ... ok
+test tests::semantic_const_eval::test_const_eval_char_float_2 ... ok
+test tests::semantic_const_eval::test_comparisons ... ok
+test tests::semantic_const_eval::test_const_eval_char_type ... ok
+test tests::semantic_const_eval::test_const_eval_member_access_in_array_size ... ok
+test tests::semantic_const_eval::test_const_eval_coverage ... ok
+test tests::semantic_const_eval::test_const_eval_unary_coverage ... ok
+test tests::semantic_const_eval::test_div_by_zero ... ok
+test tests::semantic_const_eval::test_enum_constants ... ok
+test tests::semantic_const_eval::test_hit_2527 ... ok
+test tests::semantic_const_eval::test_generic_selection ... ok
+test tests::semantic_const_eval::test_is_constant_pointer_to_static_duration_object_coverage ... ok
+test tests::semantic_const_eval::test_is_constant_pointer_to_static_duration_object_coverage_3 ... ok
+test tests::semantic_const_eval::test_is_constant_pointer_to_static_duration_object_coverage_2 ... ok
+test tests::semantic_const_eval::test_is_constant_pointer_to_static_duration_object_coverage_4 ... ok
+test tests::semantic_const_eval::test_is_constant_pointer_to_static_duration_object_coverage_5 ... ok
+test tests::semantic_const_eval::test_is_constant_pointer_to_static_duration_object_coverage_6 ... ok
+test tests::semantic_const_eval::test_is_constant_pointer_to_static_duration_object_coverage_8 ... ok
+test tests::semantic_const_eval::test_is_constant_pointer_to_static_duration_object_coverage_7 ... ok
+test tests::semantic_const_eval::test_logical_short_circuit ... ok
+test tests::semantic_const_eval::test_logical ... ok
+test tests::semantic_const_eval::test_overflow_wrapping ... ok
+test tests::semantic_const_eval::test_offsetof ... ok
+test tests::semantic_const_eval::test_ternary ... ok
+test tests::semantic_const_eval::test_sizeof ... ok
+test tests::semantic_const_eval::test_unary_float_eval ... ok
+test tests::semantic_complex_types::test_complex_creal_cimag ... ok
+test tests::semantic_const_eval_statement_expr::test_const_eval_statement_expr ... ok
+test tests::semantic_const_recursive::test_const_array_member ... ok
+test tests::semantic_const_recursive::test_const_pointer_array_member ... ok
+test tests::semantic_const_eval::test_unsigned_arithmetic ... ok
+test tests::semantic_const_recursive::test_const_pointer_member ... ok
+test tests::semantic_const_recursive::test_nested_const_array_member ... ok
+test tests::semantic_control_flow::test_break_outside_loop ... ok
+test tests::semantic_control_flow::test_case_outside_switch ... ok
+test tests::semantic_const_eval_offsetof::test_builtin_offsetof_in_const_eval_coverage ... ok
+test tests::semantic_control_flow::test_duplicate_label ... ok
+test tests::semantic_control_flow::test_duplicate_case ... ok
+test tests::semantic_control_flow::test_for_loop_init_assignment ... ok
+test tests::semantic_control_flow::test_noreturn_for_break_falls_through ... ok
+test tests::semantic_control_flow::test_goto_label_forward_backward ... ok
+test tests::semantic_control_flow::test_goto_into_block_skips_init ... ok
+test tests::semantic_control_flow::test_noreturn_while_1_infinite ... ok
+test tests::semantic_control_flow::test_rejects_non_integer_case_label ... ok
+test tests::semantic_control_flow::test_rejects_non_constant_case_label ... ok
+test tests::semantic_control_flow::test_rejects_non_integer_switch_condition ... ok
+test tests::semantic_conversions::test_complex_type_conversions ... ok
+test tests::semantic_conversions::test_integer_promotion_bitfield ... ok
+test tests::semantic_conversions::test_integer_promotion_bitfield_wider_than_int ... ok
+test tests::semantic_conversions::test_pointer_level_and_type_warnings ... ok
+test tests::semantic_conversions::test_usual_arithmetic_conversions_coverage ... ok
+test tests::semantic_enums::test_enum_constant_expression_basic ... ok
+test tests::semantic_enums::accepts_boundary_enum_constants ... ok
+test tests::semantic_enums::test_enum_constant_expression_reference ... ok
+test tests::semantic_enums::test_enum_generic_underlying_type_e0 ... ok
+test tests::semantic_enums::test_enum_generic_underlying_type_e1 ... ok
+test tests::semantic_enums::test_enum_generic_underlying_type_e5 ... ok
+test tests::semantic_enums::test_enum_init_with_other_enum ... ok
+test tests::semantic_enums::test_enum_init_with_other_enum_indirect ... ok
+test tests::semantic_enums::test_enum_int_negative ... ok
+test tests::semantic_enums::test_enum_long_long_mixed_range ... ok
+test tests::semantic_enums::test_enum_redefinition_enumerator ... ok
+test tests::semantic_enums::test_enum_long_long_too_small ... ok
+test tests::semantic_enums::test_enum_unsigned_long_long ... ok
+test tests::semantic_enums::test_enumerator_outside_enum ... ok
+test tests::semantic_enums::warns_on_overflow_next_value ... ok
+test tests::semantic_enums::warns_on_large_enum_constant ... ok
+test tests::semantic_enums::warns_on_extreme_i64_values ... ok
+test tests::semantic_expr::test_address_of_bitfield_prohibited ... ok
+test tests::semantic_enums::warns_on_underflow_large_negative ... ok
+test tests::semantic_expr::test_address_of_array_member_identity ... ok
+test tests::semantic_expr::test_address_of_register_prohibited ... ok
+test tests::semantic_expr::test_assign_incompatible_pointers ... ok
+test tests::semantic_expr::test_assign_enum_to_int ... ok
+test tests::semantic_expr::test_assign_incompatible_struct ... ok
+test tests::semantic_expr::test_assign_int_to_enum ... ok
+test tests::semantic_expr::test_assign_int_to_struct ... ok
+test tests::semantic_expr::test_assign_int_to_pointer ... ok
+test tests::semantic_expr::test_assign_pointer_to_bool ... ok
+test tests::semantic_expr::test_assign_pointer_to_int ... ok
+test tests::semantic_expr::test_assign_struct_to_int ... ok
+test tests::semantic_expr::test_assign_struct_mismatch ... ok
+test tests::semantic_expr::test_assign_valid_arithmetic ... ok
+test tests::semantic_expr::test_assign_valid_null_ptr ... ok
+test tests::semantic_expr::test_assign_valid_void_ptr ... ok
+test tests::semantic_expr::test_comma_operator ... ok
+test tests::semantic_expr::test_comma_operator_loop ... ok
+test tests::semantic_expr::test_comma_operator_types ... ok
+test tests::semantic_expr::test_compound_add_assign ... ok
+test tests::semantic_bitfield::test_struct_bitfield_features ... ok
+test tests::semantic_expr::test_compound_mixed_types ... ok
+test tests::semantic_expr::test_compound_div_assign ... ok
+test tests::semantic_expr::test_compound_mul_assign ... ok
+test tests::semantic_expr::test_compound_sub_assign ... ok
+test tests::semantic_expr::test_compound_unsigned_mixed_types ... ok
+test tests::semantic_expr::test_const_pointer_to_int ... ok
+test tests::semantic_expr::test_compound_mod_assign ... ok
+test tests::semantic_expr::test_deref_double ... ok
+test tests::semantic_expr::test_deref_int ... ok
+test tests::semantic_expr::test_deref_long ... ok
+test tests::semantic_expr::test_deref_struct ... ok
+test tests::semantic_expr::test_enum_arithmetic ... ok
+test tests::semantic_expr::test_enum_constant_assignment ... ok
+test tests::semantic_expr::test_logic_not_on_array_allowed ... ok
+test tests::semantic_expr::test_incomplete_deref_statement_error ... ok
+test tests::semantic_expr::test_logic_not_on_function_allowed ... ok
+test tests::semantic_expr::test_long_long_literal_suffix ... ok
+test tests::semantic_expr::test_lvalue_addr_of_rvalue ... ok
+test tests::semantic_expr::test_lvalue_assign_struct_rvalue_member ... ok
+test tests::semantic_expr::test_lvalue_assign_to_arithmetic_expr ... ok
+test tests::semantic_expr::test_lvalue_assign_to_literal ... ok
+test tests::semantic_expr::test_lvalue_post_dec_rvalue ... ok
+test tests::semantic_expr::test_lvalue_post_inc_literal ... ok
+test tests::semantic_expr::test_lvalue_pre_dec_rvalue ... ok
+test tests::semantic_expr::test_lvalue_pre_inc_literal ... ok
+test tests::semantic_expr::test_nested_const_pointer ... ok
+test tests::semantic_expr::test_nested_qualifier_preservation ... ok
+test tests::semantic_expr::test_pointer_signedness_mismatch ... ok
+test tests::semantic_expr::test_reverse_subscript_with_pointer ... ok
+test tests::semantic_expr::test_sizeof_layout_crash ... ok
+test tests::semantic_expr::test_sizeof_logic_and_is_int_size ... ok
+test tests::semantic_expr::test_sizeof_logic_not_is_int_size ... ok
+test tests::semantic_expr::test_sizeof_logic_or_is_int_size ... ok
+test tests::semantic_expr::test_type_limits_and_token_pasting ... ok
+test tests::semantic_expr::test_union_cast_extension ... ok
+test tests::semantic_expr::test_union_cast_invalid_type_rejected ... ok
+test tests::semantic_expr::test_usual_arithmetic_conversions_signed_wins ... ok
+test tests::semantic_expr::test_void_assign_variable ... ok
+test tests::semantic_expr::test_void_init_variable ... ok
+test tests::semantic_expr::test_pointer_add_assign ... ok
+test tests::semantic_expr::test_pointer_sub_assign ... ok
+test tests::semantic_expr::test_pointer_arithmetic_correctness ... ok
+test tests::semantic_float_and_double::test_compound_shift_left_float_rhs ... ok
+test tests::semantic_float_and_double::test_compound_shift_left_float_lhs ... ok
+test tests::semantic_float_and_double::test_char_init_with_float_overflow ... ok
+test tests::semantic_float_and_double::test_float_init_with_bool ... ok
+test tests::semantic_float_and_double::test_double_init_with_int ... ok
+test tests::semantic_float_and_double::test_float_init_with_int ... ok
+test tests::semantic_float_and_double::test_float_init_with_int_neg ... ok
+test tests::semantic_float_and_double::test_float_to_int_cast_literal_precision ... ok
+test tests::semantic_float_and_double::test_int_init_with_float ... ok
+test tests::semantic_float_and_double::test_regression_for_loop_init_int_to_double ... ok
+test tests::semantic_float_and_double::test_float_to_int_cast_precision ... ok
+test tests::semantic_float_and_double::test_fp_const_eval ... ok
+test tests::semantic_float_and_double::test_regression_int_to_double_unary_minus ... ok
+test tests::semantic_float_and_double::test_regression_nan_float_to_double ... ok
+test tests::semantic_float_and_double::test_shift_left_float_lhs ... ok
+test tests::semantic_float_and_double::test_shift_left_float_rhs ... ok
+test tests::semantic_float_and_double::test_shift_right_float_lhs ... ok
+test tests::semantic_functions::test_array_argument_to_int_parameter ... ok
+test tests::semantic_float_and_double::test_shift_right_float_rhs ... ok
+test tests::semantic_functions::test_array_param_qualifiers_decay ... ok
+test tests::semantic_functions::test_array_param_qualifiers_definition_compatibility ... ok
+test tests::semantic_functions::test_auto_at_file_scope_prohibited ... ok
+test tests::semantic_functions::test_call_int_cast_to_fn_ptr ... ok
+test tests::semantic_functions::test_call_non_function ... ok
+test tests::semantic_functions::test_conflicting_function_decl ... ok
+test tests::semantic_functions::test_conflicting_types_basic ... ok
+test tests::semantic_functions::test_auto_register_on_function_prohibited ... ok
+test tests::semantic_functions::test_func_identifier_basic ... ok
+test tests::semantic_functions::test_func_identifier_in_main ... ok
+test tests::semantic_functions::test_func_identifier_nested_scope ... ok
+test tests::semantic_functions::test_func_identifier_redefinition ... ok
+test tests::semantic_functions::test_func_opt_shadowed ... ok
+test tests::semantic_functions::test_func_identifier_type ... ok
+test tests::semantic_functions::test_func_opt_unused ... ok
+test tests::semantic_functions::test_function_identifier_basic ... ok
+test tests::semantic_functions::test_func_opt_used ... ok
+test tests::semantic_functions::test_function_identifier_redefinition ... ok
+test tests::semantic_functions::test_incomplete_return_type ... ok
+test tests::semantic_functions::test_incompatible_struct_pointer_argument ... ok
+test tests::semantic_functions::test_nested_array_qualifiers ... ok
+test tests::semantic_functions::test_noreturn_declaration_mismatch ... ok
+test tests::semantic_functions::test_noreturn_function_can_fall_through ... ok
+test tests::semantic_functions::test_noreturn_function_contains_break_in_label ... ok
+test tests::semantic_functions::test_noreturn_function_contains_break_in_if ... ok
+test tests::semantic_functions::test_noreturn_function_returns ... ok
+test tests::semantic_functions::test_parameter_inline_prohibited ... ok
+test tests::semantic_functions::test_noreturn_function_returns_error ... ok
+test tests::semantic_functions::test_parameter_noreturn_prohibited ... ok
+test tests::semantic_functions::test_parameter_register_address_prohibited ... ok
+test tests::semantic_functions::test_parameter_register_allowed ... ok
+test tests::semantic_functions::test_parameter_storage_auto_prohibited ... ok
+test tests::semantic_functions::test_parameter_storage_extern_prohibited ... ok
+test tests::semantic_functions::test_parameter_storage_static_prohibited ... ok
+test tests::semantic_functions::test_parameter_storage_thread_local_prohibited ... ok
+test tests::semantic_functions::test_parameter_storage_typedef_prohibited ... ok
+test tests::semantic_functions::test_pointer_argument_to_int_parameter ... ok
+test tests::semantic_functions::test_pretty_function_identifier ... ok
+test tests::semantic_functions::test_pretty_function_identifier_redefinition ... ok
+test tests::semantic_functions::test_sizeof_function_type ... ok
+test tests::semantic_functions::test_struct_member_inline_prohibited ... ok
+test tests::semantic_functions::test_struct_member_noreturn_prohibited ... ok
+test tests::semantic_functions::test_struct_argument_to_int_parameter ... ok
+test tests::semantic_functions::test_tag_decl_inline_prohibited ... ok
+test tests::semantic_functions::test_tag_decl_noreturn_prohibited ... ok
+test tests::semantic_functions::test_typedef_inline_prohibited ... ok
+test tests::semantic_functions::test_typedef_noreturn_prohibited ... ok
+test tests::semantic_functions::test_variable_inline_prohibited ... ok
+test tests::semantic_functions::test_undeclared_function ... ok
+test tests::semantic_functions::test_variable_noreturn_prohibited ... ok
+test tests::semantic_functions::test_void_function_return_value ... ok
+test tests::semantic_generic::test_complex_long_double ... ok
+test tests::semantic_generic::test_complex_order ... ok
+test tests::semantic_generic::test_complex_generic ... ok
+test tests::semantic_generic::test_generic_allows_array_decay ... ok
+test tests::semantic_generic::test_generic_association_must_be_complete ... ok
+test tests::semantic_generic::test_generic_allows_function_decay_via_pointer ... ok
+test tests::semantic_generic::test_generic_association_void_is_incomplete ... ok
+test tests::semantic_generic::test_generic_controlling_expression_allows_void ... ok
+test tests::semantic_generic::test_generic_decay_and_qualifier_stripping ... ok
+test tests::semantic_generic::test_generic_controlling_expression_incomplete_struct ... ok
+test tests::semantic_generic::test_generic_function_as_control ... ok
+test tests::semantic_generic::test_generic_incomplete_array_as_control ... ok
+test tests::semantic_generic::test_generic_qualifiers_and_composite_types ... ok
+test tests::semantic_generic::test_generic_pointer_qualifiers_distinct ... ok
+test tests::semantic_generic::test_generic_qualifiers_distinct ... ok
+test tests::semantic_generic::test_generic_selection_correct_type_is_chosen ... ok
+test tests::semantic_generic::test_generic_selection_invalid_type_name ... ok
+test tests::semantic_generic::test_generic_selection_lvalue ... ok
+test tests::semantic_generic::test_generic_selection_lvalue_struct ... ok
+test tests::semantic_generic::test_generic_selection_no_match ... ok
+test tests::semantic_generic::test_generic_selection_pointer_to_const_vs_const_pointer ... ok
+test tests::semantic_generic::test_generic_selection_pointer_qualifiers ... ok
+test tests::semantic_generic::test_generic_selection_rejects_duplicate_types ... ok
+test tests::semantic_generic::test_generic_selection_rejects_function_type_association ... ok
+test tests::semantic_generic::test_generic_selection_rejects_multiple_matches_even_if_controlling_is_different ... ok
+test tests::semantic_generic::test_generic_selection_rejects_multiple_defaults ... ok
+test tests::semantic_generic::test_generic_selection_strips_qualifiers_and_handles_default_correctly ... ok
+test tests::semantic_generic::test_generic_selection_with_user_defined_type ... ok
+test tests::semantic_generic::test_generic_string_literal_decay ... ok
+test tests::semantic_generic::test_generic_vla_association ... ok
+test tests::semantic_gnu_attributes::test_attribute_aligned_struct ... ok
+test tests::semantic_gnu_attributes::test_attribute_aligned_variable ... ok
+test tests::semantic_gnu_attributes::test_attribute_packed_member ... ok
+test tests::semantic_gnu_attributes::test_attribute_multiple ... ok
+test tests::semantic_gnu_attributes::test_attribute_packed_struct ... ok
+test tests::semantic_gnu_local_label::test_gnu_local_label_duplicate ... ok
+test tests::semantic_gnu_attributes::test_attribute_underscore_variants ... ok
+test tests::semantic_goto_vla::test_goto_jump_into_vla_scope ... ok
+test tests::semantic_goto_vla::test_switch_jump_into_vla_scope ... ok
+test tests::semantic_goto_vla::test_goto_valid_jump_vla_scope ... ok
+test tests::semantic_init::test_array_designator_override ... ok
+test tests::semantic_init::test_array_designator_out_of_order ... ok
+test tests::semantic_init::test_array_designator_const_eval ... ok
+test tests::semantic_init::test_array_designator_simple ... ok
+test tests::semantic_init::test_array_init_bug_mir ... ok
+warning: use of GNU designated initializer range extension [-Wgnu-designated-init]
+ --> test.c:3:38
+  |
+3 |             int i[1][3] = {[0][0 ... 1] = 4, 2};
+  |                                      ^
+test tests::semantic_init::test_brace_elision_designator_break ... ok
+test tests::semantic_float_and_double::test_nan_bool_conversion ... ok
+test tests::semantic_init::test_braced_wide_string_init ... ok
+test tests::semantic_init::test_compound_literal_array_deduction ... ok
+test tests::semantic_init::test_array_init_bug ... ok
+test tests::semantic_init::test_fam_initialization ... ok
+test tests::semantic_init::test_array_designator_subobject_completion ... ok
+test tests::semantic_init::test_global_initializer_pointer_to_int_regression ... ok
+warning: use of GNU designated initializer range extension [-Wgnu-designated-init]
+ --> test.c:3:29
+  |
+3 |         int a[5] = { [0 ... 2] = 1, 2, 3 };
+  |                             ^
+test tests::semantic_init::test_designated_initializer_struct_from_ptr ... ok
+test tests::semantic_init::test_initializer_list_crash_regression ... ok
+test tests::semantic_init::test_local_array_designator_out_of_order ... ok
+test tests::semantic_init::test_local_array_designator_simple ... ok
+test tests::semantic_init::test_local_mixed_array_struct_designators ... ok
+test tests::semantic_init::test_local_nested_array_init ... ok
+test tests::semantic_init::test_fam_brace_elision_initialization ... ok
+test tests::semantic_init::test_local_nested_array_init_with_designators ... ok
+test tests::semantic_init::test_local_partial_init_implicit_zero ... ok
+test tests::semantic_init::test_global_array_init_ptr ... ok
+test tests::semantic_init::test_local_struct_designator_simple ... ok
+test tests::semantic_init::test_multidim_array_string_init_designator ... ok
+test tests::semantic_init::test_mixed_array_struct_designators ... ok
+test tests::semantic_init::test_nested_struct_designator ... ok
+test tests::semantic_init::test_nested_union_init_mir ... ok
+test tests::semantic_init::test_range_designators ... ok
+test tests::semantic_init::test_scalar_braced_init ... ok
+test tests::semantic_init::test_scalar_to_aggregate_elision ... ok
+warning: use of GNU designated initializer range extension [-Wgnu-designated-init]
+ --> test.c:2:24
+  |
+2 |     int a[] = { [0 ... 2] = 1, 10 };
+  |                        ^
+test tests::semantic_init::test_struct_array_brace_elision ... ok
+test tests::semantic_init::test_struct_designator_simple ... ok
+test tests::semantic_init::test_string_literal_array_init ... ok
+test tests::semantic_init::test_transparent_union_mir ... ok
+test tests::semantic_init::test_typeof_compat_array_size ... ok
+warning: use of GNU designated initializer range extension [-Wgnu-designated-init]
+ --> test.c:5:20
+  |
+5 |             [0 ... 4].x = 1,
+  |                    ^
+warning: use of GNU designated initializer range extension [-Wgnu-designated-init]
+ --> test.c:6:20
+  |
+6 |             [0 ... 4].y[0 ... 2] = 2,
+  |                    ^
+warning: use of GNU designated initializer range extension [-Wgnu-designated-init]
+ --> test.c:6:31
+  |
+6 |             [0 ... 4].y[0 ... 2] = 2,
+  |                               ^
+warning: use of GNU designated initializer range extension [-Wgnu-designated-init]
+ --> test.c:7:20
+  |
+7 |             [2 ... 3].y[1 ... 2] = 3
+  |                    ^
+warning: use of GNU designated initializer range extension [-Wgnu-designated-init]
+ --> test.c:7:31
+  |
+7 |             [2 ... 3].y[1 ... 2] = 3
+  |                               ^
+test tests::semantic_init::test_string_literal_concatenated_init ... ok
+test tests::semantic_init::test_struct_designator_subobject_completion ... ok
+test tests::semantic_init::test_union_init_mir ... ok
+test tests::semantic_init::test_u8_string_init ... ok
+test tests::semantic_init::test_unicode_string_init ... ok
+test tests::semantic_integer_literals::test_decimal_literal_int ... ok
+test tests::semantic_integer_literals::test_decimal_literal_long ... ok
+test tests::semantic_integer_literals::test_decimal_suffixless_too_large_for_long_long ... ok
+test tests::semantic_integer_literals::test_hex_literal_int ... ok
+test tests::semantic_integer_literals::test_hex_literal_unsigned_int ... ok
+test tests::semantic_init::test_union_init_with_different_types ... ok
+test tests::semantic_integer_literals::test_hex_suffixless_unsigned_long ... ok
+test tests::semantic_integer_literals::test_hex_suffixed_literals ... ok
+test tests::semantic_integer_literals::test_hex_suffixless_unsigned_long_long ... ok
+test tests::semantic_integer_literals::test_l_suffix_decimal_long_long ... ok
+test tests::semantic_integer_literals::test_l_suffix_hex ... ok
+test tests::semantic_integer_literals::test_octal_literals ... ok
+test tests::semantic_init::test_init_range_features ... ok
+test tests::semantic_integer_literals::test_u_suffix_too_large_for_unsigned_int ... ok
+test tests::semantic_long_double::test_long_double_arithmetic_conversion ... ok
+test tests::semantic_integer_literals::test_long_long_cases ... ok
+test tests::semantic_integer_literals::test_suffixed_literals ... ok
+test tests::semantic_long_double::test_long_double_characteristic_macros ... ok
+test tests::semantic_long_double::test_long_double_size_align ... ok
+test tests::semantic_long_double::test_long_double_assignment_lowering ... ok
+test tests::semantic_lowering::test_alignment_specifier ... ok
+test tests::semantic_lowering::test_const_pointer_init ... ok
+test tests::semantic_lowering::test_enum_decl_members_populated ... ok
+test tests::semantic_lowering::test_function_call_args_contiguity ... ok
+test tests::semantic_lowering::test_struct_member_qualifiers_preserved ... ok
+test tests::semantic_lowering::test_record_decl_members_populated ... ok
+test tests::semantic_mir::test_anonymous_struct_union_field_indices ... ok
+test tests::semantic_mir::test_array_to_pointer_decay_in_function_call ... ok
+test tests::semantic_mir::test_array_to_pointer_decay_in_variadic_function_call ... ok
+test tests::semantic_mir::test_basic_typedef ... ok
+test tests::semantic_mir::test_consecutive_labels ... ok
+test tests::semantic_mir::test_const_global_mir ... ok
+test tests::semantic_mir::test_deref_after_cast ... ok
+test tests::semantic_mir::test_duplicate_global_declaration ... ok
+test tests::semantic_mir::test_designated_initializer_global ... ok
+test tests::semantic_mir::test_duplicate_global_declaration_with_initializers_diagnostic ... ok
+test tests::semantic_mir::test_external_function_call ... ok
+test tests::semantic_mir::test_for_stmt ... ok
+test tests::semantic_mir::test_function_pointer_in_struct ... ok
+test tests::semantic_mir::test_function_with_many_return_types ... ok
+test tests::semantic_mir::test_global_after_function ... ok
+test tests::semantic_mir::test_global_initializer_with_cast ... ok
+test tests::semantic_mir::test_global_initializer_with_address ... ok
+test tests::semantic_mir::test_gnu_statement_expression_labels_and_void ... ok
+test tests::semantic_mir::test_global_variable ... ok
+test tests::semantic_mir::test_incomplete_record_type ... ok
+test tests::semantic_mir::test_if_else_statement ... ok
+test tests::semantic_mir::test_increment_decrement ... ok
+test tests::semantic_mir::test_mir_generation_for_self_referential_struct ... ok
+test tests::semantic_mir::test_long_long_comparison_crash ... ok
+test tests::semantic_mir::test_nested_compound_initializer_global ... ok
+test tests::semantic_mir::test_mir_generation_for_self_referential_union ... ok
+test tests::semantic_mir::test_parameter_shadowing ... ok
+test tests::semantic_mir::test_simple_variable_return ... ok
+test tests::semantic_mir::test_simple_goto ... ok
+test tests::semantic_mir::test_string_literal_decay ... ok
+test tests::semantic_mir::test_struct_type_regression ... ok
+test tests::semantic_mir::test_struct_tag_shadowing ... ok
+test tests::semantic_mir::test_ternary_with_mixed_pointer_integer ... ok
+test tests::semantic_mir::test_while_statement ... ok
+test tests::semantic_mir::test_variable_shadowing ... ok
+test tests::semantic_mir_label_addr::test_label_addr_coverage ... ok
+test tests::semantic_negative::test_alias_is_definition ... ok
+test tests::semantic_negative::test_addrof_rvalue ... ok
+test tests::semantic_negative::test_assignment_to_const ... ok
+test tests::semantic_negative::test_deref_incomplete_type ... ok
+test tests::semantic_negative::test_assignment_to_deref_const_ptr ... ok
+test tests::semantic_negative::test_designated_init_field_not_found ... ok
+test tests::semantic_negative::test_designator_in_scalar ... ok
+test tests::semantic_negative::test_extern_followed_by_static_function_mismatch ... ok
+test tests::semantic_negative::test_extern_followed_by_static_variable_mismatch ... ok
+test tests::semantic_init::test_wide_string_init ... ok
+test tests::semantic_negative::test_extern_init_block_scope ... ok
+test tests::semantic_negative::test_global_variable_redefinition ... ok
+test tests::semantic_negative::test_global_tentative_incomplete_type_prohibited ... ok
+test tests::semantic_negative::test_function_parameter_incomplete_type_prohibited ... ok
+test tests::semantic_negative::test_increment_const ... ok
+test tests::semantic_negative::test_invalid_restrict ... ok
+test tests::semantic_negative::test_invalid_use_of_void_in_expr ... ok
+test tests::semantic_negative::test_multiple_storage_class_specifiers ... ok
+test tests::semantic_negative::test_logic_not_on_union_prohibited ... ok
+test tests::semantic_negative::test_logic_not_on_struct_prohibited ... ok
+test tests::semantic_negative::test_plain_followed_by_static_variable_mismatch ... ok
+test tests::semantic_negative::test_non_local_var_in_for_loop ... ok
+test tests::semantic_negative::test_no_linkage_incomplete_type_prohibited ... ok
+test tests::semantic_negative::test_pointer_assignment_discards_const_warning ... ok
+test tests::semantic_negative::test_pointer_sub_incompatible ... ok
+test tests::semantic_negative::test_pointer_comparison_incompatible ... ok
+test tests::semantic_negative::test_pointer_sub_incomplete ... ok
+test tests::semantic_negative::test_restrict_on_function_pointer_prohibited ... ok
+test tests::semantic_negative::test_restrict_on_non_pointer_prohibited ... ok
+test tests::semantic_negative::test_scalar_init_brace_list ... ok
+test tests::semantic_negative::test_sizeof_incomplete_struct ... ok
+test tests::semantic_negative::test_static_tentative_incomplete_type_prohibited ... ok
+test tests::semantic_negative::test_static_tentative_incomplete_type_allowed ... ok
+test tests::semantic_negative::test_variable_of_void_type ... ok
+test tests::semantic_negative::test_void_pointer_sub_int ... ok
+test tests::semantic_noreturn::test_noreturn_empty_body ... ok
+test tests::semantic_noreturn::test_noreturn_calling_regular ... ok
+test tests::semantic_noreturn::test_noreturn_calling_noreturn ... ok
+test tests::semantic_noreturn::test_noreturn_for_infinite ... ok
+test tests::semantic_noreturn::test_noreturn_if_only ... ok
+test tests::semantic_noreturn::test_noreturn_if_else_both_noreturn ... ok
+test tests::semantic_noreturn::test_noreturn_infinite_goto ... ok
+test tests::semantic_noreturn::test_noreturn_while_true ... ok
+test tests::semantic_nullptr::test_c23_nullptr_comparison ... ok
+test tests::semantic_nullptr::test_c23_nullptr ... ok
+test tests::semantic_nullptr::test_c23_nullptr_invalid_conversions ... ok
+test tests::semantic_offsetof::test_offsetof_member_not_found ... ok
+test tests::semantic_offsetof::test_offsetof_expected_array ... ok
+test tests::semantic_offsetof::test_offsetof_member_on_pointer_with_dot ... ok
+test tests::semantic_offsetof::test_offsetof_member_on_non_record_base ... ok
+test tests::semantic_offsetof::test_offsetof_non_constant_index ... ok
+test tests::semantic_parsed_declarator_coverage::test_array_qualifier_not_outermost ... ok
+test tests::semantic_parsed_declarator_coverage::test_array_qualifier_outside_parameter ... ok
+test tests::semantic_parsed_declarator_coverage::test_array_qualifier_valid ... ok
+test tests::semantic_parsed_declarator_coverage::test_array_static_not_outermost ... ok
+test tests::semantic_parsed_declarator_coverage::test_array_static_outside_parameter ... ok
+test tests::semantic_parsed_declarator_coverage::test_nested_array_decay ... ok
+test tests::semantic_parsed_declarator_coverage::test_array_static_valid ... ok
+test tests::semantic_parsed_declarator_coverage::test_nested_array_valid ... ok
+test tests::semantic_parsed_types_coverage::test_abstract_declarator_pointer ... ok
+test tests::semantic_parsed_types_coverage::test_alignment_coverage ... ok
+test tests::semantic_parsed_types_coverage::test_alignof_struct_expression ... ok
+test tests::semantic_parsed_types_coverage::test_abstract_declarators_more ... ok
+test tests::semantic_parsed_types_coverage::test_anonymous_record_declarator ... ok
+test tests::semantic_parsed_types_coverage::test_bitfield_declarator ... ok
+test tests::semantic_parsed_types_coverage::test_builtin_types_coverage ... ok
+test tests::semantic_parsed_types_coverage::test_default_to_int ... ok
+test tests::semantic_parsed_types_coverage::test_compound_literal_struct ... ok
+test tests::semantic_parsed_types_coverage::test_enum_evaluation_in_type_name ... ok
+test tests::semantic_parsed_types_coverage::test_enum_coverage ... ok
+test tests::semantic_parsed_types_coverage::test_sizeof_struct_expression ... ok
+test tests::semantic_parsed_types_coverage::test_sizeof_struct_with_alignment_coverage ... ok
+test tests::semantic_parsed_types_coverage::test_complex_type_specs ... ok
+test tests::semantic_parsed_types_coverage::test_type_mismatch_in_type_name ... ok
+warning: use of GNU statement expression extension [-Wgnu-statement-expression]
+ --> example.c:3:21
+  |
+3 |             int x = ({ int y = 5; y; });
+  |                     ^^^^^^^^^^^^^^^^^^^
+error: use of GNU statement expression extension
+ --> example.c:3:21
+  |
+3 |             int x = ({ int y = 5; y; });
+  |                     ^^^^^^^^^^^^^^^^^^^
+test tests::semantic_pedantic_gnu_extensions::test_gnu_statement_expression ... ok
+test tests::semantic_parsed_types_coverage::test_struct_parsing_coverage ... ok
+test tests::semantic_pragma_pack::test_pragma_pack_alignas_interaction ... ok
+test tests::semantic_pragma_pack::test_pragma_pack_basic ... ok
+test tests::semantic_pragma_pack::test_pragma_pack_empty ... ok
+test tests::semantic_pragma_pack::test_pragma_pack_missing_paren_ignored ... ok
+test tests::semantic_pragma_pack::test_pragma_pack_in_function ... ok
+test tests::semantic_pragma_pack::test_pragma_pack_missing_paren_warning ... ok
+test tests::semantic_pragma_pack::test_pragma_pack_nested ... ok
+test tests::semantic_pragma_pack::test_pragma_pack_push_pop ... ok
+test tests::semantic_long_double::test_long_double_nan_execution ... ok
+test tests::semantic_return::test_void_return_int_call ... ok
+test tests::semantic_pragma_pack::test_pragma_pack_various_values ... ok
+test tests::semantic_return::test_void_return_void_call ... ok
+test tests::semantic_return_check::test_return_global_address_ok ... ok
+test tests::semantic_return_check::test_return_local_address ... ok
+test tests::semantic_return_check::test_return_missing_value ... ok
+test tests::semantic_return_check::test_return_pointer_as_int ... ok
+test tests::semantic_return_check::test_return_static_local_address_ok ... ok
+test tests::semantic_return_check::test_return_struct_in_int_function ... ok
+test tests::semantic_scope::allows_compatible_typedef_redefinition ... ok
+test tests::semantic_scope::allows_function_parameter_to_shadow_typedef ... ok
+test tests::semantic_scope::rejects_conflicting_typedef_redefinition ... ok
+test tests::semantic_scope::allows_typedef_and_struct_tag_with_same_name ... ok
+test tests::semantic_scope::rejects_extern_variable_declaration_conflicting_with_typedef ... ok
+test tests::semantic_scope::rejects_typedef_declaration_conflicting_with_variable ... ok
+test tests::semantic_scope::rejects_variable_declaration_conflicting_with_typedef ... ok
+test tests::semantic_scope::test_array_parameter_decay_ok ... ok
+test tests::semantic_scope::test_block_scope_enum_tag_declaration_shadowing ... ok
+test tests::semantic_scope::test_block_scope_extern_refers_to_global_static ... ok
+test tests::semantic_parsed_types_coverage::test_sizeof_targeted_coverage ... ok
+test tests::semantic_scope::test_block_scope_static_shadowing_global_is_ok ... ok
+test tests::semantic_scope::test_block_scope_tag_declaration_shadowing ... ok
+test tests::semantic_scope::test_file_scope_tentative_external_linkage_ok ... ok
+test tests::semantic_scope::test_extern_incomplete_array_ok ... ok
+test tests::semantic_scope::test_function_redefinition_with_prototype ... ok
+test tests::semantic_scope::test_func_param_shadows_func_name ... ok
+test tests::semantic_scope::test_global_variable_alignment_mismatch ... ok
+test tests::semantic_scope::test_global_variable_visible_in_its_own_initializer ... ok
+test tests::semantic_scope::test_initialized_array_block_scope_ok ... ok
+test tests::semantic_scope::test_incomplete_type_in_prototype_ok ... ok
+test tests::semantic_scope::test_redefinition_function ... ok
+test tests::semantic_scope::test_static_followed_by_extern_variable_ok ... ok
+test tests::semantic_scope::test_static_followed_by_extern_function_ok ... ok
+test tests::semantic_scope::test_static_followed_by_plain_variable_ok ... ok
+test tests::semantic_scope::test_typedef_redefinition_compatible_but_not_same ... ok
+test tests::semantic_scope::test_typedef_redefinition_function_params_different_type_rejects ... ok
+test tests::semantic_scope::test_typedef_redefinition_defines_new_struct ... ok
+test tests::semantic_scope::test_typedef_redefinition_function_params_ok ... ok
+test tests::semantic_scope::test_typedef_redefinition_using_same_tag_ok ... ok
+test tests::semantic_scope::test_undeclared_variable ... ok
+test tests::semantic_scope::test_typedef_visible_in_declarator ... ok
+test tests::semantic_scope::test_variable_visible_in_its_own_initializer ... ok
+test tests::semantic_scope::test_void_parameter_ok ... ok
+test tests::semantic_static_assert::static_assert_rejects_out_of_range_float ... ok
+test tests::semantic_static_assert::test_static_assert_c11_features ... ok
+test tests::semantic_scope_invariants::test_function_scope_and_linkage_invariants ... ok
+test tests::semantic_static_assert::test_static_assert_c23_features ... ok
+test tests::semantic_static_assert::test_static_assert_cast ... ok
+test tests::semantic_static_assert::test_static_assert_comparison ... ok
+test tests::semantic_static_assert::test_static_assert_float_logical_and_comparison ... ok
+test tests::semantic_static_assert::test_static_assert_float_short_circuit_eval ... ok
+test tests::semantic_static_assert::test_static_assert_failures ... ok
+test tests::semantic_static_assert::test_static_assert_float_unary_and_complex ... ok
+test tests::semantic_static_assert::test_static_assert_logical ... ok
+test tests::semantic_static_assert::test_static_assert_negative_numbers ... ok
+test tests::semantic_static_assert::test_static_assert_rejects_float_expression_in_cast ... ok
+test tests::semantic_static_assert::test_static_assert_type_mismatch ... ok
+test tests::semantic_typeof::test_typeof_comma_expr_compile ... ok
+test tests::semantic_static_assert::test_static_assert_valid_scopes ... ok
+test tests::semantic_typeof::test_typeof_expr_unresolved ... ok
+test tests::semantic_typeof::test_typeof_function ... ok
+test tests::semantic_typeof::test_typeof_in_struct_member ... ok
+test tests::semantic_typeof::test_typeof_struct_member ... ok
+test tests::semantic_typeof::test_typeof_sizeof_constant ... ok
+test tests::semantic_typeof::test_typeof_ternary_with_decay_and_void ... ok
+test tests::semantic_typeof::test_typeof_type_compile ... ok
+test tests::semantic_typeof_unqual::test_typeof_unqual_expr_compile ... ok
+test tests::semantic_typeof_unqual::test_typeof_unqual_type_compile ... ok
+test tests::semantic_typeof_unqual::test_typeof_unqual_pointer ... ok
+test tests::semantic_types::rejects_function_returning_incomplete_type ... ok
+test tests::semantic_types::rejects_sizeof_on_incomplete_struct ... ok
+test tests::semantic_types::rejects_sizeof_on_incomplete_array ... ok
+test tests::semantic_types::test_anonymous_struct_initialization ... ok
+test tests::semantic_types::test_anonymous_struct_member_access ... ok
+test tests::semantic_types::test_anonymous_struct_name_conflict ... ok
+test tests::semantic_types::test_anonymous_union_member_access ... ok
+test tests::semantic_types::test_anonymous_union_name_conflict ... ok
+test tests::semantic_types::test_conflicting_type_specifier ... ok
+test tests::semantic_types::test_conflicting_type_specifier_complex ... ok
+test tests::semantic_types::test_display_array_types ... ok
+test tests::semantic_types::test_empty_declaration_in_function ... ok
+test tests::semantic_types::test_empty_declarations_multiple ... ok
+test tests::semantic_types::test_enum_unsigned_compatibility ... ok
+test tests::semantic_types::test_forward_enum_param ... ok
+test tests::semantic_types::test_forward_enum_return ... ok
+test tests::semantic_types::test_incomplete_return_type_in_definition_rejected ... ok
+test tests::semantic_types::test_incomplete_struct_in_declaration_accepted ... ok
+test tests::semantic_types::test_incomplete_type_in_definition_rejected ... ok
+test tests::semantic_types::test_is_char_type_coverage ... ok
+test tests::semantic_types::test_is_value_fitting_coverage ... ok
+test tests::semantic_types::test_large_hex_literal_comparison ... ok
+error: ISO C forbids forward references to 'enum' types
+ --> example.c:1:1
+  |
+1 | enum E; void f(enum E x);
+  | ^^^^^^^
+error: ISO C forbids forward references to 'enum' types
+ --> example.c:1:16
+  |
+1 | enum E; void f(enum E x);
+  |                ^^^^^^^^
+test tests::semantic_types::test_pedantic_enum_forward_decl ... ok
+test tests::semantic_types::test_reconstruct_type ... ok
+test tests::semantic_types::test_restrict_array_of_pointers ... ok
+test tests::semantic_types::test_signed_char ... ok
+test tests::semantic_types::test_signed_int ... ok
+test tests::semantic_types::test_signed_long ... ok
+test tests::semantic_types::test_struct_copy_init ... ok
+test tests::semantic_types::test_tag_kind_mismatch ... ok
+test tests::semantic_types::test_to_unsigned ... ok
+test tests::semantic_types::test_type_long_long ... ok
+test tests::semantic_scope::allows_parameter_to_shadow_typedef ... ok
+test tests::semantic_types::test_typeref_encoding_inline_array ... ok
+test tests::semantic_types::test_typeref_encoding_inline_ptr ... ok
+test tests::semantic_types::test_typeref_encoding_primitive ... ok
+test tests::semantic_types::test_typeref_encoding_registry_array ... ok
+test tests::semantic_types::test_typeref_encoding_registry_ptr ... ok
+test tests::semantic_types::test_typeref_invalid_combinations ... ok
+test tests::semantic_types::test_typedef_unsigned_long_comparison ... ok
+test tests::semantic_types::test_typeregistry_array_logic ... ok
+test tests::semantic_types::test_typeregistry_complex_type_canonicalization ... ok
+test tests::semantic_types::test_typeregistry_inline_logic ... ok
+test tests::semantic_types::test_typeregistry_display_builtins ... ok
+test tests::semantic_types::test_typeregistry_pointer_type_canonicalization ... ok
+test tests::semantic_types::test_unsigned_int ... ok
+test tests::semantic_types_compatible::test_types_compatible_unresolved_typeof ... ok
+test tests::semantic_types_compatible::test_negative_array_size_with_builtin_types_compatible ... ok
+test tests::semantic_types_compatible::test_types_compatible_unresolved_typeof_in_alias ... ok
+test tests::semantic_unary_coverage::test_unary_minus_on_struct ... ok
+test tests::semantic_unary_coverage::test_unary_plus_minus_on_qualified_int ... ok
+test tests::semantic_unary_coverage::test_unary_plus_on_pointer ... ok
+test tests::semantic_unary_coverage::test_invalid_inc_dec ... ok
+test tests::semantic_scope::test_nested_scope_shadowing ... ok
+test tests::semantic_usual_arithmetic_conversions::test_usual_arithmetic_conversions_non_arithmetic ... ok
+test tests::semantic_validation::accepts_modulo_on_integer ... ok
+test tests::semantic_validation::rejects_bitnot_on_non_integer ... ok
+test tests::semantic_usual_arithmetic_conversions::test_usual_arithmetic_conversions ... ok
+test tests::semantic_validation::rejects_conflicting_storage_classes ... ok
+test tests::semantic_validation::rejects_modulo_on_non_integer ... ok
+test tests::semantic_validation::rejects_pointer_plus_pointer ... ok
+test tests::semantic_validation::rejects_struct_compound_assignment ... ok
+test tests::semantic_validation::rejects_struct_in_do_while_condition ... ok
+test tests::semantic_validation::rejects_struct_in_for_condition ... ok
+test tests::semantic_validation::rejects_struct_in_if_condition ... ok
+test tests::semantic_validation::rejects_struct_in_while_condition ... ok
+test tests::semantic_validation::rejects_struct_logical_or ... ok
+test tests::semantic_validation::rejects_thread_local_on_function ... ok
+test tests::semantic_validation::rejects_variable_as_typedef_in_cast ... ok
+test tests::semantic_validation::rejects_void_pointer_arithmetic ... ok
+test tests::tuti_static_assert_coverage::test_static_assert_non_integer_type ... ok
+test tests::semantic_types::test_attr_mode ... ok
+test tests::semantic_validation::test_struct_init_in_array_regression ... ok
+test tests::semantic_usual_arithmetic_conversions::test_mixed_sign_comparison ... ok
+
+test result: ok. 1566 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.80s
+
+     Running unittests src/main.rs (target/llvm-cov-target/debug/deps/cendol-5d23e802ee532ff0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
